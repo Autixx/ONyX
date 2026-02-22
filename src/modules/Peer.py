@@ -163,6 +163,8 @@ class Peer:
                 "Jmax": self.configuration.Jmax,
                 "S1": self.configuration.S1,
                 "S2": self.configuration.S2,
+                "S3": self.configuration.S3,
+                "S4": self.configuration.S4,
                 "H1": self.configuration.H1,
                 "H2": self.configuration.H2,
                 "H3": self.configuration.H3,

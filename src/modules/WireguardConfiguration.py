@@ -104,11 +104,12 @@ class WireguardConfiguration:
 
             if self.Protocol == 'awg':
                 self.__parser["Interface"]["Jc"] = self.Jc
-                self.__parser["Interface"]["Jc"] = self.Jc
                 self.__parser["Interface"]["Jmin"] = self.Jmin
                 self.__parser["Interface"]["Jmax"] = self.Jmax
                 self.__parser["Interface"]["S1"] = self.S1
                 self.__parser["Interface"]["S2"] = self.S2
+                self.__parser["Interface"]["S3"] = self.S3
+                self.__parser["Interface"]["S4"] = self.S4
                 self.__parser["Interface"]["H1"] = self.H1
                 self.__parser["Interface"]["H2"] = self.H2
                 self.__parser["Interface"]["H3"] = self.H3
@@ -995,7 +996,7 @@ class WireguardConfiguration:
             original = [l.rstrip("\n") for l in f.readlines()]
             allowEdit = ["Address", "PreUp", "PostUp", "PreDown", "PostDown", "ListenPort", "Table"]
             if self.Protocol == 'awg':
-                allowEdit += ["Jc", "Jmin", "Jmax", "S1", "S2", "H1", "H2", "H3", "H4"]
+                allowEdit += ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4"]
             start = original.index("[Interface]")
             try:
                 end = original.index("[Peer]")

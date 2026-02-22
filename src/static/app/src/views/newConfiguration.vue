@@ -43,6 +43,8 @@ export default {
 				Jmax: 998,
 				S1: 17,
 				S2: 110,
+				S3: 0,
+				S4: 0,
 				H1: 0,
 				H2: 0,
 				H3: 0,
@@ -379,7 +381,7 @@ export default {
 
 								<div class="card rounded-3" 
 								     v-if="this.newConfiguration.Protocol === 'awg'"
-								     v-for="key in ['Jc', 'Jmin', 'Jmax', 'S1', 'S2', 'H1', 'H2', 'H3', 'H4']">
+								     v-for="key in ['Jc', 'Jmin', 'Jmax', 'S1', 'S2', 'S3', 'S4', 'H1', 'H2', 'H3', 'H4']">
 									<div class="card-header">{{ key }}</div>
 									<div class="card-body">
 										<input type="text"

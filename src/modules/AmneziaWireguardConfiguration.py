@@ -22,6 +22,8 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
         self.Jmax = 0
         self.S1 = 0
         self.S2 = 0
+        self.S3 = 0
+        self.S4 = 0
         self.H1 = 1
         self.H2 = 2
         self.H3 = 3
@@ -58,6 +60,8 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
             "Jmax": self.Jmax,
             "S1": self.S1,
             "S2": self.S2,
+            "S3": self.S3,
+            "S4": self.S4,
             "H1": self.H1,
             "H2": self.H2,
             "H3": self.H3,
