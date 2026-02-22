@@ -1,12 +1,15 @@
 #!/bin/bash
 
-# wgd.sh - Copyright(C) 2024 Donald Zou [https://github.com/donaldzou]
+# wgd.sh - Copyright(C) 2024 Donald Zou (fork maintained at https://github.com/Autixx/WGD_AWG_fix)
 # Under Apache-2.0 License
 #trap "kill $TOP_PID"
 export TOP_PID=$$
 
 app_name="dashboard.py"
 app_official_name="WGDashboard"
+repo_url="https://github.com/Autixx/WGD_AWG_fix.git"
+repo_api="https://api.github.com/repos/Autixx/WGD_AWG_fix"
+issues_url="https://github.com/Autixx/WGD_AWG_fix/issues/new/choose"
 venv_python="./venv/bin/python3"
 venv_gunicorn="./venv/bin/gunicorn"
 pythonExecutable="python3"
@@ -29,10 +32,10 @@ fi
 
 dashes='---------------------------------------------------------------------------------'
 equals='============================================================'
-helpMsg="[WGDashboard] Please check ./log/install.txt for more details. For further assistance, please open a ticket on https://github.com/WGDashboard/WGDashboard/issues/new/choose, I'm more than happy to help :)"
+helpMsg="[WGDashboard] Please check ./log/install.txt for more details. For further assistance, please open a ticket on ${issues_url}, I'm more than happy to help :)"
 print_header(){
 	printf "=================================================================================\n"
-	printf "+          <WGDashboard> by Donald Zou - https://github.com/donaldzou           +\n"
+	printf "+            <WGDashboard> fork - https://github.com/Autixx/WGD_AWG_fix         +\n"
 	printf "=================================================================================\n"
 }
 
@@ -484,7 +487,22 @@ update_wgd() {
 	_installPythonVenv
 	_installPythonPip	
 	
-	new_ver=$($venv_python -c "import json; import urllib.request; data = urllib.request.urlopen('https://api.github.com/repos/WGDashboard/WGDashboard/releases/latest').read(); output = json.loads(data);print(output['tag_name'])")
+	new_ver=$($venv_python -c "import json, urllib.request
+repo_api='${repo_api}'
+try:
+    rel = json.loads(urllib.request.urlopen(repo_api + '/releases/latest').read())
+    tag = rel.get('tag_name')
+    if tag:
+        print(tag)
+    else:
+        repo = json.loads(urllib.request.urlopen(repo_api).read())
+        print(repo.get('default_branch', 'main'))
+except Exception:
+    try:
+        repo = json.loads(urllib.request.urlopen(repo_api).read())
+        print(repo.get('default_branch', 'main'))
+    except Exception:
+        print('main')")
 
 	if [ "$commandConfirmed" = "true" ]; then
 		printf "[WGDashboard] Confirmation granted.\n"
@@ -503,7 +521,7 @@ update_wgd() {
 
 		mv wgd.sh wgd.sh.old
 		printf "[WGDashboard] Downloading %s from GitHub..." "$new_ver"
-		{ date; git stash; git pull https://github.com/WGDashboard/WGDashboard.git $new_ver --force; } >> ./log/update.txt
+		{ date; git stash; git pull ${repo_url} $new_ver --force; } >> ./log/update.txt
 		chmod +x ./wgd.sh
 		sudo ./wgd.sh install
 		printf "[WGDashboard] Update completed!\n"

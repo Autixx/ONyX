@@ -91,7 +91,7 @@ ensure_installation() {
   chmod +x "${WGDASH}"/src/wgd.sh
   cd "${WGDASH}"/src || exit
 
-  # Github issue: https://github.com/donaldzou/WGDashboard/issues/723
+  # Github issue: https://github.com/Autixx/WGD_AWG_fix/issues/723
   echo "Checking for stale pids..."
   if [[ -f ${WGDASH}/src/gunicorn.pid ]]; then
     echo "Found stale pid, removing..."
