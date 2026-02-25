@@ -34,7 +34,15 @@ const router = createRouter({
 					path: '',
 					component: () => import('@/components/configurationList.vue'),
 					meta: {
-						title: "WireGuard Configurations"
+						title: "Inbound"
+					}
+				},
+				{
+					name: "Outbound",
+					path: 'outbound',
+					component: () => import('@/views/outbound.vue'),
+					meta: {
+						title: "Outbound"
 					}
 				},
 				{

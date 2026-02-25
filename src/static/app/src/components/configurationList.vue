@@ -65,7 +65,7 @@ export default {
 			<SystemStatus></SystemStatus>
 			<div class="d-flex mb-4 configurationListTitle align-items-md-center gap-2 flex-column flex-md-row">
 				<h2 class="text-body d-flex mb-0">
-					<LocaleText t="WireGuard Configurations"></LocaleText>
+					<LocaleText t="Inbound"></LocaleText>
 				</h2>
 				<RouterLink to="/new_configuration"
 				            class="ms-md-auto py-2 text-decoration-none btn text-primary-emphasis bg-primary-subtle rounded-3 border-1 border-primary-subtle">
@@ -129,7 +129,7 @@ export default {
 					<p class="text-muted col-12"
 					   key="noConfiguration"
 					   v-if="this.wireguardConfigurationsStore.ConfigurationLoaded && this.wireguardConfigurationsStore.Configurations.length === 0">
-						<LocaleText t="You don't have any WireGuard configurations yet. Please check the configuration folder or change it in Settings. By default the folder is /etc/wireguard."></LocaleText>
+						<LocaleText t="You don't have any inbound configurations yet. Please check the configuration folder or change it in Settings. By default the folder is /etc/wireguard."></LocaleText>
 					</p>
 					<ConfigurationCard
 						:display="this.wireguardConfigurationsStore.CurrentDisplay"

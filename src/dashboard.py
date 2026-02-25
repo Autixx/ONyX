@@ -40,6 +40,7 @@ from modules.DashboardClients import DashboardClients
 from modules.DashboardPlugins import DashboardPlugins
 from modules.DashboardWebHooks import DashboardWebHooks
 from modules.NewConfigurationTemplates import NewConfigurationTemplates
+from modules.OutboundProfiles import OutboundProfiles
 
 class CustomJsonEncoder(DefaultJSONProvider):
     def __init__(self, app):
@@ -226,6 +227,7 @@ with app.app_context():
     DashboardPlugins: DashboardPlugins = DashboardPlugins(app, WireguardConfigurations)
     DashboardWebHooks: DashboardWebHooks = DashboardWebHooks(DashboardConfig)
     NewConfigurationTemplates: NewConfigurationTemplates = NewConfigurationTemplates()
+    OutboundProfilesManager: OutboundProfiles = OutboundProfiles(DashboardConfig)
     InitWireguardConfigurationsList(startup=True)
     DashboardClients: DashboardClients = DashboardClients(WireguardConfigurations)
     app.register_blueprint(createClientBlueprint(WireguardConfigurations, DashboardConfig, DashboardClients))
@@ -358,6 +360,58 @@ def API_SignOut():
 def API_getWireguardConfigurations():
     InitWireguardConfigurationsList()
     return ResponseObject(data=[wc for wc in WireguardConfigurations.values()])
+
+@app.get(f'{APP_PREFIX}/api/getOutboundProfiles')
+def API_getOutboundProfiles():
+    return ResponseObject(data=OutboundProfilesManager.getAllData())
+
+@app.post(f'{APP_PREFIX}/api/importOutboundProfile')
+def API_importOutboundProfile():
+    data = request.get_json()
+    status, message = OutboundProfilesManager.importProfile(data)
+    return ResponseObject(status=status, message=message)
+
+@app.post(f'{APP_PREFIX}/api/toggleOutboundProfile')
+def API_toggleOutboundProfile():
+    data = request.get_json()
+    profile_name = (data or {}).get("Name")
+    if profile_name is None or len(str(profile_name).strip()) == 0:
+        return ResponseObject(False, "Please provide profile name.")
+    status, message, current_status = OutboundProfilesManager.toggleProfile(str(profile_name).strip())
+    return ResponseObject(status=status, message=message, data=current_status)
+
+@app.post(f'{APP_PREFIX}/api/deleteOutboundProfile')
+def API_deleteOutboundProfile():
+    data = request.get_json()
+    profile_name = (data or {}).get("Name")
+    if profile_name is None or len(str(profile_name).strip()) == 0:
+        return ResponseObject(False, "Please provide profile name.")
+    status, message = OutboundProfilesManager.deleteProfile(str(profile_name).strip())
+    return ResponseObject(status=status, message=message)
+
+@app.get(f'{APP_PREFIX}/api/getOutboundProfileRawFile')
+def API_getOutboundProfileRawFile():
+    profile_name = request.args.get("profileName")
+    if profile_name is None or len(str(profile_name).strip()) == 0:
+        return ResponseObject(False, "Please provide profile name.")
+    status, message, data = OutboundProfilesManager.getRawProfile(str(profile_name).strip())
+    return ResponseObject(status=status, message=message, data=data)
+
+@app.post(f'{APP_PREFIX}/api/updateOutboundProfileRawFile')
+def API_updateOutboundProfileRawFile():
+    data = request.get_json()
+    profile_name = (data or {}).get("Name")
+    profile_content = (data or {}).get("Content")
+    if profile_name is None or len(str(profile_name).strip()) == 0:
+        return ResponseObject(False, "Please provide profile name.")
+    status, message = OutboundProfilesManager.updateRawProfile(str(profile_name).strip(), profile_content)
+    return ResponseObject(status=status, message=message)
+
+@app.post(f'{APP_PREFIX}/api/updateOutboundSettings')
+def API_updateOutboundSettings():
+    data = request.get_json()
+    status, message = OutboundProfilesManager.updateSettings(data)
+    return ResponseObject(status=status, message=message)
 
 @app.get(f'{APP_PREFIX}/api/newConfigurationTemplates')
 def API_NewConfigurationTemplates():

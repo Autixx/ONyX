@@ -106,7 +106,7 @@ export default {
 				</ul>
 				<hr class="text-body my-2">
 				<h6 class="sidebar-heading px-3 mt-3 mb-1 text-muted text-center">
-					<LocaleText t="WireGuard Configurations"></LocaleText>
+					<LocaleText t="Inbound"></LocaleText>
 				</h6>
 				<ul class="nav flex-column px-2 gap-1">
 					<li class="nav-item" v-for="c in this.wireguardConfigurationsStore.sortConfigurations">
@@ -115,6 +115,18 @@ export default {
 						            >
 							<span class="dot me-2" :class="{active: c.Status}"></span>
 							{{c.Name}}
+						</RouterLink>
+					</li>
+				</ul>
+				<hr class="text-body my-2">
+				<h6 class="sidebar-heading px-3 mt-3 mb-1 text-muted text-center">
+					<LocaleText t="Outbound"></LocaleText>
+				</h6>
+				<ul class="nav flex-column px-2 gap-1">
+					<li class="nav-item">
+						<RouterLink to="/outbound" class="nav-link rounded-3" active-class="active">
+							<i class="bi bi-diagram-3 me-2"></i>
+							<LocaleText t="Routing"></LocaleText>
 						</RouterLink>
 					</li>
 				</ul>
