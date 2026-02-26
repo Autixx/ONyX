@@ -6,6 +6,11 @@ GIT_REF="${GIT_REF:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/wgd-awg-multihop}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/wgdashboard}"
 SERVICE_NAME="${SERVICE_NAME:-wg-dashboard}"
+AUTO_INSTALL_AWG="${AUTO_INSTALL_AWG:-true}"
+AWG_TOOLS_REPO="${AWG_TOOLS_REPO:-https://github.com/amnezia-vpn/amneziawg-tools.git}"
+AWG_TOOLS_REF="${AWG_TOOLS_REF:-master}"
+AWG_GO_REPO="${AWG_GO_REPO:-https://github.com/amnezia-vpn/amneziawg-go.git}"
+AWG_GO_REF="${AWG_GO_REF:-master}"
 BOOTSTRAP_INBOUND="${BOOTSTRAP_INBOUND:-}"
 BOOTSTRAP_PROTOCOL="${BOOTSTRAP_PROTOCOL:-wg}"
 BOOTSTRAP_ADDRESS="${BOOTSTRAP_ADDRESS:-10.66.66.1/24}"
@@ -36,6 +41,11 @@ Options:
   --install-dir <path>    Project install directory (default: /opt/wgd-awg-multihop)
   --config-dir <path>     Runtime config dir (default: /etc/wgdashboard)
   --service-name <name>   systemd unit name without suffix (default: wg-dashboard)
+  --no-install-awg        Do not auto-install amneziawg-tools/amneziawg-go
+  --awg-tools-repo <url>  amneziawg-tools repository URL
+  --awg-tools-ref <ref>   amneziawg-tools git ref (default: master)
+  --awg-go-repo <url>     amneziawg-go repository URL
+  --awg-go-ref <ref>      amneziawg-go git ref (default: master)
   --bootstrap-inbound <name>
                            Create inbound interface config (example: wg0 / awg0)
   --bootstrap-protocol <wg|awg>
@@ -79,6 +89,68 @@ validate_port() {
 validate_int() {
   local value="$1"
   [[ "${value}" =~ ^-?[0-9]+$ ]]
+}
+
+sync_git_checkout() {
+  local repo_url="$1"
+  local git_ref="$2"
+  local target_dir="$3"
+
+  if [[ -d "${target_dir}/.git" ]]; then
+    git -C "${target_dir}" fetch --all --tags --prune
+  else
+    git clone "${repo_url}" "${target_dir}"
+  fi
+
+  if git -C "${target_dir}" rev-parse --verify --quiet "origin/${git_ref}" >/dev/null; then
+    git -C "${target_dir}" checkout -B "${git_ref}" "origin/${git_ref}"
+  else
+    git -C "${target_dir}" checkout "${git_ref}"
+  fi
+}
+
+install_awg_stack() {
+  local tools_missing="false"
+  local go_missing="false"
+  local build_root tools_dir go_dir make_jobs
+
+  if ! command -v awg >/dev/null 2>&1 || ! command -v awg-quick >/dev/null 2>&1; then
+    tools_missing="true"
+  fi
+  if ! command -v amneziawg-go >/dev/null 2>&1; then
+    go_missing="true"
+  fi
+
+  if [[ "${tools_missing}" == "false" && "${go_missing}" == "false" ]]; then
+    echo "[awg] awg, awg-quick and amneziawg-go are already installed."
+    return
+  fi
+
+  echo "[awg] Installing missing AWG components from source..."
+  apt-get install -y golang-go
+
+  make_jobs="$(nproc 2>/dev/null || echo 1)"
+  build_root="$(mktemp -d /tmp/wgd-awg-build.XXXXXX)"
+  tools_dir="${build_root}/amneziawg-tools"
+  go_dir="${build_root}/amneziawg-go"
+
+  if [[ "${tools_missing}" == "true" ]]; then
+    echo "[awg] Building amneziawg-tools (${AWG_TOOLS_REF})..."
+    sync_git_checkout "${AWG_TOOLS_REPO}" "${AWG_TOOLS_REF}" "${tools_dir}"
+    make -C "${tools_dir}/src" -j"${make_jobs}" install WITH_WGQUICK=yes WITH_SYSTEMDUNITS=yes
+  fi
+
+  if [[ "${go_missing}" == "true" ]]; then
+    echo "[awg] Building amneziawg-go (${AWG_GO_REF})..."
+    sync_git_checkout "${AWG_GO_REPO}" "${AWG_GO_REF}" "${go_dir}"
+    make -C "${go_dir}" -j"${make_jobs}" install
+  fi
+
+  rm -rf "${build_root}"
+
+  command -v awg >/dev/null 2>&1 || fail "[awg] Install failed: awg not found in PATH."
+  command -v awg-quick >/dev/null 2>&1 || fail "[awg] Install failed: awg-quick not found in PATH."
+  command -v amneziawg-go >/dev/null 2>&1 || fail "[awg] Install failed: amneziawg-go not found in PATH."
 }
 
 create_bootstrap_inbound() {
@@ -149,6 +221,9 @@ PY
 
   quick_bin="${protocol}-quick"
   command -v "${quick_bin}" >/dev/null 2>&1 || fail "[bootstrap] ${quick_bin} is not installed."
+  if [[ "${protocol}" == "awg" ]]; then
+    command -v amneziawg-go >/dev/null 2>&1 || fail "[bootstrap] amneziawg-go is not installed."
+  fi
   command -v wg >/dev/null 2>&1 || fail "[bootstrap] wg binary is required for key generation."
 
   if [[ "${protocol}" == "wg" ]]; then
@@ -256,6 +331,26 @@ while [[ $# -gt 0 ]]; do
       SERVICE_NAME="$2"
       shift 2
       ;;
+    --no-install-awg)
+      AUTO_INSTALL_AWG="false"
+      shift 1
+      ;;
+    --awg-tools-repo)
+      AWG_TOOLS_REPO="$2"
+      shift 2
+      ;;
+    --awg-tools-ref)
+      AWG_TOOLS_REF="$2"
+      shift 2
+      ;;
+    --awg-go-repo)
+      AWG_GO_REPO="$2"
+      shift 2
+      ;;
+    --awg-go-ref)
+      AWG_GO_REF="$2"
+      shift 2
+      ;;
     --bootstrap-inbound)
       BOOTSTRAP_INBOUND="$2"
       shift 2
@@ -356,7 +451,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 
-echo "[1/8] Installing OS dependencies..."
+echo "[1/9] Installing OS dependencies..."
 apt-get update
 apt-get install -y \
   ca-certificates \
@@ -379,11 +474,16 @@ fi
 
 mkdir -p /etc/wireguard
 
-if ! command -v awg >/dev/null 2>&1 || ! command -v awg-quick >/dev/null 2>&1; then
-  echo "[WARN] awg/awg-quick not found. AWG configs will stay unavailable until AWG is installed."
+echo "[2/9] Ensuring AmneziaWG binaries..."
+if [[ "${AUTO_INSTALL_AWG}" == "true" ]]; then
+  install_awg_stack
+else
+  if ! command -v awg >/dev/null 2>&1 || ! command -v awg-quick >/dev/null 2>&1 || ! command -v amneziawg-go >/dev/null 2>&1; then
+    echo "[WARN] AWG auto-install disabled and awg stack is incomplete (need awg, awg-quick, amneziawg-go)."
+  fi
 fi
 
-echo "[2/8] Fetching project source..."
+echo "[3/9] Fetching project source..."
 if [[ -d "${INSTALL_DIR}/.git" ]]; then
   git -C "${INSTALL_DIR}" fetch --all --tags
 else
@@ -403,7 +503,7 @@ if [[ ! -f "${SRC_DIR}/dashboard.py" ]]; then
   exit 1
 fi
 
-echo "[3/8] Preparing runtime directories..."
+echo "[4/9] Preparing runtime directories..."
 mkdir -p "${SRC_DIR}/log" "${SRC_DIR}/download"
 mkdir -p "${CONFIG_DIR}/db" "${CONFIG_DIR}/letsencrypt/work-dir" "${CONFIG_DIR}/letsencrypt/config-dir"
 
@@ -415,16 +515,16 @@ private_key_path =
 EOF
 fi
 
-echo "[4/8] Creating Python virtualenv..."
+echo "[5/9] Creating Python virtualenv..."
 python3 -m venv "${SRC_DIR}/venv"
 
-echo "[5/8] Installing Python dependencies..."
+echo "[6/9] Installing Python dependencies..."
 "${SRC_DIR}/venv/bin/python3" -m pip install --upgrade pip wheel setuptools
 "${SRC_DIR}/venv/bin/python3" -m pip install -r "${SRC_DIR}/requirements.txt"
 
 chmod +x "${SRC_DIR}/wgd.sh"
 
-echo "[6/8] Installing systemd service..."
+echo "[7/9] Installing systemd service..."
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 cat > "${SERVICE_FILE}" <<EOF
 [Unit]
@@ -450,11 +550,11 @@ PrivateTmp=yes
 WantedBy=multi-user.target
 EOF
 
-echo "[7/8] Enabling and starting service..."
+echo "[8/9] Enabling and starting service..."
 systemctl daemon-reload
 systemctl enable --now "${SERVICE_NAME}.service"
 
-echo "[8/8] Optional inbound bootstrap..."
+echo "[9/9] Optional inbound bootstrap..."
 if [[ -n "${BOOTSTRAP_INBOUND}" ]]; then
   create_bootstrap_inbound \
     "${BOOTSTRAP_INBOUND}" \

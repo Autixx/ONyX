@@ -12,6 +12,16 @@ cd WGD_AWG_fix_multihop
 sudo bash scripts/install_ubuntu.sh
 ```
 
+Installer now auto-installs missing AWG components from official repos:
+- `amneziawg-tools` (`awg`, `awg-quick`)
+- `amneziawg-go`
+
+If you want to skip that behavior, use:
+
+```bash
+sudo bash scripts/install_ubuntu.sh --no-install-awg
+```
+
 One-command deploy with ready inbound `wg0` (keys + NAT + interface up):
 
 ```bash
@@ -22,6 +32,16 @@ Example for AWG inbound:
 
 ```bash
 sudo bash scripts/install_ubuntu.sh --bootstrap-inbound awg0 --bootstrap-protocol awg --bootstrap-listen-port 51820
+```
+
+Custom AWG sources/refs are supported:
+
+```bash
+sudo bash scripts/install_ubuntu.sh \
+  --awg-tools-repo https://github.com/amnezia-vpn/amneziawg-tools.git \
+  --awg-tools-ref master \
+  --awg-go-repo https://github.com/amnezia-vpn/amneziawg-go.git \
+  --awg-go-ref master
 ```
 
 AWG 2.0 bootstrap fields are supported (without legacy `I1..I5`).  
