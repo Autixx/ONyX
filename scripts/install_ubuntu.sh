@@ -143,6 +143,10 @@ install_awg_stack() {
   if [[ "${go_missing}" == "true" ]]; then
     echo "[awg] Building amneziawg-go (${AWG_GO_REF})..."
     sync_git_checkout "${AWG_GO_REPO}" "${AWG_GO_REF}" "${go_dir}"
+    # Some amneziawg-go revisions publish `go x.y.z` which breaks `go mod` parsing.
+    if [[ -f "${go_dir}/go.mod" ]]; then
+      sed -E -i 's/^go ([0-9]+\.[0-9]+)\.[0-9]+$/go \1/' "${go_dir}/go.mod"
+    fi
     make -C "${go_dir}" -j"${make_jobs}" install
   fi
 
