@@ -249,6 +249,10 @@ install_awg_stack() {
     required_go="$(awk '/^go /{print $2; exit}' "${go_dir}/go.mod")"
     [[ -z "${required_go}" ]] && required_go="1.24"
     ensure_go_toolchain "${required_go}"
+    (
+      cd "${go_dir}"
+      GOTOOLCHAIN=auto go mod tidy
+    )
     make -C "${go_dir}" -j"${make_jobs}" install
   fi
 
