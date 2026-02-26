@@ -1281,6 +1281,45 @@ class WireguardConfiguration:
             return False, [], "GeoIP countries list cannot be empty"
         return True, countries, None
 
+    def __normalizeGeoZoneRules(
+            self, multiHop: MultiHopConfigurationClass
+    ) -> tuple[bool, list[dict[str, str]], str | None]:
+        normalized = {}
+        rawRules = multiHop.GeoZoneRules if isinstance(multiHop.GeoZoneRules, list) else []
+
+        for rule in rawRules:
+            if not isinstance(rule, dict):
+                return False, [], "Each Geo zone rule must be an object"
+            country = str(rule.get("Country", "")).strip().lower()
+            mode = str(rule.get("Mode", "direct")).strip().lower()
+            if len(country) == 0:
+                continue
+            if not RegexMatch(r"^[a-z]{2}$", country):
+                return False, [], f"Invalid GeoIP country code: {country}"
+            if mode not in {"direct", "multihop"}:
+                return False, [], f"Unsupported GeoIP routing mode: {mode}"
+            normalized[country] = mode
+
+        # Backward compatibility with old single-list direct mode.
+        if len(normalized) == 0:
+            status, countries, msg = self.__parseGeoDirectCountries(multiHop.GeoDirectCountries)
+            if status:
+                for country in countries:
+                    normalized[country] = "direct"
+            elif len(str(multiHop.GeoDirectCountries).strip()) > 0:
+                return False, [], msg
+
+        if len(normalized) == 0:
+            return False, [], "Geo zones list cannot be empty"
+
+        result = []
+        for country in sorted(normalized.keys()):
+            result.append({
+                "Country": country,
+                "Mode": normalized[country]
+            })
+        return True, result, None
+
     def __validateMultiHopConfiguration(self, multiHop: MultiHopConfigurationClass) -> tuple[bool, str | None, str | None]:
         if not multiHop.Enabled and not multiHop.LocalDNSInstalled and not multiHop.GeoDirectEnabled:
             return True, None, None
@@ -1324,9 +1363,9 @@ class WireguardConfiguration:
         if multiHop.GeoDirectEnabled:
             if not multiHop.Enabled:
                 return False, "GeoIP direct routing requires multi-hop to be enabled", "GeoDirectEnabled"
-            status, _, msg = self.__parseGeoDirectCountries(multiHop.GeoDirectCountries)
+            status, _, msg = self.__normalizeGeoZoneRules(multiHop)
             if not status:
-                return False, msg, "GeoDirectCountries"
+                return False, msg, "GeoZoneRules"
             sourceTemplate = multiHop.GeoDirectSourceTemplate.strip()
             if len(sourceTemplate) == 0:
                 return False, "GeoIP source template cannot be empty", "GeoDirectSourceTemplate"
@@ -1364,12 +1403,17 @@ class WireguardConfiguration:
             routedNetworks = self.__splitNetworks(multiHop.RoutedNetworks)
             excludedNetworks = self.__splitNetworks(multiHop.ExcludedNetworks)
             geoDirectEnabled = bool(multiHop.GeoDirectEnabled)
+            geoZoneRules = []
             geoDirectCountries = []
+            geoMultiHopCountries = []
             geoSourceTemplate = multiHop.GeoDirectSourceTemplate.strip()
             if geoDirectEnabled:
-                _, geoDirectCountries, _ = self.__parseGeoDirectCountries(multiHop.GeoDirectCountries)
+                _, geoZoneRules, _ = self.__normalizeGeoZoneRules(multiHop)
+                geoDirectCountries = [x["Country"] for x in geoZoneRules if x["Mode"] == "direct"]
+                geoMultiHopCountries = [x["Country"] for x in geoZoneRules if x["Mode"] == "multihop"]
             objectHash = hashlib.sha1(self.Name.encode("utf-8")).hexdigest()[:10]
-            geoSetName = f"wgd_geo_{objectHash}"
+            geoSetDirectName = f"wgd_geo_d_{objectHash}"
+            geoSetMultiHopName = f"wgd_geo_m_{objectHash}"
             geoChainName = f"WGDGEO{objectHash.upper()}"
 
             postUpCommands.extend([
@@ -1377,20 +1421,40 @@ class WireguardConfiguration:
                 f"ip rule add fwmark {firewallMark} table {tableID} priority {rulePriority} >/dev/null 2>&1 || true"
             ])
             if geoDirectEnabled:
-                postUpCommands.extend([
-                    f"ipset create {geoSetName} hash:net family inet -exist",
-                    f"ipset flush {geoSetName}"
-                ])
+                postUpCommands.append(f"ipset create {geoSetDirectName} hash:net family inet -exist")
+                postUpCommands.append(f"ipset create {geoSetMultiHopName} hash:net family inet -exist")
+                postUpCommands.append(f"ipset flush {geoSetDirectName}")
+                postUpCommands.append(f"ipset flush {geoSetMultiHopName}")
                 for country in geoDirectCountries:
                     sourceURL = shlex.quote(geoSourceTemplate.replace("{country}", country))
                     postUpCommands.append(
-                        f"curl -fsSL {sourceURL} | grep -E '^[0-9.]+/[0-9]+$' | xargs -r -n1 ipset add {geoSetName} -exist"
+                        f"curl -fsSL {sourceURL} | grep -E '^[0-9.]+/[0-9]+$' | xargs -r -n1 ipset add {geoSetDirectName} -exist"
+                    )
+                for country in geoMultiHopCountries:
+                    sourceURL = shlex.quote(geoSourceTemplate.replace("{country}", country))
+                    postUpCommands.append(
+                        f"curl -fsSL {sourceURL} | grep -E '^[0-9.]+/[0-9]+$' | xargs -r -n1 ipset add {geoSetMultiHopName} -exist"
                     )
                 postUpCommands.extend([
                     f"iptables -t mangle -N {geoChainName} >/dev/null 2>&1 || true",
                     f"iptables -t mangle -F {geoChainName}",
-                    f"iptables -t mangle -A {geoChainName} -m set --match-set {geoSetName} dst -j RETURN",
-                    f"iptables -t mangle -A {geoChainName} -j MARK --set-mark {firewallMark}",
+                ])
+                if len(geoDirectCountries) > 0:
+                    postUpCommands.append(
+                        f"iptables -t mangle -A {geoChainName} -m set --match-set {geoSetDirectName} dst -j RETURN"
+                    )
+                if len(geoMultiHopCountries) > 0:
+                    postUpCommands.append(
+                        f"iptables -t mangle -A {geoChainName} -m set --match-set {geoSetMultiHopName} dst -j MARK --set-mark {firewallMark}"
+                    )
+                    postUpCommands.append(
+                        f"iptables -t mangle -A {geoChainName} -j RETURN"
+                    )
+                else:
+                    postUpCommands.append(
+                        f"iptables -t mangle -A {geoChainName} -j MARK --set-mark {firewallMark}"
+                    )
+                postUpCommands.extend([
                     (f"iptables -t mangle -C PREROUTING -i {inboundInterface} -j {geoChainName} >/dev/null 2>&1 "
                      f"|| iptables -t mangle -A PREROUTING -i {inboundInterface} -j {geoChainName}")
                 ])
@@ -1398,8 +1462,10 @@ class WireguardConfiguration:
                     f"iptables -t mangle -D PREROUTING -i {inboundInterface} -j {geoChainName} >/dev/null 2>&1 || true",
                     f"iptables -t mangle -F {geoChainName} >/dev/null 2>&1 || true",
                     f"iptables -t mangle -X {geoChainName} >/dev/null 2>&1 || true",
-                    f"ipset flush {geoSetName} >/dev/null 2>&1 || true",
-                    f"ipset destroy {geoSetName} >/dev/null 2>&1 || true"
+                    f"ipset flush {geoSetDirectName} >/dev/null 2>&1 || true",
+                    f"ipset flush {geoSetMultiHopName} >/dev/null 2>&1 || true",
+                    f"ipset destroy {geoSetDirectName} >/dev/null 2>&1 || true",
+                    f"ipset destroy {geoSetMultiHopName} >/dev/null 2>&1 || true"
                 ])
             else:
                 postUpCommands.append(

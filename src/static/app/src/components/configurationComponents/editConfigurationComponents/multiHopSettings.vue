@@ -2,7 +2,7 @@
 import LocaleText from "@/components/text/localeText.vue";
 import {fetchGet, fetchPost} from "@/utilities/fetch.js";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
-import {onMounted, ref, watch} from "vue";
+import {computed, onMounted, ref, watch} from "vue";
 
 const props = defineProps({
 	configuration: Object
@@ -21,8 +21,39 @@ const defaultSettings = () => ({
 	FirewallMark: 51820,
 	EnableMasquerade: true,
 	AutoSetInterfaceTableOff: true,
+	GeoDirectEnabled: false,
+	GeoDirectCountries: "",
+	GeoDirectSourceTemplate: "https://www.ipdeny.com/ipblocks/data/aggregated/{country}-aggregated.zone",
+	GeoZoneRules: [],
 	LocalDNSInstalled: false,
 	LocalDNSAddress: ""
+})
+
+const GEO_ZONE_CODES = "AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KR,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW".split(",")
+const GEO_ZONE_MODES = ["direct", "multihop"]
+
+const geoZoneSearch = ref("")
+const geoDisplay = (() => {
+	try {
+		return new Intl.DisplayNames(["en"], {type: "region"})
+	}catch (e){
+		return null
+	}
+})()
+const geoZoneOptions = GEO_ZONE_CODES
+	.map((code) => ({
+		code: code.toLowerCase(),
+		name: (geoDisplay ? (geoDisplay.of(code) || code) : code)
+	}))
+	.sort((a, b) => a.name.localeCompare(b.name))
+const filteredGeoZones = computed(() => {
+	const keyword = geoZoneSearch.value.trim().toLowerCase()
+	if (keyword.length === 0){
+		return geoZoneOptions
+	}
+	return geoZoneOptions.filter((zone) =>
+		zone.code.includes(keyword) || zone.name.toLowerCase().includes(keyword)
+	)
 })
 
 const settings = ref(defaultSettings())
@@ -44,10 +75,76 @@ const edited = ref(false)
 const errorMessage = ref("")
 const errorField = ref("")
 
+const normalizeGeoZoneRules = (rules) => {
+	if (!Array.isArray(rules)){
+		return []
+	}
+	const map = new Map()
+	for (const rule of rules){
+		if (!rule || typeof rule !== "object") continue
+		const country = String(rule.Country || "").trim().toLowerCase()
+		const mode = String(rule.Mode || "direct").trim().toLowerCase()
+		if (!country.match(/^[a-z]{2}$/)) continue
+		map.set(country, (mode === "multihop" ? "multihop" : "direct"))
+	}
+	return Array.from(map.keys())
+		.sort((a, b) => a.localeCompare(b))
+		.map((country) => ({
+			Country: country,
+			Mode: map.get(country)
+		}))
+}
+
+const getGeoZoneRule = (country) => {
+	const rules = Array.isArray(settings.value.GeoZoneRules) ? settings.value.GeoZoneRules : []
+	return rules.find((rule) => String(rule?.Country || "").toLowerCase() === country) || null
+}
+
+const isGeoZoneChecked = (country) => getGeoZoneRule(country) !== null
+const getGeoZoneMode = (country) => getGeoZoneRule(country)?.Mode || "direct"
+
+const toggleGeoZone = (country, checked) => {
+	let rules = normalizeGeoZoneRules(settings.value.GeoZoneRules)
+	rules = rules.filter((rule) => rule.Country !== country)
+	if (checked){
+		rules.push({Country: country, Mode: "direct"})
+	}
+	settings.value.GeoZoneRules = normalizeGeoZoneRules(rules)
+}
+
+const updateGeoZoneMode = (country, mode) => {
+	const selectedMode = (mode === "multihop" ? "multihop" : "direct")
+	let rules = normalizeGeoZoneRules(settings.value.GeoZoneRules)
+	const current = rules.find((rule) => rule.Country === country)
+	if (current){
+		current.Mode = selectedMode
+	}else{
+		rules.push({Country: country, Mode: selectedMode})
+	}
+	settings.value.GeoZoneRules = normalizeGeoZoneRules(rules)
+}
+
+const selectedGeoZones = computed(() => {
+	const rules = Array.isArray(settings.value.GeoZoneRules) ? settings.value.GeoZoneRules : []
+	return rules.length
+})
+
 const syncFromConfiguration = () => {
 	settings.value = {
 		...defaultSettings(),
 		...(props.configuration?.Info?.MultiHop || {})
+	}
+	settings.value.GeoZoneRules = normalizeGeoZoneRules(settings.value.GeoZoneRules)
+	if (settings.value.GeoZoneRules.length === 0){
+		const legacyCountries = String(settings.value.GeoDirectCountries || "")
+			.split(",")
+			.map((country) => country.trim().toLowerCase())
+			.filter((country) => country.match(/^[a-z]{2}$/))
+		if (legacyCountries.length > 0){
+			settings.value.GeoZoneRules = normalizeGeoZoneRules(
+				legacyCountries.map((country) => ({Country: country, Mode: "direct"}))
+			)
+		}
 	}
 	edited.value = false
 }
@@ -72,9 +169,16 @@ const save = async (apply = false) => {
 	saving.value = true
 	errorField.value = ""
 	errorMessage.value = ""
-	await fetchPost("/api/updateWireguardConfigurationMultiHop", {
+await fetchPost("/api/updateWireguardConfigurationMultiHop", {
 		Name: props.configuration.Name,
-		Value: settings.value,
+		Value: {
+			...settings.value,
+			GeoZoneRules: normalizeGeoZoneRules(settings.value.GeoZoneRules),
+			GeoDirectCountries: normalizeGeoZoneRules(settings.value.GeoZoneRules)
+				.filter((rule) => rule.Mode === "direct")
+				.map((rule) => rule.Country)
+				.join(",")
+		},
 		Apply: apply
 	}, (res) => {
 		saving.value = false
@@ -198,6 +302,69 @@ onMounted(async () => {
 			       class="form-control form-control-sm rounded-3"
 			       :class="{'is-invalid': errorField === 'ExcludedNetworks'}"
 			       v-model="settings.ExcludedNetworks">
+		</div>
+		<div class="d-flex gap-3 flex-column">
+			<div class="form-check form-switch">
+				<input class="form-check-input" type="checkbox" role="switch" id="multiHop_geoDirectEnabled" v-model="settings.GeoDirectEnabled">
+				<label class="form-check-label" for="multiHop_geoDirectEnabled">
+					<LocaleText t="Geo Zone Routing"></LocaleText>
+				</label>
+			</div>
+			<div>
+				<label for="multiHop_geoSourceTemplate" class="form-label">
+					<small class="text-muted">
+						<LocaleText t="Geo Source URL Template"></LocaleText>
+					</small>
+				</label>
+				<input type="text"
+				       id="multiHop_geoSourceTemplate"
+				       class="form-control form-control-sm rounded-3"
+				       :disabled="!settings.GeoDirectEnabled"
+				       :class="{'is-invalid': errorField === 'GeoDirectSourceTemplate'}"
+				       v-model="settings.GeoDirectSourceTemplate">
+			</div>
+			<div>
+				<label for="multiHop_geoSearch" class="form-label">
+					<small class="text-muted">
+						<LocaleText t="Geo Zones"></LocaleText>
+					</small>
+				</label>
+				<input type="text"
+				       id="multiHop_geoSearch"
+				       class="form-control form-control-sm rounded-3"
+				       :disabled="!settings.GeoDirectEnabled"
+				       :placeholder="'Search by code or country'"
+				       v-model="geoZoneSearch">
+				<div class="geo-zone-list border rounded-3 mt-2 p-2"
+				     :class="{'opacity-50': !settings.GeoDirectEnabled, 'border-danger': errorField === 'GeoZoneRules'}">
+					<div class="geo-zone-row d-flex align-items-center justify-content-between gap-2"
+					     v-for="zone in filteredGeoZones"
+					     :key="zone.code">
+						<div class="form-check my-1">
+							<input class="form-check-input"
+							       type="checkbox"
+							       :id="'geo_zone_' + zone.code"
+							       :disabled="!settings.GeoDirectEnabled"
+							       :checked="isGeoZoneChecked(zone.code)"
+							       @change="toggleGeoZone(zone.code, $event.target.checked)">
+							<label class="form-check-label" :for="'geo_zone_' + zone.code">
+								{{ zone.name }} ({{ zone.code.toUpperCase() }})
+							</label>
+						</div>
+						<select class="form-select form-select-sm geo-zone-mode"
+						        :disabled="!settings.GeoDirectEnabled || !isGeoZoneChecked(zone.code)"
+						        :value="getGeoZoneMode(zone.code)"
+						        @change="updateGeoZoneMode(zone.code, $event.target.value)">
+							<option v-for="mode in GEO_ZONE_MODES" :key="mode" :value="mode">
+								{{ mode }}
+							</option>
+						</select>
+					</div>
+				</div>
+				<small class="text-muted">
+					<LocaleText t="Selected Geo Zones"></LocaleText>: {{ selectedGeoZones }}
+				</small>
+			</div>
 		</div>
 		<div class="d-flex gap-3 flex-column">
 			<div class="form-check form-switch">
@@ -325,5 +492,20 @@ onMounted(async () => {
 <style scoped>
 textarea{
 	font-family: monospace;
+}
+.geo-zone-list{
+	max-height: 280px;
+	overflow-y: auto;
+	background: rgba(255, 255, 255, 0.02);
+}
+.geo-zone-row{
+	border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+.geo-zone-row:last-child{
+	border-bottom: none;
+}
+.geo-zone-mode{
+	width: 130px;
+	min-width: 130px;
 }
 </style>

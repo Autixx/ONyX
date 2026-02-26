@@ -29,6 +29,7 @@ class MultiHopConfigurationClass(BaseModel):
     GeoDirectEnabled: bool = False
     GeoDirectCountries: str = ''
     GeoDirectSourceTemplate: str = 'https://www.ipdeny.com/ipblocks/data/aggregated/{country}-aggregated.zone'
+    GeoZoneRules: list[dict[str, str]] = Field(default_factory=list)
     LocalDNSInstalled: bool = False
     LocalDNSAddress: str = ''
 
