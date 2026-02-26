@@ -7,6 +7,9 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/wgd-awg-multihop}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/wgdashboard}"
 SERVICE_NAME="${SERVICE_NAME:-wg-dashboard}"
 AUTO_INSTALL_AWG="${AUTO_INSTALL_AWG:-true}"
+AUTO_INSTALL_NODE="${AUTO_INSTALL_NODE:-true}"
+BUILD_FRONTEND="${BUILD_FRONTEND:-true}"
+NODE_MAJOR="${NODE_MAJOR:-20}"
 AWG_TOOLS_REPO="${AWG_TOOLS_REPO:-https://github.com/amnezia-vpn/amneziawg-tools.git}"
 AWG_TOOLS_REF="${AWG_TOOLS_REF:-master}"
 AWG_GO_REPO="${AWG_GO_REPO:-https://github.com/amnezia-vpn/amneziawg-go.git}"
@@ -42,6 +45,9 @@ Options:
   --config-dir <path>     Runtime config dir (default: /etc/wgdashboard)
   --service-name <name>   systemd unit name without suffix (default: wg-dashboard)
   --no-install-awg        Do not auto-install amneziawg-tools/amneziawg-go
+  --no-install-node       Do not auto-install Node.js/npm
+  --no-build-frontend     Skip frontend build (src/static/app -> src/static/dist)
+  --node-major <num>      Node.js major version for auto-install (default: 20)
   --awg-tools-repo <url>  amneziawg-tools repository URL
   --awg-tools-ref <ref>   amneziawg-tools git ref (default: master)
   --awg-go-repo <url>     amneziawg-go repository URL
@@ -189,6 +195,51 @@ PY
   if [[ "$(version_ge "${current_version}" "${min_version}")" != "0" ]]; then
     fail "[awg] Go install failed. Current version ${current_version}, required ${min_version}."
   fi
+}
+
+ensure_nodejs_toolchain() {
+  local requested_major="$1"
+  local current_major=""
+
+  [[ "${requested_major}" =~ ^[0-9]+$ ]] || fail "[frontend] Invalid Node.js major version: ${requested_major}"
+
+  if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+    current_major="$(node -v | sed -E 's/^v([0-9]+).*/\1/')"
+    if [[ "${current_major}" =~ ^[0-9]+$ ]] && (( current_major >= requested_major )); then
+      echo "[frontend] Node.js is compatible ($(node -v), npm $(npm -v))."
+      return
+    fi
+  fi
+
+  echo "[frontend] Installing Node.js ${requested_major}.x from NodeSource..."
+  apt-get install -y ca-certificates curl gnupg
+  curl -fsSL "https://deb.nodesource.com/setup_${requested_major}.x" | bash -
+  apt-get install -y nodejs
+
+  command -v node >/dev/null 2>&1 || fail "[frontend] Node.js install failed: node not found."
+  command -v npm >/dev/null 2>&1 || fail "[frontend] Node.js install failed: npm not found."
+}
+
+build_frontend_assets() {
+  local install_dir="$1"
+  local app_dir="${install_dir}/src/static/app"
+
+  if [[ ! -f "${app_dir}/package.json" ]]; then
+    echo "[frontend] Frontend source not found, skipping build."
+    return
+  fi
+
+  command -v npm >/dev/null 2>&1 || fail "[frontend] npm is required to build frontend assets."
+  echo "[frontend] Building frontend assets..."
+  (
+    cd "${app_dir}"
+    if [[ -f "package-lock.json" ]]; then
+      npm ci --no-audit --no-fund
+    else
+      npm install --no-audit --no-fund
+    fi
+    npm run build
+  )
 }
 
 sync_git_checkout() {
@@ -456,6 +507,18 @@ while [[ $# -gt 0 ]]; do
       AUTO_INSTALL_AWG="false"
       shift 1
       ;;
+    --no-install-node)
+      AUTO_INSTALL_NODE="false"
+      shift 1
+      ;;
+    --no-build-frontend)
+      BUILD_FRONTEND="false"
+      shift 1
+      ;;
+    --node-major)
+      NODE_MAJOR="$2"
+      shift 2
+      ;;
     --awg-tools-repo)
       AWG_TOOLS_REPO="$2"
       shift 2
@@ -572,12 +635,13 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 
-echo "[1/9] Installing OS dependencies..."
+echo "[1/10] Installing OS dependencies..."
 apt-get update
 apt-get install -y \
   ca-certificates \
   curl \
   git \
+  gnupg \
   iproute2 \
   ipset \
   iptables \
@@ -599,7 +663,7 @@ fi
 
 mkdir -p /etc/wireguard
 
-echo "[2/9] Ensuring AmneziaWG binaries..."
+echo "[2/10] Ensuring AmneziaWG binaries..."
 if [[ "${AUTO_INSTALL_AWG}" == "true" ]]; then
   install_awg_stack
 else
@@ -608,7 +672,7 @@ else
   fi
 fi
 
-echo "[3/9] Fetching project source..."
+echo "[3/10] Fetching project source..."
 if [[ -d "${INSTALL_DIR}/.git" ]]; then
   git -C "${INSTALL_DIR}" fetch --all --tags
 else
@@ -628,7 +692,7 @@ if [[ ! -f "${SRC_DIR}/dashboard.py" ]]; then
   exit 1
 fi
 
-echo "[4/9] Preparing runtime directories..."
+echo "[4/10] Preparing runtime directories..."
 mkdir -p "${SRC_DIR}/log" "${SRC_DIR}/download"
 mkdir -p "${CONFIG_DIR}/db" "${CONFIG_DIR}/letsencrypt/work-dir" "${CONFIG_DIR}/letsencrypt/config-dir"
 
@@ -640,16 +704,26 @@ private_key_path =
 EOF
 fi
 
-echo "[5/9] Creating Python virtualenv..."
+echo "[5/10] Creating Python virtualenv..."
 python3 -m venv "${SRC_DIR}/venv"
 
-echo "[6/9] Installing Python dependencies..."
+echo "[6/10] Installing Python dependencies..."
 "${SRC_DIR}/venv/bin/python3" -m pip install --upgrade pip wheel setuptools
 "${SRC_DIR}/venv/bin/python3" -m pip install -r "${SRC_DIR}/requirements.txt"
 
 chmod +x "${SRC_DIR}/wgd.sh"
 
-echo "[7/9] Installing systemd service..."
+echo "[7/10] Building frontend assets..."
+if [[ "${BUILD_FRONTEND}" == "true" ]]; then
+  if [[ "${AUTO_INSTALL_NODE}" == "true" ]]; then
+    ensure_nodejs_toolchain "${NODE_MAJOR}"
+  fi
+  build_frontend_assets "${INSTALL_DIR}"
+else
+  echo "[frontend] skipped (--no-build-frontend)"
+fi
+
+echo "[8/10] Installing systemd service..."
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 cat > "${SERVICE_FILE}" <<EOF
 [Unit]
@@ -675,11 +749,11 @@ PrivateTmp=yes
 WantedBy=multi-user.target
 EOF
 
-echo "[8/9] Enabling and starting service..."
+echo "[9/10] Enabling and starting service..."
 systemctl daemon-reload
 systemctl enable --now "${SERVICE_NAME}.service"
 
-echo "[9/9] Optional inbound bootstrap..."
+echo "[10/10] Optional inbound bootstrap..."
 if [[ -n "${BOOTSTRAP_INBOUND}" ]]; then
   create_bootstrap_inbound \
     "${BOOTSTRAP_INBOUND}" \

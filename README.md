@@ -15,11 +15,12 @@ sudo bash scripts/install_ubuntu.sh
 Installer now auto-installs missing AWG components from official repos:
 - `amneziawg-tools` (`awg`, `awg-quick`)
 - `amneziawg-go`
+- Node.js/npm (for frontend build)
 
 If you want to skip that behavior, use:
 
 ```bash
-sudo bash scripts/install_ubuntu.sh --no-install-awg
+sudo bash scripts/install_ubuntu.sh --no-install-awg --no-install-node --no-build-frontend
 ```
 
 One-command deploy with ready inbound `wg0` (keys + NAT + interface up):
