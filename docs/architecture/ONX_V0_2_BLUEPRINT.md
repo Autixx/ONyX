@@ -53,6 +53,7 @@ The repository should grow this structure:
     ADR-0001-domain-model.md
     ADR-0002-driver-contract.md
     ADR-0003-ssh-first-deployment.md
+    ADR-0004-control-plane-ha.md
 
 /onx
   /api
@@ -187,6 +188,25 @@ For v1 this is not a separate long-running process on the node.
 It is SSH-based execution launched by the ONX API/Scheduler.
 
 Later it may be replaced by an ONX agent.
+
+## Control Plane Strategy in v0.2
+
+The first implementation remains single-control.
+
+That is intentional.
+
+However, the project already reserves a migration path toward:
+
+- three control-plane nodes
+- replicated database state
+- failover
+- leader-controlled job execution
+
+The accepted decision is recorded in:
+
+- `ADR-0004-control-plane-ha.md`
+
+Database sharding is not part of the near-term roadmap.
 
 ## Dependency Set
 
@@ -992,4 +1012,3 @@ The next implementation artifact after this blueprint should be:
 or, if coding starts immediately:
 
 - `onx/` backend skeleton with FastAPI, settings, SQLAlchemy base, and the `Node` schema/API.
-

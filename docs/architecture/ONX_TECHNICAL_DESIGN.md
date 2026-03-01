@@ -516,6 +516,25 @@ Agent responsibilities:
 - execute driver actions
 - return structured status
 
+## Control Plane Availability
+
+ONX must distinguish between:
+
+- data plane survivability
+- control plane survivability
+
+An already deployed transport network may continue carrying traffic even if the current control node is lost, but the system becomes partially or fully unmanaged without a surviving control-plane path.
+
+The chosen long-term strategy is:
+
+- v1: single control node plus encrypted off-node backups
+- v2: three control-plane nodes with replication and failover
+- no database sharding in the early architecture stages
+
+This decision is formalized in:
+
+- `ADR-0004-control-plane-ha.md`
+
 ## Observability Model
 
 ONX must expose:
@@ -708,4 +727,3 @@ The next document should define:
 - Python dependency set
 - database schema draft
 - first REST endpoints for `Node` and `Link`
-
