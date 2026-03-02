@@ -11,6 +11,7 @@ from onx.db.base import Base
 class NodeSecretKind(StrEnum):
     SSH_PASSWORD = "ssh_password"
     SSH_PRIVATE_KEY = "ssh_private_key"
+    TRANSPORT_PRIVATE_KEY = "transport_private_key"
 
 
 class NodeSecret(Base):

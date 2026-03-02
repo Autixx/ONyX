@@ -45,6 +45,36 @@ class SecretService:
         db.flush()
         return existing
 
+    def upsert_node_secret_with_ref(
+        self,
+        db: Session,
+        node_id: str,
+        kind: NodeSecretKind,
+        secret_ref: str,
+        secret_value: str,
+    ) -> NodeSecret:
+        existing = db.scalar(select(NodeSecret).where(NodeSecret.secret_ref == secret_ref))
+        encrypted_value = self.encrypt(secret_value)
+        if existing is None:
+            secret = NodeSecret(
+                node_id=node_id,
+                kind=kind,
+                secret_ref=secret_ref,
+                encrypted_value=encrypted_value,
+                is_active=True,
+            )
+            db.add(secret)
+            db.flush()
+            return secret
+
+        existing.node_id = node_id
+        existing.kind = kind
+        existing.encrypted_value = encrypted_value
+        existing.is_active = True
+        db.add(existing)
+        db.flush()
+        return existing
+
     def get_active_secret(self, db: Session, node_id: str, kind: NodeSecretKind) -> NodeSecret | None:
         return db.scalar(
             select(NodeSecret).where(
@@ -53,3 +83,6 @@ class SecretService:
                 NodeSecret.is_active.is_(True),
             )
         )
+
+    def get_secret_by_ref(self, db: Session, secret_ref: str) -> NodeSecret | None:
+        return db.scalar(select(NodeSecret).where(NodeSecret.secret_ref == secret_ref))

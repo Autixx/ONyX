@@ -26,6 +26,18 @@ class AWGDriver(DriverBase):
         return warnings
 
     def _render_preview(self, spec: dict[str, Any]) -> dict[str, str]:
+        return self.render_runtime(
+            spec=spec,
+            left_public_key="<generated-on-apply>",
+            right_public_key="<generated-on-apply>",
+        )
+
+    def render_runtime(
+        self,
+        spec: dict[str, Any],
+        left_public_key: str,
+        right_public_key: str,
+    ) -> dict[str, str]:
         left = spec["left"]
         right = spec["right"]
         obf = spec["awg_obfuscation"]
@@ -48,7 +60,7 @@ class AWGDriver(DriverBase):
             f"H4 = {obf['h4']}",
             "",
             "[Peer]",
-            "PublicKey = <generated-on-apply>",
+            f"PublicKey = {right_public_key}",
             f"AllowedIPs = {','.join(peer['left_allowed_ips'])}",
             f"Endpoint = {right['endpoint_host']}:{right['listen_port']}",
             f"PersistentKeepalive = {peer['persistent_keepalive']}",
@@ -74,7 +86,7 @@ class AWGDriver(DriverBase):
             f"H4 = {obf['h4']}",
             "",
             "[Peer]",
-            "PublicKey = <generated-on-apply>",
+            f"PublicKey = {left_public_key}",
             f"AllowedIPs = {','.join(right_allowed_ips)}",
             f"Endpoint = {left['endpoint_host']}:{left['listen_port']}",
             f"PersistentKeepalive = {peer['persistent_keepalive']}",
