@@ -4,24 +4,27 @@ from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
 from onx.db.models.node import Node
+from onx.db.models.job import JobKind, JobTargetType
 from onx.db.models.node_capability import NodeCapability
 from onx.db.models.node_secret import NodeSecretKind
+from onx.schemas.jobs import JobRead
 from onx.schemas.nodes import (
     NodeCapabilityRead,
     NodeCreate,
-    NodeDiscoverResponse,
     NodeRead,
     NodeSecretRead,
     NodeSecretUpsert,
     NodeUpdate,
 )
 from onx.services.discovery_service import DiscoveryService
+from onx.services.job_service import JobService
 from onx.services.secret_service import SecretService
 
 
 router = APIRouter(prefix="/nodes", tags=["nodes"])
 secret_service = SecretService()
 discovery_service = DiscoveryService()
+job_service = JobService()
 
 
 @router.get("", response_model=list[NodeRead])
@@ -120,20 +123,35 @@ def get_node_capabilities(
     )
 
 
-@router.post("/{node_id}/discover", response_model=NodeDiscoverResponse)
+@router.post("/{node_id}/discover", response_model=JobRead)
 def discover_node(
     node_id: str,
     db: Session = Depends(get_database_session),
-) -> NodeDiscoverResponse:
+) -> JobRead:
     node = db.get(Node, node_id)
     if node is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found.")
 
+    job = job_service.create_job(
+        db,
+        kind=JobKind.DISCOVER,
+        target_type=JobTargetType.NODE,
+        target_id=node.id,
+        request_payload={"node_id": node.id, "node_name": node.name},
+    )
+    job_service.start_job(db, job, "starting discovery")
+
     try:
-        result = discovery_service.discover_node(db, node)
+        result = discovery_service.discover_node(
+            db,
+            node,
+            progress_callback=lambda step: job_service.update_step(db, job, step),
+        )
     except ValueError as exc:
+        job_service.fail(db, job, str(exc))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RuntimeError as exc:
+        job_service.fail(db, job, str(exc))
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     capabilities = list(
@@ -144,8 +162,15 @@ def discover_node(
         ).all()
     )
     db.refresh(node)
-    return NodeDiscoverResponse(
-        node=node,
-        interfaces=result["interfaces"],
-        capabilities=capabilities,
+    return job_service.succeed(
+        db,
+        job,
+        {
+            "node": NodeRead.model_validate(node).model_dump(mode="json"),
+            "interfaces": result["interfaces"],
+            "capabilities": [
+                NodeCapabilityRead.model_validate(capability).model_dump(mode="json")
+                for capability in capabilities
+            ],
+        },
     )

@@ -77,12 +77,14 @@ class DiscoveryService:
                 "capabilities": capabilities,
             }
 
-    def discover_node(self, db: Session, node: Node) -> dict:
+    def discover_node(self, db: Session, node: Node, progress_callback=None) -> dict:
         secret_kind = (
             NodeSecretKind.SSH_PASSWORD
             if node.auth_type == NodeAuthType.PASSWORD
             else NodeSecretKind.SSH_PRIVATE_KEY
         )
+        if progress_callback:
+            progress_callback("resolving management secret")
         secret = self._secrets.get_active_secret(db, node.id, secret_kind)
         if secret is None:
             raise ValueError(f"Active {secret_kind} secret is missing for node '{node.name}'.")
@@ -90,6 +92,8 @@ class DiscoveryService:
         secret_value = self._secrets.decrypt(secret.encrypted_value)
 
         try:
+            if progress_callback:
+                progress_callback("connecting over ssh")
             result = asyncio.run(self._discover_async(node, secret_value))
         except Exception as exc:
             node.status = NodeStatus.OFFLINE
@@ -97,6 +101,8 @@ class DiscoveryService:
             db.commit()
             raise RuntimeError(str(exc)) from exc
 
+        if progress_callback:
+            progress_callback("updating node metadata")
         node.os_family = result["os_family"]
         node.os_version = result["os_version"]
         node.kernel_version = result["kernel_version"]
@@ -104,6 +110,8 @@ class DiscoveryService:
         node.status = NodeStatus.REACHABLE
         db.add(node)
 
+        if progress_callback:
+            progress_callback("saving capability snapshot")
         for capability_name, capability_data in result["capabilities"].items():
             existing = db.scalar(
                 select(NodeCapability).where(

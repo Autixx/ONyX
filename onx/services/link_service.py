@@ -154,7 +154,9 @@ class LinkService:
         )
         return private_key, public_key, secret_ref
 
-    def apply_link(self, db: Session, link: Link) -> dict:
+    def apply_link(self, db: Session, link: Link, progress_callback=None) -> dict:
+        if progress_callback:
+            progress_callback("validating link")
         validation = self.validate_link(db, link)
         driver = get_driver(link.driver_name)
 
@@ -178,9 +180,13 @@ class LinkService:
         if left_endpoint is None or right_endpoint is None:
             raise ValueError("Link endpoints are missing.")
 
+        if progress_callback:
+            progress_callback("loading management secrets")
         left_mgmt_secret = self._get_management_secret(db, left_node)
         right_mgmt_secret = self._get_management_secret(db, right_node)
 
+        if progress_callback:
+            progress_callback("generating transport keypairs")
         left_private, left_public, left_secret_ref = self._ensure_transport_keypair(
             db, left_node.id, link.id, LinkSide.LEFT
         )
@@ -188,6 +194,8 @@ class LinkService:
             db, right_node.id, link.id, LinkSide.RIGHT
         )
 
+        if progress_callback:
+            progress_callback("rendering runtime configs")
         runtime_configs = driver.render_runtime(
             spec=link.desired_spec_json,
             left_public_key=left_public,
@@ -215,13 +223,19 @@ class LinkService:
         db.commit()
 
         try:
+            if progress_callback:
+                progress_callback("writing left config")
             self._executor.write_file(left_node, left_mgmt_secret, left_path, left_config)
+            if progress_callback:
+                progress_callback("writing right config")
             self._executor.write_file(right_node, right_mgmt_secret, right_path, right_config)
 
             for node, secret, iface in (
                 (left_node, left_mgmt_secret, left_endpoint.interface_name),
                 (right_node, right_mgmt_secret, right_endpoint.interface_name),
             ):
+                if progress_callback:
+                    progress_callback(f"bringing up {iface} on {node.name}")
                 command = (
                     f"sh -lc 'awg-quick down {iface} >/dev/null 2>&1 || true; "
                     f"awg-quick up /etc/amnezia/amneziawg/{iface}.conf'"
@@ -231,6 +245,8 @@ class LinkService:
                     raise RuntimeError(stderr or f"Failed to bring up interface {iface} on node {node.name}")
 
             left_peer_pub = right_public
+            if progress_callback:
+                progress_callback("verifying handshake")
             handshake_command = (
                 f"sh -lc 'sleep 2; awg show {left_endpoint.interface_name} latest-handshakes | grep -F {left_peer_pub}'"
             )
@@ -287,6 +303,8 @@ class LinkService:
         db.add(link)
         db.commit()
         db.refresh(link)
+        if progress_callback:
+            progress_callback("completed")
         return {
             "link": link,
             "message": "Link applied successfully",
