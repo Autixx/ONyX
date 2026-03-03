@@ -6,6 +6,7 @@ from threading import Lock
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import select
 
+from onx.core.config import get_settings
 from onx.db.models.job import Job, JobKind, JobState
 from onx.db.models.link import Link
 from onx.db.models.node import Node
@@ -19,8 +20,17 @@ from onx.services.link_service import LinkService
 
 
 class JobWorker:
-    def __init__(self, poll_interval_seconds: int = 2) -> None:
+    def __init__(
+        self,
+        *,
+        poll_interval_seconds: int = 2,
+        lease_seconds: int = 300,
+        worker_id: str | None = None,
+    ) -> None:
+        settings = get_settings()
         self._poll_interval_seconds = poll_interval_seconds
+        self._lease_seconds = lease_seconds
+        self._worker_id = worker_id or settings.worker_id
         self._scheduler = BackgroundScheduler(timezone="UTC")
         self._lock = Lock()
         self._jobs = JobService()
@@ -52,10 +62,10 @@ class JobWorker:
         try:
             while True:
                 with SessionLocal() as db:
-                    job = db.scalar(
-                        select(Job)
-                        .where(Job.state == JobState.PENDING)
-                        .order_by(Job.created_at.asc())
+                    job = self._jobs.acquire_next_job(
+                        db,
+                        worker_id=self._worker_id,
+                        lease_seconds=self._lease_seconds,
                     )
                     if job is None:
                         break
@@ -66,10 +76,12 @@ class JobWorker:
     def _execute_job(self, job_id: str) -> None:
         with SessionLocal() as db:
             job = db.get(Job, job_id)
-            if job is None or job.state != JobState.PENDING:
+            if (
+                job is None
+                or job.state != JobState.RUNNING
+                or job.worker_owner != self._worker_id
+            ):
                 return
-
-            self._jobs.start_job(db, job, "picked by worker")
 
             try:
                 if job.kind == JobKind.DISCOVER:
@@ -89,7 +101,7 @@ class JobWorker:
         result = self._discovery.discover_node(
             db,
             node,
-            progress_callback=lambda step: self._jobs.update_step(db, job, step),
+            progress_callback=lambda step: self._progress(db, job, step),
         )
         capabilities = list(
             db.scalars(
@@ -120,7 +132,7 @@ class JobWorker:
         result = self._links.apply_link(
             db,
             link,
-            progress_callback=lambda step: self._jobs.update_step(db, job, step),
+            progress_callback=lambda step: self._progress(db, job, step),
         )
         applied_link = result["link"]
         self._jobs.succeed(
@@ -132,3 +144,12 @@ class JobWorker:
                 "applied_at": datetime.now(timezone.utc).isoformat(),
             },
         )
+
+    def _progress(self, db, job: Job, step: str) -> None:
+        self._jobs.heartbeat(
+            db,
+            job,
+            worker_id=self._worker_id,
+            lease_seconds=self._lease_seconds,
+        )
+        self._jobs.update_step(db, job, step)

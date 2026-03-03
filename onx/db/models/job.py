@@ -54,6 +54,10 @@ class Job(Base):
     request_payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     result_payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    worker_owner: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    attempt_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

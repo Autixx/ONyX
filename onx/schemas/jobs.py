@@ -35,10 +35,14 @@ class JobRead(ONXBaseModel):
     target_type: JobTargetTypeValue
     target_id: str
     state: JobStateValue
+    worker_owner: str | None
+    attempt_count: int
     current_step: str | None
     request_payload_json: dict
     result_payload_json: dict | None
     error_text: str | None
+    heartbeat_at: datetime | None
+    lease_expires_at: datetime | None
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime

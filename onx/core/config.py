@@ -1,7 +1,10 @@
 import base64
 import hashlib
+import os
+import socket
 from functools import lru_cache
 from pathlib import Path
+from uuid import uuid4
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +21,10 @@ class Settings(BaseSettings):
     master_key: str = "onx-dev-master-key-change-me"
     ssh_connect_timeout_seconds: int = 10
     worker_poll_interval_seconds: int = 2
+    worker_lease_seconds: int = 300
+    worker_id: str = Field(
+        default_factory=lambda: f"{socket.gethostname()}-{os.getpid()}-{uuid4().hex[:8]}",
+    )
 
     model_config = SettingsConfigDict(
         env_prefix="ONX_",

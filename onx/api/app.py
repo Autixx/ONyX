@@ -14,7 +14,11 @@ from onx.workers.job_worker import JobWorker
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = get_settings()
-    worker = JobWorker(poll_interval_seconds=settings.worker_poll_interval_seconds)
+    worker = JobWorker(
+        poll_interval_seconds=settings.worker_poll_interval_seconds,
+        lease_seconds=settings.worker_lease_seconds,
+        worker_id=settings.worker_id,
+    )
     init_db()
     worker.start()
     yield
