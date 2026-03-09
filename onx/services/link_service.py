@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from onx.core.config import get_settings
 from onx.core.keys import generate_wireguard_keypair
 from onx.db.models.link import Link, LinkState
 from onx.db.models.link_endpoint import LinkEndpoint, LinkSide
@@ -12,13 +13,16 @@ from onx.db.models.node_secret import NodeSecretKind
 from onx.deploy.ssh_executor import SSHExecutor
 from onx.drivers.registry import get_driver
 from onx.schemas.links import LinkCreate
+from onx.services.interface_runtime_service import InterfaceRuntimeService
 from onx.services.secret_service import SecretService
 
 
 class LinkService:
     def __init__(self) -> None:
+        self._settings = get_settings()
         self._secrets = SecretService()
         self._executor = SSHExecutor()
+        self._runtime = InterfaceRuntimeService(self._executor)
 
     def create_link(self, db: Session, payload: LinkCreate) -> Link:
         if payload.left_node_id == payload.right_node_id:
@@ -212,8 +216,8 @@ class LinkService:
             1,
         )
 
-        left_path = f"/etc/amnezia/amneziawg/{left_endpoint.interface_name}.conf"
-        right_path = f"/etc/amnezia/amneziawg/{right_endpoint.interface_name}.conf"
+        left_path = f"{self._settings.onx_conf_dir}/{left_endpoint.interface_name}.conf"
+        right_path = f"{self._settings.onx_conf_dir}/{right_endpoint.interface_name}.conf"
 
         left_prev = self._executor.read_file(left_node, left_mgmt_secret, left_path)
         right_prev = self._executor.read_file(right_node, right_mgmt_secret, right_path)
@@ -223,6 +227,11 @@ class LinkService:
         db.commit()
 
         try:
+            if progress_callback:
+                progress_callback("ensuring interface runtime services")
+            self._runtime.ensure_runtime(left_node, left_mgmt_secret)
+            self._runtime.ensure_runtime(right_node, right_mgmt_secret)
+
             if progress_callback:
                 progress_callback("writing left config")
             self._executor.write_file(left_node, left_mgmt_secret, left_path, left_config)
@@ -235,14 +244,8 @@ class LinkService:
                 (right_node, right_mgmt_secret, right_endpoint.interface_name),
             ):
                 if progress_callback:
-                    progress_callback(f"bringing up {iface} on {node.name}")
-                command = (
-                    f"sh -lc 'awg-quick down {iface} >/dev/null 2>&1 || true; "
-                    f"awg-quick up /etc/amnezia/amneziawg/{iface}.conf'"
-                )
-                code, _, stderr = self._executor.run(node, secret, command)
-                if code != 0:
-                    raise RuntimeError(stderr or f"Failed to bring up interface {iface} on node {node.name}")
+                    progress_callback(f"restarting onx-link@{iface} on {node.name}")
+                self._runtime.restart_interface(node, secret, iface)
 
             left_peer_pub = right_public
             if progress_callback:
@@ -262,10 +265,10 @@ class LinkService:
                 (right_node, right_mgmt_secret, right_endpoint.interface_name, right_prev, right_path),
             ):
                 try:
-                    self._executor.run(node, secret, f"sh -lc 'awg-quick down {iface} >/dev/null 2>&1 || true'")
+                    self._runtime.stop_interface(node, secret, iface)
                     if previous_content is not None:
                         self._executor.write_file(node, secret, path, previous_content)
-                        self._executor.run(node, secret, f"sh -lc 'awg-quick up {path} >/dev/null 2>&1 || true'")
+                        self._runtime.restart_interface(node, secret, iface)
                 except Exception:
                     pass
 

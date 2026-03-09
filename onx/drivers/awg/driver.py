@@ -1,4 +1,5 @@
 import ipaddress
+import re
 from typing import Any
 
 from onx.drivers.base import DriverBase, DriverValidationResult
@@ -19,6 +20,8 @@ class AWGDriver(DriverBase):
         interface_name = str(endpoint_spec["interface_name"]).strip()
         if len(interface_name) == 0:
             raise ValueError("interface_name cannot be empty")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", interface_name):
+            raise ValueError("interface_name must match [A-Za-z0-9_.-]{1,32}")
 
         if not 1 <= int(endpoint_spec["listen_port"]) <= 65535:
             raise ValueError("listen_port must be in range 1..65535")
