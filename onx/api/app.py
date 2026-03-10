@@ -6,6 +6,7 @@ from onx.api.routers.health import router as health_router
 from onx.api.routers.jobs import router as jobs_router
 from onx.api.routers.links import router as links_router
 from onx.api.routers.nodes import router as nodes_router
+from onx.api.routers.route_policies import router as route_policies_router
 from onx.core.config import get_settings
 from onx.db.session import init_db
 from onx.workers.job_worker import JobWorker
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs_router, prefix=settings.api_prefix)
     app.include_router(nodes_router, prefix=settings.api_prefix)
     app.include_router(links_router, prefix=settings.api_prefix)
+    app.include_router(route_policies_router, prefix=settings.api_prefix)
     return app
 
 

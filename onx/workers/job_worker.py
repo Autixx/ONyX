@@ -7,19 +7,22 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import select
 
 from onx.core.config import get_settings
-from onx.db.models.job import Job, JobKind, JobState
+from onx.db.models.job import Job, JobKind, JobState, JobTargetType
 from onx.db.models.link import Link
 from onx.db.models.node import Node
 from onx.db.models.node_capability import NodeCapability
+from onx.db.models.route_policy import RoutePolicy
 from onx.deploy.ssh_executor import SSHExecutor
 from onx.db.session import SessionLocal
 from onx.schemas.links import LinkRead
 from onx.schemas.nodes import NodeCapabilityRead, NodeRead
+from onx.schemas.route_policies import RoutePolicyRead
 from onx.services.discovery_service import DiscoveryService
 from onx.services.interface_runtime_service import InterfaceRuntimeService
 from onx.services.job_service import JobCancelledError, JobService
 from onx.services.link_service import LinkService
 from onx.services.node_runtime_bootstrap_service import NodeRuntimeBootstrapService
+from onx.services.route_policy_service import RoutePolicyService
 from onx.workers.runtime_state import WorkerRuntimeState, get_worker_runtime_state
 
 
@@ -41,6 +44,7 @@ class JobWorker:
         self._jobs = JobService()
         self._discovery = DiscoveryService()
         self._links = LinkService()
+        self._route_policies = RoutePolicyService()
         self._node_runtime = NodeRuntimeBootstrapService(InterfaceRuntimeService(SSHExecutor()))
         self._runtime_state = runtime_state or get_worker_runtime_state()
 
@@ -164,25 +168,51 @@ class JobWorker:
         )
 
     def _execute_apply(self, db, job: Job) -> None:
-        link = db.get(Link, job.target_id)
-        if link is None:
-            raise ValueError("Target link not found.")
+        if job.target_type == JobTargetType.LINK:
+            link = db.get(Link, job.target_id)
+            if link is None:
+                raise ValueError("Target link not found.")
 
-        result = self._links.apply_link(
-            db,
-            link,
-            progress_callback=lambda step: self._progress(db, job, step),
-        )
-        applied_link = result["link"]
-        self._jobs.succeed(
-            db,
-            job,
-            {
-                "link": LinkRead.model_validate(applied_link).model_dump(mode="json"),
-                "message": result["message"],
-                "applied_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
+            result = self._links.apply_link(
+                db,
+                link,
+                progress_callback=lambda step: self._progress(db, job, step),
+            )
+            applied_link = result["link"]
+            self._jobs.succeed(
+                db,
+                job,
+                {
+                    "link": LinkRead.model_validate(applied_link).model_dump(mode="json"),
+                    "message": result["message"],
+                    "applied_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            return
+
+        if job.target_type == JobTargetType.POLICY:
+            policy = db.get(RoutePolicy, job.target_id)
+            if policy is None:
+                raise ValueError("Target route policy not found.")
+
+            result = self._route_policies.apply_policy(
+                db,
+                policy,
+                progress_callback=lambda step: self._progress(db, job, step),
+            )
+            applied_policy = result["policy"]
+            self._jobs.succeed(
+                db,
+                job,
+                {
+                    "policy": RoutePolicyRead.model_validate(applied_policy).model_dump(mode="json"),
+                    "message": result["message"],
+                    "applied_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            return
+
+        raise ValueError(f"Unsupported apply target type '{job.target_type.value}'.")
 
     def _execute_bootstrap(self, db, job: Job) -> None:
         node = db.get(Node, job.target_id)

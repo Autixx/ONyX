@@ -8,5 +8,6 @@ from onx.db.models.link_endpoint import LinkEndpoint
 from onx.db.models.node import Node
 from onx.db.models.node_capability import NodeCapability
 from onx.db.models.node_secret import NodeSecret
+from onx.db.models.route_policy import RoutePolicy
 
-__all__ = ["Node", "NodeSecret", "NodeCapability", "Link", "LinkEndpoint", "Job", "JobLock", "EventLog"]
+__all__ = ["Node", "NodeSecret", "NodeCapability", "Link", "LinkEndpoint", "RoutePolicy", "Job", "JobLock", "EventLog"]

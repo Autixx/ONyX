@@ -35,6 +35,7 @@ python -m alembic -c alembic.ini downgrade -1
 - `alembic.ini` is tracked in repo and explicitly unignored in `.gitignore`.
 - current baseline revision includes jobs retry/cancel fields and extended job states.
 - `0002_add_job_locks` adds persistent target-scoped locks for worker concurrency control.
+- `0003_add_route_policies` adds route policy storage with `direct` / `next_hop` actions and applied state tracking.
 - jobs API supports:
   - `POST /api/v1/jobs/{id}/cancel`
   - `POST /api/v1/jobs/{id}/retry-now`
@@ -43,3 +44,10 @@ python -m alembic -c alembic.ini downgrade -1
   - `POST /api/v1/jobs/locks/cleanup`
 - health API supports:
   - `GET /api/v1/health/worker` (worker runtime snapshot + queue/lock stats)
+- route policy API supports:
+  - `GET /api/v1/route-policies`
+  - `POST /api/v1/route-policies`
+  - `GET /api/v1/route-policies/{id}`
+  - `PATCH /api/v1/route-policies/{id}`
+  - `DELETE /api/v1/route-policies/{id}`
+  - `POST /api/v1/route-policies/{id}/apply` (enqueues policy apply job)
