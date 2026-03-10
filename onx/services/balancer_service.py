@@ -13,8 +13,10 @@ from sqlalchemy.orm import Session
 from onx.db.models.balancer import Balancer, BalancerMethod
 from onx.db.models.node import Node
 from onx.db.models.node_secret import NodeSecretKind
+from onx.db.models.probe_result import ProbeStatus, ProbeType
 from onx.deploy.ssh_executor import SSHExecutor
 from onx.schemas.balancers import BalancerCreate, BalancerMemberSpec, BalancerUpdate
+from onx.services.probe_service import ProbeService
 from onx.services.secret_service import SecretService
 
 
@@ -27,6 +29,7 @@ class BalancerService:
 
     def __init__(self) -> None:
         self._secrets = SecretService()
+        self._probes = ProbeService()
         self._executor = SSHExecutor()
 
     def list_balancers(self, db: Session, *, node_id: str | None = None) -> list[Balancer]:
@@ -118,9 +121,9 @@ class BalancerService:
                 "details": {"weights": {m["interface_name"]: m.get("weight", 1) for m in members}},
             }
         if method == BalancerMethod.LEASTLOAD:
-            return self._pick_leastload_member(node, secret, members, method)
+            return self._pick_leastload_member(db, balancer, node, secret, members, method)
         if method == BalancerMethod.LEASTPING:
-            return self._pick_leastping_member(node, secret, members, method)
+            return self._pick_leastping_member(db, balancer, node, secret, members, method)
         raise ValueError(f"Unsupported balancer method '{method.value}'.")
 
     def pick_member(self, db: Session, balancer: Balancer) -> dict:
@@ -145,15 +148,31 @@ class BalancerService:
             weighted_pool.extend([member] * weight)
         return random.choice(weighted_pool)
 
-    def _pick_leastload_member(self, node: Node, secret: str, members: list[dict], method: BalancerMethod) -> dict:
+    def _pick_leastload_member(
+        self,
+        db: Session,
+        balancer: Balancer,
+        node: Node,
+        secret: str,
+        members: list[dict],
+        method: BalancerMethod,
+    ) -> dict:
         best_member: dict | None = None
         best_score = float("inf")
         scores: dict[str, float | None] = {}
+        sources: dict[str, str] = {}
         for member in members:
             iface = member["interface_name"]
-            load = self._read_interface_load(node, secret, iface)
+            load, source = self._get_or_probe_load(
+                db,
+                balancer=balancer,
+                node=node,
+                secret=secret,
+                interface_name=iface,
+            )
             normalized = load if math.isfinite(load) else 1e18
             scores[iface] = load if math.isfinite(load) else None
+            sources[iface] = source
             if normalized < best_score:
                 best_score = normalized
                 best_member = member
@@ -165,22 +184,40 @@ class BalancerService:
             "gateway": best_member.get("gateway"),
             "method": method.value,
             "score": None if best_score >= 1e18 else best_score,
-            "details": {"loads": scores},
+            "details": {"loads": scores, "sources": sources},
         }
 
-    def _pick_leastping_member(self, node: Node, secret: str, members: list[dict], method: BalancerMethod) -> dict:
+    def _pick_leastping_member(
+        self,
+        db: Session,
+        balancer: Balancer,
+        node: Node,
+        secret: str,
+        members: list[dict],
+        method: BalancerMethod,
+    ) -> dict:
         best_member: dict | None = None
         best_score = float("inf")
         scores: dict[str, float | None] = {}
+        sources: dict[str, str] = {}
         for member in members:
             iface = member["interface_name"]
             target = member.get("ping_target") or member.get("gateway")
             if not target:
                 scores[iface] = None
+                sources[iface] = "missing_target"
                 continue
-            latency = self._measure_ping(node, secret, str(target))
+            latency, source = self._get_or_probe_ping(
+                db,
+                balancer=balancer,
+                node=node,
+                secret=secret,
+                interface_name=iface,
+                target=str(target),
+            )
             normalized = latency if math.isfinite(latency) else 1e18
             scores[iface] = latency if math.isfinite(latency) else None
+            sources[iface] = source
             if normalized < best_score:
                 best_score = normalized
                 best_member = member
@@ -192,8 +229,86 @@ class BalancerService:
             "gateway": best_member.get("gateway"),
             "method": method.value,
             "score": None if best_score >= 1e18 else best_score,
-            "details": {"pings": scores},
+            "details": {"pings": scores, "sources": sources},
         }
+
+    def _get_or_probe_load(
+        self,
+        db: Session,
+        *,
+        balancer: Balancer,
+        node: Node,
+        secret: str,
+        interface_name: str,
+        max_age_seconds: int = 120,
+    ) -> tuple[float, str]:
+        cached = self._probes.get_recent_metric(
+            db,
+            balancer_id=balancer.id,
+            member_interface=interface_name,
+            probe_type=ProbeType.INTERFACE_LOAD,
+            max_age_seconds=max_age_seconds,
+        )
+        if cached is not None:
+            return cached, "cache"
+
+        measured = self._read_interface_load(node, secret, interface_name)
+        status = ProbeStatus.SUCCESS if math.isfinite(measured) else ProbeStatus.FAILED
+        self._probes.record_metric(
+            db,
+            probe_type=ProbeType.INTERFACE_LOAD,
+            status=status,
+            source_node_id=node.id,
+            balancer_id=balancer.id,
+            member_interface=interface_name,
+            metrics={
+                "value": measured if math.isfinite(measured) else None,
+                "unit": "bytes_total",
+                "interface_name": interface_name,
+            },
+            error_text=None if math.isfinite(measured) else "interface load probe failed",
+        )
+        return measured, "live"
+
+    def _get_or_probe_ping(
+        self,
+        db: Session,
+        *,
+        balancer: Balancer,
+        node: Node,
+        secret: str,
+        interface_name: str,
+        target: str,
+        max_age_seconds: int = 120,
+    ) -> tuple[float, str]:
+        cached = self._probes.get_recent_metric(
+            db,
+            balancer_id=balancer.id,
+            member_interface=interface_name,
+            probe_type=ProbeType.PING,
+            max_age_seconds=max_age_seconds,
+        )
+        if cached is not None:
+            return cached, "cache"
+
+        measured = self._measure_ping(node, secret, target)
+        status = ProbeStatus.SUCCESS if math.isfinite(measured) else ProbeStatus.FAILED
+        self._probes.record_metric(
+            db,
+            probe_type=ProbeType.PING,
+            status=status,
+            source_node_id=node.id,
+            balancer_id=balancer.id,
+            member_interface=interface_name,
+            metrics={
+                "value": measured if math.isfinite(measured) else None,
+                "unit": "ms",
+                "interface_name": interface_name,
+                "target": target,
+            },
+            error_text=None if math.isfinite(measured) else "ping probe failed",
+        )
+        return measured, "live"
 
     def _read_interface_load(self, node: Node, secret: str, interface_name: str) -> float:
         inner = (

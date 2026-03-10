@@ -39,6 +39,7 @@ python -m alembic -c alembic.ini downgrade -1
 - `0004_add_dns_policies` adds per-route-policy DNS capture settings and applied state tracking.
 - `0005_add_geo_policies` adds per-route-policy geo rules (`direct`/`multihop`) with country-based CIDR source templates.
 - `0006_add_balancers_and_route_policy_balancer` adds balancers (`random`/`leastload`/`leastping`) and route policy action `balancer` with `balancer_id`.
+- `0007_add_probe_results` adds persisted probe history for member ping/load metrics used by balancer selection.
 - jobs API supports:
   - `POST /api/v1/jobs/{id}/cancel`
   - `POST /api/v1/jobs/{id}/retry-now`
@@ -75,3 +76,6 @@ python -m alembic -c alembic.ini downgrade -1
   - `PATCH /api/v1/balancers/{id}`
   - `DELETE /api/v1/balancers/{id}`
   - `POST /api/v1/balancers/{id}/pick` (test member selection on node)
+- probe API supports:
+  - `GET /api/v1/probes/results`
+  - `POST /api/v1/probes/balancers/{id}/run` (records fresh ping/load probes for members)
