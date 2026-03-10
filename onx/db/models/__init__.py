@@ -2,6 +2,7 @@
 
 from onx.db.models.event_log import EventLog
 from onx.db.models.dns_policy import DNSPolicy
+from onx.db.models.geo_policy import GeoPolicy
 from onx.db.models.job import Job
 from onx.db.models.job_lock import JobLock
 from onx.db.models.link import Link
@@ -19,6 +20,7 @@ __all__ = [
     "LinkEndpoint",
     "RoutePolicy",
     "DNSPolicy",
+    "GeoPolicy",
     "Job",
     "JobLock",
     "EventLog",

@@ -11,10 +11,12 @@ from sqlalchemy.orm import Session
 
 from onx.core.config import get_settings
 from onx.db.models.dns_policy import DNSPolicy
+from onx.db.models.geo_policy import GeoPolicy, GeoPolicyMode
 from onx.db.models.node import Node
 from onx.db.models.node_secret import NodeSecretKind
 from onx.db.models.route_policy import RoutePolicy, RoutePolicyAction
 from onx.deploy.ssh_executor import SSHExecutor
+from onx.services.geo_policy_service import GeoPolicyService
 from onx.schemas.route_policies import RoutePolicyCreate, RoutePolicyUpdate
 from onx.services.dns_policy_service import DNSPolicyService
 from onx.services.secret_service import SecretService
@@ -31,6 +33,7 @@ class RoutePolicyService:
         self._settings = get_settings()
         self._secrets = SecretService()
         self._dns_policies = DNSPolicyService()
+        self._geo_policies = GeoPolicyService()
         self._executor = SSHExecutor()
 
     def list_policies(self, db: Session, *, node_id: str | None = None) -> list[RoutePolicy]:
@@ -114,6 +117,7 @@ class RoutePolicyService:
             progress_callback("loading management secret")
         secret = self._get_management_secret(db, node)
         dns_policy = self._dns_policies.get_for_route_policy(db, policy.id)
+        geo_policies = self._geo_policies.list_for_route_policy(db, policy.id, only_enabled=True)
 
         previous_state = policy.applied_state or {}
         if previous_state:
@@ -125,6 +129,12 @@ class RoutePolicyService:
                 self._render_cleanup_script(previous_state),
                 f"cleanup-{policy.id}",
             )
+        self._cleanup_geo_policy_if_needed(
+            node,
+            secret,
+            previous_state,
+            progress_callback=progress_callback,
+        )
         self._cleanup_dns_policy_if_needed(
             node,
             secret,
@@ -151,7 +161,8 @@ class RoutePolicyService:
 
         if progress_callback:
             progress_callback("applying route policy rules")
-        state = self._build_state(policy)
+        geo_entries = self._build_geo_entries(policy, geo_policies)
+        state = self._build_state(policy, geo_entries=geo_entries)
         self._run_remote_script(
             node,
             secret,
@@ -319,7 +330,7 @@ class RoutePolicyService:
         suffix = policy_id.replace("-", "")[:12]
         return f"ONXDNS{suffix.upper()}"
 
-    def _build_state(self, policy: RoutePolicy) -> dict:
+    def _build_state(self, policy: RoutePolicy, *, geo_entries: list[dict]) -> dict:
         return {
             "chain_name": self._chain_name(policy.id),
             "ingress_interface": policy.ingress_interface,
@@ -332,7 +343,50 @@ class RoutePolicyService:
             "routed_networks": list(policy.routed_networks),
             "excluded_networks": list(policy.excluded_networks),
             "action": policy.action.value,
+            "geo_entries": geo_entries,
         }
+
+    def _build_geo_entries(self, policy: RoutePolicy, geo_policies: list[GeoPolicy]) -> list[dict]:
+        entries: list[dict] = []
+        for geo in geo_policies:
+            country_code = geo.country_code.lower()
+            set_name = self._geo_set_name(policy.id, country_code)
+            entries.append(
+                {
+                    "geo_policy_id": geo.id,
+                    "country_code": country_code,
+                    "mode": geo.mode.value,
+                    "set_name": set_name,
+                    "source_url": geo.source_url_template.replace("{country}", country_code),
+                }
+            )
+        return entries
+
+    @staticmethod
+    def _geo_set_name(policy_id: str, country_code: str) -> str:
+        suffix = policy_id.replace("-", "")[:8].upper()
+        cc = country_code.upper()
+        return f"ONXG{suffix}{cc}"
+
+    def _cleanup_geo_policy_if_needed(
+        self,
+        node: Node,
+        secret: str,
+        previous_state: dict,
+        *,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> None:
+        entries = previous_state.get("geo_entries", [])
+        if not entries:
+            return
+        if progress_callback:
+            progress_callback("cleaning previously applied geo policy sets")
+        self._run_remote_script(
+            node,
+            secret,
+            self._render_geo_cleanup_script(entries),
+            f"geo-cleanup-{previous_state.get('policy_id', 'state')}",
+        )
 
     def _build_dns_state(self, policy: RoutePolicy, dns_policy: DNSPolicy) -> dict:
         dns_host, dns_port = self._dns_policies.parse_dns_address(dns_policy.dns_address)
@@ -407,6 +461,7 @@ class RoutePolicyService:
         target_gateway = state.get("target_gateway")
         routed = [shlex.quote(network) for network in state["routed_networks"]]
         excluded = [shlex.quote(network) for network in state["excluded_networks"]]
+        geo_entries = list(state.get("geo_entries", []))
 
         lines = [
             "set -eu",
@@ -426,12 +481,46 @@ class RoutePolicyService:
             "iptables -t mangle -C PREROUTING -i \"$INGRESS_IF\" -j \"$CHAIN\" 2>/dev/null || "
             "iptables -t mangle -A PREROUTING -i \"$INGRESS_IF\" -j \"$CHAIN\"",
             "",
-            "# Exclusions bypass policy mark and stay on the main routing table.",
         ]
+        if geo_entries:
+            lines.extend(
+                [
+                    "# Populate geo ipsets.",
+                    "command -v ipset >/dev/null 2>&1 || { echo 'ipset is required for geo policies'; exit 1; }",
+                    "command -v curl >/dev/null 2>&1 || { echo 'curl is required for geo policies'; exit 1; }",
+                    "",
+                ]
+            )
+            for entry in geo_entries:
+                set_name = shlex.quote(entry["set_name"])
+                source_url = shlex.quote(entry["source_url"])
+                lines.extend(
+                    [
+                        f"ipset create {set_name} hash:net family inet -exist",
+                        f"ipset flush {set_name}",
+                        f"curl -fsSL {source_url} | grep -E '^[0-9]+(\\.[0-9]+){{3}}/[0-9]+$' | "
+                        f"xargs -r -n1 ipset add {set_name} -exist",
+                    ]
+                )
+            lines.append("")
+        lines.append(
+            "# Exclusions bypass policy mark and stay on the main routing table.",
+        )
         lines.extend(
             f"iptables -t mangle -A \"$CHAIN\" -d {network} -j RETURN"
             for network in excluded
         )
+        for entry in geo_entries:
+            set_name = shlex.quote(entry["set_name"])
+            mode = str(entry["mode"]).lower()
+            if mode == GeoPolicyMode.DIRECT.value:
+                lines.append(
+                    f"iptables -t mangle -A \"$CHAIN\" -m set --match-set {set_name} dst -j RETURN"
+                )
+            else:
+                lines.append(
+                    f"iptables -t mangle -A \"$CHAIN\" -m set --match-set {set_name} dst -j MARK --set-mark \"$FWMARK\""
+                )
         lines.extend(
             f"iptables -t mangle -A \"$CHAIN\" -d {network} -j MARK --set-mark \"$FWMARK\""
             for network in routed
@@ -540,6 +629,18 @@ class RoutePolicyService:
             for protocol in protocols
             for port in ports
         )
+        return "\n".join(lines) + "\n"
+
+    def _render_geo_cleanup_script(self, entries: list[dict]) -> str:
+        lines = [
+            "set -eu",
+        ]
+        for entry in entries:
+            set_name = shlex.quote(str(entry.get("set_name", "")).strip())
+            if not set_name:
+                continue
+            lines.append(f"ipset flush {set_name} 2>/dev/null || true")
+            lines.append(f"ipset destroy {set_name} 2>/dev/null || true")
         return "\n".join(lines) + "\n"
 
     def _render_dns_cleanup_script(self, state: dict) -> str:
