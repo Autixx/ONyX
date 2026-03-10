@@ -1,6 +1,7 @@
 """SQLAlchemy models for ONX."""
 
 from onx.db.models.event_log import EventLog
+from onx.db.models.balancer import Balancer
 from onx.db.models.dns_policy import DNSPolicy
 from onx.db.models.geo_policy import GeoPolicy
 from onx.db.models.job import Job
@@ -21,6 +22,7 @@ __all__ = [
     "RoutePolicy",
     "DNSPolicy",
     "GeoPolicy",
+    "Balancer",
     "Job",
     "JobLock",
     "EventLog",

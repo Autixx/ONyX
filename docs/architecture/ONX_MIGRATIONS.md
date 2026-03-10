@@ -38,6 +38,7 @@ python -m alembic -c alembic.ini downgrade -1
 - `0003_add_route_policies` adds route policy storage with `direct` / `next_hop` actions and applied state tracking.
 - `0004_add_dns_policies` adds per-route-policy DNS capture settings and applied state tracking.
 - `0005_add_geo_policies` adds per-route-policy geo rules (`direct`/`multihop`) with country-based CIDR source templates.
+- `0006_add_balancers_and_route_policy_balancer` adds balancers (`random`/`leastload`/`leastping`) and route policy action `balancer` with `balancer_id`.
 - jobs API supports:
   - `POST /api/v1/jobs/{id}/cancel`
   - `POST /api/v1/jobs/{id}/retry-now`
@@ -67,3 +68,10 @@ python -m alembic -c alembic.ini downgrade -1
   - `PATCH /api/v1/geo-policies/{id}`
   - `DELETE /api/v1/geo-policies/{id}`
   - `POST /api/v1/geo-policies/{id}/apply` (enqueues apply for parent route policy)
+- balancer API supports:
+  - `GET /api/v1/balancers`
+  - `POST /api/v1/balancers`
+  - `GET /api/v1/balancers/{id}`
+  - `PATCH /api/v1/balancers/{id}`
+  - `DELETE /api/v1/balancers/{id}`
+  - `POST /api/v1/balancers/{id}/pick` (test member selection on node)

@@ -10,12 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from onx.core.config import get_settings
+from onx.db.models.balancer import Balancer
 from onx.db.models.dns_policy import DNSPolicy
 from onx.db.models.geo_policy import GeoPolicy, GeoPolicyMode
 from onx.db.models.node import Node
 from onx.db.models.node_secret import NodeSecretKind
 from onx.db.models.route_policy import RoutePolicy, RoutePolicyAction
 from onx.deploy.ssh_executor import SSHExecutor
+from onx.services.balancer_service import BalancerService
 from onx.services.geo_policy_service import GeoPolicyService
 from onx.schemas.route_policies import RoutePolicyCreate, RoutePolicyUpdate
 from onx.services.dns_policy_service import DNSPolicyService
@@ -32,6 +34,7 @@ class RoutePolicyService:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._secrets = SecretService()
+        self._balancers = BalancerService()
         self._dns_policies = DNSPolicyService()
         self._geo_policies = GeoPolicyService()
         self._executor = SSHExecutor()
@@ -66,6 +69,11 @@ class RoutePolicyService:
             )
 
         normalized = self._normalize_create(payload)
+        self._ensure_balancer_reference(
+            db,
+            node_id=payload.node_id,
+            balancer_id=normalized.get("balancer_id"),
+        )
         policy = RoutePolicy(**normalized)
         db.add(policy)
         db.commit()
@@ -91,6 +99,11 @@ class RoutePolicyService:
                 )
 
         normalized = self._normalize_update(policy, updates)
+        self._ensure_balancer_reference(
+            db,
+            node_id=policy.node_id,
+            balancer_id=normalized.get("balancer_id", policy.balancer_id),
+        )
         for key, value in normalized.items():
             setattr(policy, key, value)
 
@@ -160,9 +173,24 @@ class RoutePolicyService:
             }
 
         if progress_callback:
+            progress_callback("resolving egress target")
+        resolved_target = self._resolve_apply_target(
+            db,
+            node=node,
+            secret=secret,
+            policy=policy,
+        )
+
+        if progress_callback:
             progress_callback("applying route policy rules")
         geo_entries = self._build_geo_entries(policy, geo_policies)
-        state = self._build_state(policy, geo_entries=geo_entries)
+        state = self._build_state(
+            policy,
+            geo_entries=geo_entries,
+            target_interface=resolved_target["target_interface"],
+            target_gateway=resolved_target.get("target_gateway"),
+            balancer_pick=resolved_target.get("balancer_pick"),
+        )
         self._run_remote_script(
             node,
             secret,
@@ -203,8 +231,9 @@ class RoutePolicyService:
         data = payload.model_dump()
         data["action"] = RoutePolicyAction(data["action"])
         data["ingress_interface"] = self._normalize_interface_name(data["ingress_interface"], "ingress_interface")
-        data["target_interface"] = self._normalize_interface_name(data["target_interface"], "target_interface")
+        data["target_interface"] = self._normalize_optional_interface_name(data.get("target_interface"), "target_interface")
         data["target_gateway"] = self._normalize_gateway(data.get("target_gateway"))
+        data["balancer_id"] = self._normalize_optional_ref(data.get("balancer_id"), "balancer_id")
         data["routed_networks"] = self._normalize_ipv4_networks(
             data["routed_networks"],
             field_name="routed_networks",
@@ -215,6 +244,11 @@ class RoutePolicyService:
             field_name="excluded_networks",
             allow_empty=True,
         )
+        self._validate_action_binding(
+            action=data["action"],
+            target_interface=data.get("target_interface"),
+            balancer_id=data.get("balancer_id"),
+        )
         return data
 
     def _normalize_update(self, current: RoutePolicy, updates: dict) -> dict:
@@ -223,13 +257,20 @@ class RoutePolicyService:
             "ingress_interface": updates.get("ingress_interface", current.ingress_interface),
             "target_interface": updates.get("target_interface", current.target_interface),
             "target_gateway": updates.get("target_gateway", current.target_gateway),
+            "balancer_id": updates.get("balancer_id", current.balancer_id),
             "routed_networks": updates.get("routed_networks", current.routed_networks),
             "excluded_networks": updates.get("excluded_networks", current.excluded_networks),
+            "action": updates.get("action", current.action),
         }
 
         merged["ingress_interface"] = self._normalize_interface_name(merged["ingress_interface"], "ingress_interface")
-        merged["target_interface"] = self._normalize_interface_name(merged["target_interface"], "target_interface")
+        merged["target_interface"] = self._normalize_optional_interface_name(
+            merged["target_interface"],
+            "target_interface",
+        )
         merged["target_gateway"] = self._normalize_gateway(merged["target_gateway"])
+        merged["balancer_id"] = self._normalize_optional_ref(merged["balancer_id"], "balancer_id")
+        merged["action"] = RoutePolicyAction(merged["action"])
         merged["routed_networks"] = self._normalize_ipv4_networks(
             merged["routed_networks"],
             field_name="routed_networks",
@@ -239,6 +280,11 @@ class RoutePolicyService:
             merged["excluded_networks"],
             field_name="excluded_networks",
             allow_empty=True,
+        )
+        self._validate_action_binding(
+            action=merged["action"],
+            target_interface=merged["target_interface"],
+            balancer_id=merged["balancer_id"],
         )
 
         for key, value in updates.items():
@@ -272,6 +318,53 @@ class RoutePolicyService:
                 "Allowed: letters, numbers, underscore, dot, colon, dash."
             )
         return normalized
+
+    def _normalize_optional_interface_name(self, value: str | None, field_name: str) -> str | None:
+        if value is None:
+            return None
+        return self._normalize_interface_name(value, field_name)
+
+    @staticmethod
+    def _normalize_optional_ref(value: str | None, field_name: str) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        if len(text) > 36:
+            raise ValueError(f"{field_name} is too long.")
+        return text
+
+    @staticmethod
+    def _validate_action_binding(
+        *,
+        action: RoutePolicyAction,
+        target_interface: str | None,
+        balancer_id: str | None,
+    ) -> None:
+        if action == RoutePolicyAction.BALANCER:
+            if not balancer_id:
+                raise ValueError("balancer_id is required for action='balancer'.")
+            return
+        if balancer_id:
+            raise ValueError("balancer_id is allowed only for action='balancer'.")
+        if not target_interface:
+            raise ValueError("target_interface is required when action is not 'balancer'.")
+
+    def _ensure_balancer_reference(
+        self,
+        db: Session,
+        *,
+        node_id: str,
+        balancer_id: str | None,
+    ) -> None:
+        if not balancer_id:
+            return
+        balancer = self._balancers.get_balancer(db, balancer_id)
+        if balancer is None:
+            raise ValueError("Referenced balancer not found.")
+        if balancer.node_id != node_id:
+            raise ValueError("Referenced balancer belongs to a different node.")
 
     @staticmethod
     def _normalize_gateway(value: str | None) -> str | None:
@@ -330,12 +423,20 @@ class RoutePolicyService:
         suffix = policy_id.replace("-", "")[:12]
         return f"ONXDNS{suffix.upper()}"
 
-    def _build_state(self, policy: RoutePolicy, *, geo_entries: list[dict]) -> dict:
+    def _build_state(
+        self,
+        policy: RoutePolicy,
+        *,
+        geo_entries: list[dict],
+        target_interface: str,
+        target_gateway: str | None,
+        balancer_pick: dict | None,
+    ) -> dict:
         return {
             "chain_name": self._chain_name(policy.id),
             "ingress_interface": policy.ingress_interface,
-            "target_interface": policy.target_interface,
-            "target_gateway": policy.target_gateway,
+            "target_interface": target_interface,
+            "target_gateway": target_gateway,
             "table_id": policy.table_id,
             "rule_priority": policy.rule_priority,
             "firewall_mark": policy.firewall_mark,
@@ -343,8 +444,55 @@ class RoutePolicyService:
             "routed_networks": list(policy.routed_networks),
             "excluded_networks": list(policy.excluded_networks),
             "action": policy.action.value,
+            "balancer_id": policy.balancer_id,
+            "balancer_pick": balancer_pick,
             "geo_entries": geo_entries,
         }
+
+    def _resolve_apply_target(
+        self,
+        db: Session,
+        *,
+        node: Node,
+        secret: str,
+        policy: RoutePolicy,
+    ) -> dict:
+        if policy.action == RoutePolicyAction.BALANCER:
+            if not policy.balancer_id:
+                raise ValueError("Policy action is 'balancer' but balancer_id is not set.")
+            balancer = self._load_policy_balancer(db, policy)
+            pick = self._balancers.pick_member_for_node(db, balancer, node, secret)
+            balancer.state_json = {
+                "last_pick": pick,
+                "picked_at": datetime.now(timezone.utc).isoformat(),
+                "route_policy_id": policy.id,
+            }
+            db.add(balancer)
+            return {
+                "target_interface": pick["interface_name"],
+                "target_gateway": pick.get("gateway"),
+                "balancer_pick": pick,
+            }
+
+        if not policy.target_interface:
+            raise ValueError("target_interface is not set for non-balancer route policy.")
+        return {
+            "target_interface": policy.target_interface,
+            "target_gateway": policy.target_gateway,
+            "balancer_pick": None,
+        }
+
+    def _load_policy_balancer(self, db: Session, policy: RoutePolicy) -> Balancer:
+        balancer = self._balancers.get_balancer(db, policy.balancer_id or "")
+        if balancer is None:
+            raise ValueError("Configured balancer was not found.")
+        if balancer.node_id != policy.node_id:
+            raise ValueError("Configured balancer belongs to a different node.")
+        if not balancer.enabled:
+            raise ValueError("Configured balancer is disabled.")
+        if not balancer.members:
+            raise ValueError("Configured balancer has no members.")
+        return balancer
 
     def _build_geo_entries(self, policy: RoutePolicy, geo_policies: list[GeoPolicy]) -> list[dict]:
         entries: list[dict] = []

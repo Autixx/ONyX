@@ -11,6 +11,7 @@ from onx.db.base import Base
 class RoutePolicyAction(StrEnum):
     DIRECT = "direct"
     NEXT_HOP = "next_hop"
+    BALANCER = "balancer"
 
 
 class RoutePolicy(Base):
@@ -28,8 +29,14 @@ class RoutePolicy(Base):
         nullable=False,
         default=RoutePolicyAction.NEXT_HOP,
     )
-    target_interface: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_interface: Mapped[str | None] = mapped_column(String(32), nullable=True)
     target_gateway: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    balancer_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("balancers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     routed_networks: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     excluded_networks: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     table_id: Mapped[int] = mapped_column(Integer, nullable=False, default=51820)

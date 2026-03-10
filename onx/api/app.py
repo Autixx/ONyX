@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from onx.api.routers.balancers import router as balancers_router
 from onx.api.routers.dns_policies import router as dns_policies_router
 from onx.api.routers.geo_policies import router as geo_policies_router
 from onx.api.routers.health import router as health_router
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs_router, prefix=settings.api_prefix)
     app.include_router(nodes_router, prefix=settings.api_prefix)
     app.include_router(links_router, prefix=settings.api_prefix)
+    app.include_router(balancers_router, prefix=settings.api_prefix)
     app.include_router(route_policies_router, prefix=settings.api_prefix)
     app.include_router(dns_policies_router, prefix=settings.api_prefix)
     app.include_router(geo_policies_router, prefix=settings.api_prefix)
