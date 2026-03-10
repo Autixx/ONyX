@@ -47,6 +47,17 @@ def retry_now(job_id: str, db: Session = Depends(get_database_session)) -> objec
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
+@router.post("/{job_id}/force-cancel", response_model=JobRead)
+def force_cancel(job_id: str, db: Session = Depends(get_database_session)) -> object:
+    job = job_service.get_job(db, job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found.")
+    try:
+        return job_service.request_force_cancel(db, job)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
 @router.get("/{job_id}/events", response_model=list[EventLogRead])
 def get_job_events(job_id: str, db: Session = Depends(get_database_session)) -> list:
     job = job_service.get_job(db, job_id)

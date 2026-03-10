@@ -244,6 +244,21 @@ class JobService:
         )
         return job
 
+    def request_force_cancel(self, db: Session, job: Job, reason: str = "Force-cancel requested by user.") -> Job:
+        if job.state != JobState.RUNNING:
+            raise ValueError("Force-cancel is allowed only for running jobs.")
+
+        now = datetime.now(timezone.utc)
+        if job.lease_expires_at is None:
+            raise ValueError("Cannot force-cancel job without lease expiration timestamp.")
+        if job.lease_expires_at >= now:
+            raise ValueError(
+                "Cannot force-cancel active job before lease expiration. "
+                "Use regular cancel or wait until lease expires."
+            )
+
+        return self.cancel(db, job, reason)
+
     def cancel(self, db: Session, job: Job, reason: str = "Job cancelled.") -> Job:
         now = datetime.now(timezone.utc)
         job.state = JobState.CANCELLED
