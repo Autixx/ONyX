@@ -9,6 +9,7 @@ from onx.db.base import Base
 
 
 class JobKind(StrEnum):
+    BOOTSTRAP = "bootstrap"
     DISCOVER = "discover"
     VALIDATE = "validate"
     RENDER = "render"

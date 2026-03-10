@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     onx_conf_dir: str = "/etc/amnezia/amneziawg"
     onx_link_runner_path: str = "/usr/local/lib/onx/onx-link-runner"
     onx_link_unit_path: str = "/etc/systemd/system/onx-link@.service"
+    onx_runtime_version: str = "1"
 
     model_config = SettingsConfigDict(
         env_prefix="ONX_",

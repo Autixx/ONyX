@@ -14,6 +14,7 @@ from onx.deploy.ssh_executor import SSHExecutor
 from onx.drivers.registry import get_driver
 from onx.schemas.links import LinkCreate
 from onx.services.interface_runtime_service import InterfaceRuntimeService
+from onx.services.node_runtime_bootstrap_service import RUNTIME_CAPABILITY_NAME
 from onx.services.secret_service import SecretService
 
 
@@ -158,6 +159,28 @@ class LinkService:
         )
         return private_key, public_key, secret_ref
 
+    def _assert_runtime_ready(self, db: Session, node: Node) -> None:
+        capability = db.scalar(
+            select(NodeCapability).where(
+                NodeCapability.node_id == node.id,
+                NodeCapability.capability_name == RUNTIME_CAPABILITY_NAME,
+            )
+        )
+        if capability is None or not capability.supported:
+            raise ValueError(
+                f"Runtime is not bootstrapped on node '{node.name}'. "
+                f"Run /api/v1/nodes/{node.id}/bootstrap-runtime first."
+            )
+
+        details = capability.details_json or {}
+        runtime_version = details.get("version")
+        if runtime_version != self._settings.onx_runtime_version:
+            raise ValueError(
+                f"Runtime version mismatch on node '{node.name}': "
+                f"have '{runtime_version}', expected '{self._settings.onx_runtime_version}'. "
+                f"Run bootstrap-runtime job to update assets."
+            )
+
     def apply_link(self, db: Session, link: Link, progress_callback=None) -> dict:
         if progress_callback:
             progress_callback("validating link")
@@ -188,6 +211,11 @@ class LinkService:
             progress_callback("loading management secrets")
         left_mgmt_secret = self._get_management_secret(db, left_node)
         right_mgmt_secret = self._get_management_secret(db, right_node)
+
+        if progress_callback:
+            progress_callback("checking interface runtime capability")
+        self._assert_runtime_ready(db, left_node)
+        self._assert_runtime_ready(db, right_node)
 
         if progress_callback:
             progress_callback("generating transport keypairs")
@@ -227,11 +255,6 @@ class LinkService:
         db.commit()
 
         try:
-            if progress_callback:
-                progress_callback("ensuring interface runtime services")
-            self._runtime.ensure_runtime(left_node, left_mgmt_secret)
-            self._runtime.ensure_runtime(right_node, right_mgmt_secret)
-
             if progress_callback:
                 progress_callback("writing left config")
             self._executor.write_file(left_node, left_mgmt_secret, left_path, left_config)

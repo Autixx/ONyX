@@ -11,12 +11,15 @@ from onx.db.models.job import Job, JobKind, JobState
 from onx.db.models.link import Link
 from onx.db.models.node import Node
 from onx.db.models.node_capability import NodeCapability
+from onx.deploy.ssh_executor import SSHExecutor
 from onx.db.session import SessionLocal
 from onx.schemas.links import LinkRead
 from onx.schemas.nodes import NodeCapabilityRead, NodeRead
 from onx.services.discovery_service import DiscoveryService
+from onx.services.interface_runtime_service import InterfaceRuntimeService
 from onx.services.job_service import JobService
 from onx.services.link_service import LinkService
+from onx.services.node_runtime_bootstrap_service import NodeRuntimeBootstrapService
 
 
 class JobWorker:
@@ -36,6 +39,7 @@ class JobWorker:
         self._jobs = JobService()
         self._discovery = DiscoveryService()
         self._links = LinkService()
+        self._node_runtime = NodeRuntimeBootstrapService(InterfaceRuntimeService(SSHExecutor()))
 
     def start(self) -> None:
         if self._scheduler.running:
@@ -86,6 +90,8 @@ class JobWorker:
             try:
                 if job.kind == JobKind.DISCOVER:
                     self._execute_discover(db, job)
+                elif job.kind == JobKind.BOOTSTRAP:
+                    self._execute_bootstrap(db, job)
                 elif job.kind == JobKind.APPLY:
                     self._execute_apply(db, job)
                 else:
@@ -144,6 +150,18 @@ class JobWorker:
                 "applied_at": datetime.now(timezone.utc).isoformat(),
             },
         )
+
+    def _execute_bootstrap(self, db, job: Job) -> None:
+        node = db.get(Node, job.target_id)
+        if node is None:
+            raise ValueError("Target node not found.")
+
+        result = self._node_runtime.bootstrap_runtime(
+            db,
+            node,
+            progress_callback=lambda step: self._progress(db, job, step),
+        )
+        self._jobs.succeed(db, job, result)
 
     def _progress(self, db, job: Job, step: str) -> None:
         self._jobs.heartbeat(

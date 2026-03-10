@@ -5,6 +5,7 @@ from onx.schemas.common import ONXBaseModel
 
 
 class JobKindValue(StrEnum):
+    BOOTSTRAP = "bootstrap"
     DISCOVER = "discover"
     VALIDATE = "validate"
     RENDER = "render"

@@ -18,6 +18,8 @@ Accepted
 - template unit: `onx-link@.service`
 - runner script: `/usr/local/lib/onx/onx-link-runner`
 - `ONX` управляет интерфейсами только через `systemctl` (`start/restart/stop`) для `onx-link@<iface>.service`
+- runtime-assets ставятся отдельной job `POST /api/v1/nodes/{id}/bootstrap-runtime`
+- `link apply` больше не переустанавливает runtime-assets на каждом запуске, а требует capability `onx_link_runtime`
 
 `onx-link-runner` использует `awg-quick` и тем самым сохраняет корректную обработку quick-специфичных строк.
 

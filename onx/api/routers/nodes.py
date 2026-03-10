@@ -138,3 +138,26 @@ def discover_node(
         request_payload={"node_id": node.id, "node_name": node.name},
     )
     return job
+
+
+@router.post("/{node_id}/bootstrap-runtime", response_model=JobRead, status_code=status.HTTP_202_ACCEPTED)
+def bootstrap_node_runtime(
+    node_id: str,
+    db: Session = Depends(get_database_session),
+) -> JobRead:
+    node = db.get(Node, node_id)
+    if node is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found.")
+
+    job = job_service.create_job(
+        db,
+        kind=JobKind.BOOTSTRAP,
+        target_type=JobTargetType.NODE,
+        target_id=node.id,
+        request_payload={
+            "node_id": node.id,
+            "node_name": node.name,
+            "bootstrap": "runtime_assets",
+        },
+    )
+    return job
