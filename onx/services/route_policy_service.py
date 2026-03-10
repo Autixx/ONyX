@@ -10,11 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from onx.core.config import get_settings
+from onx.db.models.dns_policy import DNSPolicy
 from onx.db.models.node import Node
 from onx.db.models.node_secret import NodeSecretKind
 from onx.db.models.route_policy import RoutePolicy, RoutePolicyAction
 from onx.deploy.ssh_executor import SSHExecutor
 from onx.schemas.route_policies import RoutePolicyCreate, RoutePolicyUpdate
+from onx.services.dns_policy_service import DNSPolicyService
 from onx.services.secret_service import SecretService
 
 
@@ -28,6 +30,7 @@ class RoutePolicyService:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._secrets = SecretService()
+        self._dns_policies = DNSPolicyService()
         self._executor = SSHExecutor()
 
     def list_policies(self, db: Session, *, node_id: str | None = None) -> list[RoutePolicy]:
@@ -110,6 +113,7 @@ class RoutePolicyService:
         if progress_callback:
             progress_callback("loading management secret")
         secret = self._get_management_secret(db, node)
+        dns_policy = self._dns_policies.get_for_route_policy(db, policy.id)
 
         previous_state = policy.applied_state or {}
         if previous_state:
@@ -121,13 +125,25 @@ class RoutePolicyService:
                 self._render_cleanup_script(previous_state),
                 f"cleanup-{policy.id}",
             )
+        self._cleanup_dns_policy_if_needed(
+            node,
+            secret,
+            dns_policy,
+            progress_callback=progress_callback,
+        )
 
         if not policy.enabled:
             policy.applied_state = None
             policy.last_applied_at = datetime.now(timezone.utc)
             db.add(policy)
+            if dns_policy is not None:
+                dns_policy.applied_state = None
+                dns_policy.last_applied_at = datetime.now(timezone.utc)
+                db.add(dns_policy)
             db.commit()
             db.refresh(policy)
+            if dns_policy is not None:
+                db.refresh(dns_policy)
             return {
                 "policy": policy,
                 "message": "Route policy is disabled. Previous rules were removed.",
@@ -152,8 +168,21 @@ class RoutePolicyService:
         }
         policy.last_applied_at = datetime.now(timezone.utc)
         db.add(policy)
+
+        if dns_policy is not None:
+            self._apply_dns_policy_if_enabled(
+                node,
+                secret,
+                policy,
+                dns_policy,
+                progress_callback=progress_callback,
+            )
+            db.add(dns_policy)
+
         db.commit()
         db.refresh(policy)
+        if dns_policy is not None:
+            db.refresh(dns_policy)
         return {
             "policy": policy,
             "message": "Route policy applied successfully.",
@@ -285,6 +314,11 @@ class RoutePolicyService:
         suffix = policy_id.replace("-", "")[:12]
         return f"ONXRP{suffix.upper()}"
 
+    @staticmethod
+    def _dns_chain_name(policy_id: str) -> str:
+        suffix = policy_id.replace("-", "")[:12]
+        return f"ONXDNS{suffix.upper()}"
+
     def _build_state(self, policy: RoutePolicy) -> dict:
         return {
             "chain_name": self._chain_name(policy.id),
@@ -299,6 +333,68 @@ class RoutePolicyService:
             "excluded_networks": list(policy.excluded_networks),
             "action": policy.action.value,
         }
+
+    def _build_dns_state(self, policy: RoutePolicy, dns_policy: DNSPolicy) -> dict:
+        dns_host, dns_port = self._dns_policies.parse_dns_address(dns_policy.dns_address)
+        return {
+            "chain_name": self._dns_chain_name(policy.id),
+            "ingress_interface": policy.ingress_interface,
+            "dns_host": dns_host,
+            "dns_port": dns_port,
+            "capture_protocols": list(dns_policy.capture_protocols),
+            "capture_ports": list(dns_policy.capture_ports),
+            "exceptions_networks": list(dns_policy.exceptions_networks),
+        }
+
+    def _cleanup_dns_policy_if_needed(
+        self,
+        node: Node,
+        secret: str,
+        dns_policy: DNSPolicy | None,
+        *,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> None:
+        if dns_policy is None or not dns_policy.applied_state:
+            return
+        if progress_callback:
+            progress_callback("cleaning previously applied dns policy rules")
+        self._run_remote_script(
+            node,
+            secret,
+            self._render_dns_cleanup_script(dns_policy.applied_state),
+            f"dns-cleanup-{dns_policy.id}",
+        )
+
+    def _apply_dns_policy_if_enabled(
+        self,
+        node: Node,
+        secret: str,
+        route_policy: RoutePolicy,
+        dns_policy: DNSPolicy,
+        *,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> None:
+        if not dns_policy.enabled:
+            dns_policy.applied_state = None
+            dns_policy.last_applied_at = datetime.now(timezone.utc)
+            return
+
+        if progress_callback:
+            progress_callback("applying dns capture rules")
+        state = self._build_dns_state(route_policy, dns_policy)
+        self._run_remote_script(
+            node,
+            secret,
+            self._render_dns_apply_script(state),
+            f"dns-apply-{dns_policy.id}",
+        )
+        dns_policy.applied_state = {
+            **state,
+            "applied_at": datetime.now(timezone.utc).isoformat(),
+            "route_policy_id": route_policy.id,
+            "dns_policy_id": dns_policy.id,
+        }
+        dns_policy.last_applied_at = datetime.now(timezone.utc)
 
     def _render_apply_script(self, state: dict) -> str:
         ingress = shlex.quote(state["ingress_interface"])
@@ -401,6 +497,77 @@ class RoutePolicyService:
                 "while iptables -t nat -C POSTROUTING -o \"$TARGET_IF\" -j MASQUERADE 2>/dev/null; do "
                 "iptables -t nat -D POSTROUTING -o \"$TARGET_IF\" -j MASQUERADE; done"
             )
+        return "\n".join(lines) + "\n"
+
+    def _render_dns_apply_script(self, state: dict) -> str:
+        ingress = shlex.quote(state["ingress_interface"])
+        chain = shlex.quote(state["chain_name"])
+        dns_host = shlex.quote(state["dns_host"])
+        dns_port = int(state["dns_port"])
+        protocols = [shlex.quote(protocol) for protocol in state["capture_protocols"]]
+        ports = [int(port) for port in state["capture_ports"]]
+        exceptions = [shlex.quote(network) for network in state["exceptions_networks"]]
+
+        lines = [
+            "set -eu",
+            "",
+            f"CHAIN={chain}",
+            f"INGRESS_IF={ingress}",
+            f"DNS_HOST={dns_host}",
+            f"DNS_PORT={dns_port}",
+            "",
+            "iptables -t nat -N \"$CHAIN\" 2>/dev/null || true",
+            "iptables -t nat -F \"$CHAIN\"",
+            "",
+            "# Excluded destinations bypass DNS interception.",
+        ]
+        lines.extend(
+            f"iptables -t nat -A \"$CHAIN\" -d {network} -j RETURN"
+            for network in exceptions
+        )
+        lines.extend(
+            [
+                "",
+                "# Force DNS requests to local resolver.",
+                "iptables -t nat -A \"$CHAIN\" -j DNAT --to-destination \"$DNS_HOST:$DNS_PORT\"",
+            ]
+        )
+        lines.extend(
+            (
+                f"iptables -t nat -C PREROUTING -i \"$INGRESS_IF\" -p {protocol} --dport {port} -j \"$CHAIN\" 2>/dev/null || "
+                f"iptables -t nat -A PREROUTING -i \"$INGRESS_IF\" -p {protocol} --dport {port} -j \"$CHAIN\""
+            )
+            for protocol in protocols
+            for port in ports
+        )
+        return "\n".join(lines) + "\n"
+
+    def _render_dns_cleanup_script(self, state: dict) -> str:
+        ingress = shlex.quote(str(state.get("ingress_interface", "")))
+        chain = shlex.quote(str(state.get("chain_name", "")))
+        protocols = [shlex.quote(str(protocol).strip().lower()) for protocol in state.get("capture_protocols", [])]
+        ports = [int(port) for port in state.get("capture_ports", [])]
+
+        lines = [
+            "set -eu",
+            "",
+            f"CHAIN={chain}",
+            f"INGRESS_IF={ingress}",
+        ]
+        lines.extend(
+            (
+                f"while iptables -t nat -C PREROUTING -i \"$INGRESS_IF\" -p {protocol} --dport {port} -j \"$CHAIN\" 2>/dev/null; do "
+                f"iptables -t nat -D PREROUTING -i \"$INGRESS_IF\" -p {protocol} --dport {port} -j \"$CHAIN\"; done"
+            )
+            for protocol in protocols
+            for port in ports
+        )
+        lines.extend(
+            [
+                "iptables -t nat -F \"$CHAIN\" 2>/dev/null || true",
+                "iptables -t nat -X \"$CHAIN\" 2>/dev/null || true",
+            ]
+        )
         return "\n".join(lines) + "\n"
 
     def _run_remote_script(self, node: Node, secret: str, script: str, script_suffix: str) -> tuple[str, str]:
