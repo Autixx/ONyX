@@ -12,6 +12,7 @@ from onx.api.routers.links import router as links_router
 from onx.api.routers.nodes import router as nodes_router
 from onx.api.routers.probes import router as probes_router
 from onx.api.routers.route_policies import router as route_policies_router
+from onx.api.routers.topology import router as topology_router
 from onx.core.config import get_settings
 from onx.db.session import init_db
 from onx.workers.job_worker import JobWorker
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(dns_policies_router, prefix=settings.api_prefix)
     app.include_router(geo_policies_router, prefix=settings.api_prefix)
     app.include_router(probes_router, prefix=settings.api_prefix)
+    app.include_router(topology_router, prefix=settings.api_prefix)
     return app
 
 
