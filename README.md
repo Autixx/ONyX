@@ -88,6 +88,48 @@ systemctl status wg-dashboard.service --no-pager
 journalctl -u wg-dashboard.service -f
 ```
 
+## ONX native install (no Docker)
+
+Install ONX API + PostgreSQL + systemd service on Ubuntu 22.04/24.04:
+
+```bash
+cd /opt/wgd-awg-multihop
+sudo bash scripts/install_onx_ubuntu.sh
+```
+
+Defaults:
+- service: `onx-api.service`
+- bind: `127.0.0.1:8081`
+- env: `/etc/onx/onx.env`
+- DB: local PostgreSQL (`onx` / `onx`)
+
+Useful overrides:
+
+```bash
+sudo bash scripts/install_onx_ubuntu.sh \
+  --ref dev \
+  --bind-host 0.0.0.0 \
+  --bind-port 8081 \
+  --postgres-db onx \
+  --postgres-user onx \
+  --postgres-password 'strong-password'
+```
+
+Update ONX in-place:
+
+```bash
+cd /opt/wgd-awg-multihop
+sudo bash scripts/update_onx_ubuntu.sh --ref dev
+```
+
+Service checks:
+
+```bash
+systemctl status onx-api.service --no-pager
+journalctl -u onx-api.service -f
+curl -fsS http://127.0.0.1:8081/api/v1/health
+```
+
 ## ONX alpha smoke check
 
 After ONX API is running, you can validate the minimal ingress protocol end-to-end:
