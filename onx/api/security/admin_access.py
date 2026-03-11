@@ -25,6 +25,8 @@ class AdminAccessControl:
         "access_rules.read": {"roles": ["admin"], "description": "Read API access rules"},
         "access_rules.write": {"roles": ["admin"], "description": "Modify API access rules"},
         "audit_logs.read": {"roles": ["viewer", "operator", "admin"], "description": "Read audit logs"},
+        "maintenance.read": {"roles": ["viewer", "operator", "admin"], "description": "Read retention policy"},
+        "maintenance.write": {"roles": ["operator", "admin"], "description": "Run retention cleanup"},
         "worker_health.read": {"roles": ["viewer", "operator", "admin"], "description": "Read worker health"},
         "jobs.read": {"roles": ["viewer", "operator", "admin"], "description": "Read jobs and events"},
         "jobs.write": {"roles": ["operator", "admin"], "description": "Modify jobs and locks"},
@@ -107,6 +109,10 @@ class AdminAccessControl:
             return "worker_health.read"
         if path == f"{prefix}/audit-logs":
             return "audit_logs.read"
+        if path == f"{prefix}/maintenance/retention":
+            return "maintenance.read"
+        if path == f"{prefix}/maintenance/cleanup":
+            return "maintenance.write"
         if path == f"{prefix}/graph":
             return "topology.read"
         if path == f"{prefix}/paths/plan":

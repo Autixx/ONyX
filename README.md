@@ -32,11 +32,14 @@ Current repository state:
 - native ONX install/update flow exists
 - native TLS setup for ONX exists
 - post-install alpha smoke exists
+- retention cleanup scheduler exists
+- control-plane state export/import exists
 
 Current ONX limitations:
 
 - no finished UI
 - no full production HA control-plane yet
+- still needs one clean Ubuntu end-to-end validation before being called install-safe
 
 ## Repository Layout
 
@@ -169,6 +172,7 @@ Implemented backend surface at this stage:
 - balancers CRUD
 - topology graph API
 - weighted path planner
+- retention policy API and cleanup
 - client ingress protocol:
   - `/bootstrap`
   - `/probe`
@@ -490,6 +494,8 @@ Endpoints:
 Examples of permission keys:
 
 - `audit_logs.read`
+- `maintenance.read`
+- `maintenance.write`
 - `nodes.read`
 - `nodes.write`
 - `links.read`
@@ -542,6 +548,74 @@ Useful filters:
 - `entity_type=auth_rotation`
 - `entity_id=client`
 - `level=info`
+
+## ONX Retention
+
+Runtime cleanup is built in:
+
+- `probe_results` are cleaned by retention policy
+- `event_logs` are cleaned by retention policy
+- cleanup runs in the background scheduler
+- cleanup can also be triggered manually
+
+Defaults:
+
+- `ONX_RETENTION_SCHEDULER_ENABLED=true`
+- `ONX_RETENTION_SCHEDULER_INTERVAL_SECONDS=3600`
+- `ONX_PROBE_RESULT_RETENTION_SECONDS=604800`
+- `ONX_EVENT_LOG_RETENTION_SECONDS=2592000`
+
+Manual policy check:
+
+```bash
+curl -H "Authorization: Bearer $(sudo awk -F= '/^primary_token=/{print $2}' /etc/onx/admin-auth.txt)" \
+  http://127.0.0.1:8081/api/v1/maintenance/retention
+```
+
+Manual cleanup run:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $(sudo awk -F= '/^primary_token=/{print $2}' /etc/onx/admin-auth.txt)" \
+  http://127.0.0.1:8081/api/v1/maintenance/cleanup
+```
+
+## ONX Control-Plane State
+
+Separate from ACL matrix, ONX can export/import the main control-plane objects:
+
+- nodes
+- links
+- balancers
+- route policies
+- dns policies
+- geo policies
+
+By default, export does not include secrets.
+
+Export:
+
+```bash
+python scripts/onx_control_plane_state.py --env-file /etc/onx/onx.env export --output onx-state.json
+```
+
+Export with active node management secrets in plaintext:
+
+```bash
+python scripts/onx_control_plane_state.py --env-file /etc/onx/onx.env export --output onx-state-with-secrets.json --include-secrets
+```
+
+Import:
+
+```bash
+python scripts/onx_control_plane_state.py --env-file /etc/onx/onx.env import --input onx-state.json
+```
+
+Replace current control-plane state with file contents:
+
+```bash
+python scripts/onx_control_plane_state.py --env-file /etc/onx/onx.env import --input onx-state.json --replace
+```
 
 ## GeoIP Direct in Legacy Multihop
 

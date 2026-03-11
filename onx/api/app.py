@@ -12,6 +12,7 @@ from onx.api.routers.geo_policies import router as geo_policies_router
 from onx.api.routers.health import router as health_router
 from onx.api.routers.jobs import router as jobs_router
 from onx.api.routers.links import router as links_router
+from onx.api.routers.maintenance import router as maintenance_router
 from onx.api.routers.nodes import router as nodes_router
 from onx.api.routers.probes import router as probes_router
 from onx.api.routers.route_policies import router as route_policies_router
@@ -21,6 +22,7 @@ from onx.core.config import get_settings
 from onx.db.session import init_db
 from onx.workers.job_worker import JobWorker
 from onx.workers.probe_scheduler import ProbeScheduler
+from onx.workers.retention_scheduler import RetentionScheduler
 
 
 @asynccontextmanager
@@ -35,11 +37,17 @@ async def lifespan(_: FastAPI):
         interval_seconds=settings.probe_scheduler_interval_seconds,
         only_active_links=settings.probe_scheduler_only_active_links,
     )
+    retention_scheduler = RetentionScheduler(
+        interval_seconds=settings.retention_scheduler_interval_seconds,
+    )
     init_db()
     worker.start()
     if settings.probe_scheduler_enabled:
         probe_scheduler.start()
+    if settings.retention_scheduler_enabled:
+        retention_scheduler.start()
     yield
+    retention_scheduler.stop()
     probe_scheduler.stop()
     worker.stop()
 
@@ -73,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(geo_policies_router, prefix=settings.api_prefix)
     app.include_router(probes_router, prefix=settings.api_prefix)
     app.include_router(topology_router, prefix=settings.api_prefix)
+    app.include_router(maintenance_router, prefix=settings.api_prefix)
     return app
 
 
