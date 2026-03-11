@@ -29,6 +29,23 @@ One-command deploy with ready inbound `wg0` (keys + NAT + interface up):
 sudo bash scripts/install_ubuntu.sh --bootstrap-inbound wg0
 ```
 
+Enable HTTPS (OpenSSL self-signed cert + nginx reverse proxy):
+
+```bash
+sudo bash scripts/install_ubuntu.sh \
+  --bootstrap-inbound awg0 \
+  --bootstrap-protocol awg \
+  --enable-tls-openssl \
+  --tls-ip <SERVER_PUBLIC_IP>
+```
+
+Optional TLS flags:
+- `--tls-domain <fqdn>`: put DNS SAN/CN into cert
+- `--tls-cert-days <num>`: cert validity
+- `--tls-https-port <port>`: nginx HTTPS port (default `443`)
+- `--tls-force`: regenerate cert files
+- `--no-tls-local-bind`: keep panel on public `app_ip` instead of `127.0.0.1`
+
 Example for AWG inbound:
 
 ```bash

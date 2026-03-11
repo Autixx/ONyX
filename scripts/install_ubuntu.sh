@@ -33,6 +33,13 @@ AWG_H1="${AWG_H1:-}"
 AWG_H2="${AWG_H2:-}"
 AWG_H3="${AWG_H3:-}"
 AWG_H4="${AWG_H4:-}"
+ENABLE_TLS_OPENSSL="${ENABLE_TLS_OPENSSL:-false}"
+TLS_DOMAIN="${TLS_DOMAIN:-}"
+TLS_IP="${TLS_IP:-}"
+TLS_CERT_DAYS="${TLS_CERT_DAYS:-825}"
+TLS_HTTPS_PORT="${TLS_HTTPS_PORT:-443}"
+TLS_FORCE="${TLS_FORCE:-false}"
+TLS_LOCAL_BIND="${TLS_LOCAL_BIND:-true}"
 
 usage() {
   cat <<'EOF'
@@ -77,6 +84,13 @@ Options:
   --awg-h2 <num>           AWG2.0 H2 value (default: random)
   --awg-h3 <num>           AWG2.0 H3 value (default: random)
   --awg-h4 <num>           AWG2.0 H4 value (default: random)
+  --enable-tls-openssl     Configure HTTPS via nginx + self-signed OpenSSL cert
+  --tls-domain <name>      TLS certificate DNS name (optional)
+  --tls-ip <addr>          TLS certificate IP SAN (optional, auto-detected if empty)
+  --tls-cert-days <num>    Self-signed cert validity days (default: 825)
+  --tls-https-port <port>  HTTPS listen port for nginx (default: 443)
+  --tls-force              Regenerate TLS cert even if it already exists
+  --no-tls-local-bind      Keep panel bind address public (do not force app_ip=127.0.0.1)
   -h, --help              Show help
 EOF
 }
@@ -481,6 +495,75 @@ EOF
   fi
 }
 
+configure_dashboard_local_bind_for_tls() {
+  local config_path="${CONFIG_DIR}/wg-dashboard.ini"
+  local config_changed
+
+  config_changed="$(python3 - "${config_path}" <<'PY'
+import configparser
+import os
+import sys
+
+config_path = sys.argv[1]
+parser = configparser.ConfigParser()
+if os.path.exists(config_path):
+    parser.read(config_path, encoding="utf-8")
+
+if not parser.has_section("Server"):
+    parser.add_section("Server")
+
+changed = False
+if parser.get("Server", "app_ip", fallback="").strip() != "127.0.0.1":
+    parser.set("Server", "app_ip", "127.0.0.1")
+    changed = True
+
+if parser.get("Server", "app_port", fallback="").strip() == "":
+    parser.set("Server", "app_port", "10086")
+    changed = True
+
+if changed or not os.path.exists(config_path):
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    with open(config_path, "w", encoding="utf-8") as f:
+        parser.write(f)
+
+print("changed" if changed else "unchanged")
+PY
+)"
+
+  if [[ "${config_changed}" == "changed" ]]; then
+    echo "[tls] Updated ${config_path}: app_ip=127.0.0.1"
+    systemctl restart "${SERVICE_NAME}.service"
+  else
+    echo "[tls] ${config_path} already uses local bind."
+  fi
+}
+
+setup_tls_openssl_wrapper() {
+  local tls_script="${INSTALL_DIR}/scripts/setup_tls_openssl.sh"
+  local args=(
+    --service-name "${SERVICE_NAME}"
+    --upstream-host 127.0.0.1
+    --upstream-port 10086
+    --https-port "${TLS_HTTPS_PORT}"
+    --cert-days "${TLS_CERT_DAYS}"
+  )
+
+  [[ -f "${tls_script}" ]] || fail "[tls] Script not found: ${tls_script}"
+  chmod +x "${tls_script}"
+
+  if [[ -n "${TLS_DOMAIN}" ]]; then
+    args+=(--domain "${TLS_DOMAIN}")
+  fi
+  if [[ -n "${TLS_IP}" ]]; then
+    args+=(--ip "${TLS_IP}")
+  fi
+  if [[ "${TLS_FORCE}" == "true" ]]; then
+    args+=(--force)
+  fi
+
+  bash "${tls_script}" "${args[@]}"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo-url)
@@ -611,6 +694,34 @@ while [[ $# -gt 0 ]]; do
       AWG_H4="$2"
       shift 2
       ;;
+    --enable-tls-openssl)
+      ENABLE_TLS_OPENSSL="true"
+      shift 1
+      ;;
+    --tls-domain)
+      TLS_DOMAIN="$2"
+      shift 2
+      ;;
+    --tls-ip)
+      TLS_IP="$2"
+      shift 2
+      ;;
+    --tls-cert-days)
+      TLS_CERT_DAYS="$2"
+      shift 2
+      ;;
+    --tls-https-port)
+      TLS_HTTPS_PORT="$2"
+      shift 2
+      ;;
+    --tls-force)
+      TLS_FORCE="true"
+      shift 1
+      ;;
+    --no-tls-local-bind)
+      TLS_LOCAL_BIND="false"
+      shift 1
+      ;;
     -h|--help)
       usage
       exit 0
@@ -633,9 +744,13 @@ if ! command -v apt-get >/dev/null 2>&1; then
   exit 1
 fi
 
+validate_port "${TLS_HTTPS_PORT}" || fail "Invalid TLS HTTPS port: ${TLS_HTTPS_PORT}"
+[[ "${TLS_CERT_DAYS}" =~ ^[0-9]+$ ]] || fail "TLS cert days must be a positive integer."
+(( TLS_CERT_DAYS >= 1 )) || fail "TLS cert days must be >= 1."
+
 export DEBIAN_FRONTEND=noninteractive
 
-echo "[1/10] Installing OS dependencies..."
+echo "[1/11] Installing OS dependencies..."
 apt-get update
 apt-get install -y \
   ca-certificates \
@@ -663,7 +778,7 @@ fi
 
 mkdir -p /etc/wireguard
 
-echo "[2/10] Ensuring AmneziaWG binaries..."
+echo "[2/11] Ensuring AmneziaWG binaries..."
 if [[ "${AUTO_INSTALL_AWG}" == "true" ]]; then
   install_awg_stack
 else
@@ -672,7 +787,7 @@ else
   fi
 fi
 
-echo "[3/10] Fetching project source..."
+echo "[3/11] Fetching project source..."
 if [[ -d "${INSTALL_DIR}/.git" ]]; then
   git -C "${INSTALL_DIR}" fetch --all --tags
 else
@@ -692,7 +807,7 @@ if [[ ! -f "${SRC_DIR}/dashboard.py" ]]; then
   exit 1
 fi
 
-echo "[4/10] Preparing runtime directories..."
+echo "[4/11] Preparing runtime directories..."
 mkdir -p "${SRC_DIR}/log" "${SRC_DIR}/download"
 mkdir -p "${CONFIG_DIR}/db" "${CONFIG_DIR}/letsencrypt/work-dir" "${CONFIG_DIR}/letsencrypt/config-dir"
 
@@ -704,16 +819,16 @@ private_key_path =
 EOF
 fi
 
-echo "[5/10] Creating Python virtualenv..."
+echo "[5/11] Creating Python virtualenv..."
 python3 -m venv "${SRC_DIR}/venv"
 
-echo "[6/10] Installing Python dependencies..."
+echo "[6/11] Installing Python dependencies..."
 "${SRC_DIR}/venv/bin/python3" -m pip install --upgrade pip wheel setuptools
 "${SRC_DIR}/venv/bin/python3" -m pip install -r "${SRC_DIR}/requirements.txt"
 
 chmod +x "${SRC_DIR}/wgd.sh"
 
-echo "[7/10] Building frontend assets..."
+echo "[7/11] Building frontend assets..."
 if [[ "${BUILD_FRONTEND}" == "true" ]]; then
   if [[ "${AUTO_INSTALL_NODE}" == "true" ]]; then
     ensure_nodejs_toolchain "${NODE_MAJOR}"
@@ -723,7 +838,7 @@ else
   echo "[frontend] skipped (--no-build-frontend)"
 fi
 
-echo "[8/10] Installing systemd service..."
+echo "[8/11] Installing systemd service..."
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 cat > "${SERVICE_FILE}" <<EOF
 [Unit]
@@ -749,11 +864,11 @@ PrivateTmp=yes
 WantedBy=multi-user.target
 EOF
 
-echo "[9/10] Enabling and starting service..."
+echo "[9/11] Enabling and starting service..."
 systemctl daemon-reload
 systemctl enable --now "${SERVICE_NAME}.service"
 
-echo "[10/10] Optional inbound bootstrap..."
+echo "[10/11] Optional inbound bootstrap..."
 if [[ -n "${BOOTSTRAP_INBOUND}" ]]; then
   create_bootstrap_inbound \
     "${BOOTSTRAP_INBOUND}" \
@@ -779,10 +894,23 @@ else
   echo "[bootstrap] skipped (use --bootstrap-inbound <name> to enable)"
 fi
 
+PANEL_URL="http://<server-ip>:10086"
+echo "[11/11] Optional TLS reverse proxy..."
+if [[ "${ENABLE_TLS_OPENSSL}" == "true" ]]; then
+  if [[ "${TLS_LOCAL_BIND}" == "true" ]]; then
+    configure_dashboard_local_bind_for_tls
+  fi
+  setup_tls_openssl_wrapper
+  PANEL_TARGET="${TLS_DOMAIN:-${TLS_IP:-<server-ip>}}"
+  PANEL_URL="https://${PANEL_TARGET}:${TLS_HTTPS_PORT}"
+else
+  echo "[tls] skipped (use --enable-tls-openssl to enable HTTPS wrapper)"
+fi
+
 echo
 echo "Installation complete."
 echo "Service: ${SERVICE_NAME}.service"
 echo "Status:  systemctl status ${SERVICE_NAME}.service --no-pager"
 echo "Logs:    journalctl -u ${SERVICE_NAME}.service -f"
 echo "Config:  ${CONFIG_DIR}/wg-dashboard.ini"
-echo "URL:     http://<server-ip>:10086"
+echo "URL:     ${PANEL_URL}"
