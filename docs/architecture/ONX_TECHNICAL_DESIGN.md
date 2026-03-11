@@ -168,6 +168,22 @@ Examples:
 - geo multihop
 - forced local DNS interception
 
+### Access Rule
+
+A control-plane authorization rule mapping one API permission key to one or more allowed roles.
+
+Examples:
+
+- `nodes.read`
+- `nodes.write`
+- `topology.plan`
+- `access_rules.write`
+
+Access rules may come from:
+
+- built-in defaults
+- database overrides
+
 ### Balancer
 
 A policy target selecting one of multiple candidate links or egresses using a strategy.

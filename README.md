@@ -156,6 +156,7 @@ Implemented backend surface at this stage:
 
 - health endpoints
 - worker diagnostics
+- access rules CRUD
 - jobs queue / retry / cancel / locks
 - nodes CRUD
 - node runtime bootstrap job
@@ -228,7 +229,7 @@ Separate admin auth selection:
 ```bash
 sudo bash scripts/install_onx_ubuntu.sh \
   --admin-auth-mode token_or_jwt \
-  --admin-api-tokens "admin-token-a,admin-token-b"
+  --admin-api-tokens "viewer=admin-view-token,operator=admin-op-token,admin=admin-root-token"
 ```
 
 ## ONX Native TLS
@@ -286,8 +287,8 @@ Strict manual smoke:
 ```bash
 python scripts/onx_alpha_smoke.py \
   --base-url http://127.0.0.1:8081/api/v1 \
-  --client-bearer-token "$(sudo awk -F= '/^tokens=/{print $2}' /etc/onx/client-auth.txt | cut -d, -f1)" \
-  --admin-bearer-token "$(sudo awk -F= '/^tokens=/{print $2}' /etc/onx/admin-auth.txt | cut -d, -f1)" \
+  --client-bearer-token "$(sudo awk -F= '/^primary_token=/{print $2}' /etc/onx/client-auth.txt)" \
+  --admin-bearer-token "$(sudo awk -F= '/^primary_token=/{print $2}' /etc/onx/admin-auth.txt)" \
   --expect-auth \
   --check-rate-limit
 ```
@@ -456,8 +457,46 @@ ACL rules for admin JWT:
 
 - read methods (`GET`, `HEAD`, `OPTIONS`) accept roles from `ONX_ADMIN_API_READ_ROLES`
 - write methods (`POST`, `PUT`, `PATCH`, `DELETE`) accept roles from `ONX_ADMIN_API_WRITE_ROLES`
-- static admin bearer tokens are treated as full `admin`
+- plain static admin tokens are treated as full `admin`
+- role-mapped static admin tokens use roles from the token entry itself
 - JWT roles are read from `roles` or `role` claim
+
+Static admin token format:
+
+- backward-compatible plain token: `supersecrettoken`
+- explicit role mapping: `viewer=token1,operator=token2,admin=token3`
+- multi-role token: `viewer|operator=token4`
+
+## ONX Access Rules
+
+API access permissions can now be overridden from the database.
+
+Use cases:
+
+- give `viewer` read-only access to topology and jobs
+- allow `operator` to apply links and policies
+- keep `admin`-only access to ACL management itself
+- override a specific API action without changing code or env
+
+Endpoints:
+
+- `GET /api/v1/access-rules`
+- `GET /api/v1/access-rules/matrix`
+- `PUT /api/v1/access-rules/{permission_key}`
+- `DELETE /api/v1/access-rules/{permission_key}`
+
+Examples of permission keys:
+
+- `nodes.read`
+- `nodes.write`
+- `links.read`
+- `links.write`
+- `route_policies.read`
+- `route_policies.write`
+- `topology.read`
+- `topology.plan`
+- `access_rules.read`
+- `access_rules.write`
 
 ## GeoIP Direct in Legacy Multihop
 

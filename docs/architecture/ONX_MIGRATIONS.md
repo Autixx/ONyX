@@ -41,6 +41,7 @@ python -m alembic -c alembic.ini downgrade -1
 - `0006_add_balancers_and_route_policy_balancer` adds balancers (`random`/`leastload`/`leastping`) and route policy action `balancer` with `balancer_id`.
 - `0007_add_probe_results` adds persisted probe history for member ping/load metrics used by balancer selection.
 - `0008_add_client_routing_protocol` adds `client_sessions` and `client_probes` for client-driven ingress selection.
+- `0009_add_access_rules` adds DB-backed API access rule overrides by `permission_key -> allowed_roles`.
 - jobs API supports:
   - `POST /api/v1/jobs/{id}/cancel`
   - `POST /api/v1/jobs/{id}/retry-now`
@@ -95,3 +96,12 @@ python -m alembic -c alembic.ini downgrade -1
 - client-routing security:
   - bearer auth for `/bootstrap`, `/probe`, `/best-ingress`, `/session-rebind`
   - in-memory token bucket rate limits with `429 + Retry-After`
+- admin/control-plane security:
+  - bearer auth for admin/control-plane endpoints
+  - static bearer tokens may carry explicit roles (`viewer=...`, `operator=...`, `admin=...`)
+  - JWT admin roles are read from `role` / `roles` claims
+  - DB-backed access rules API supports:
+    - `GET /api/v1/access-rules`
+    - `GET /api/v1/access-rules/matrix`
+    - `PUT /api/v1/access-rules/{permission_key}`
+    - `DELETE /api/v1/access-rules/{permission_key}`

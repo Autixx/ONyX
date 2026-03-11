@@ -11,6 +11,8 @@ from fastapi import Request, status
 from fastapi.responses import JSONResponse
 
 from onx.core.config import get_settings
+from onx.db.models.access_rule import AccessRule
+from onx.db.session import SessionLocal
 
 
 def _b64url_decode(value: str) -> bytes:
@@ -19,12 +21,36 @@ def _b64url_decode(value: str) -> bytes:
 
 
 class AdminAccessControl:
+    DEFAULT_PERMISSION_MATRIX: dict[str, dict] = {
+        "access_rules.read": {"roles": ["admin"], "description": "Read API access rules"},
+        "access_rules.write": {"roles": ["admin"], "description": "Modify API access rules"},
+        "worker_health.read": {"roles": ["viewer", "operator", "admin"], "description": "Read worker health"},
+        "jobs.read": {"roles": ["viewer", "operator", "admin"], "description": "Read jobs and events"},
+        "jobs.write": {"roles": ["operator", "admin"], "description": "Modify jobs and locks"},
+        "nodes.read": {"roles": ["viewer", "operator", "admin"], "description": "Read nodes"},
+        "nodes.write": {"roles": ["operator", "admin"], "description": "Modify nodes and node jobs"},
+        "links.read": {"roles": ["viewer", "operator", "admin"], "description": "Read links"},
+        "links.write": {"roles": ["operator", "admin"], "description": "Modify and apply links"},
+        "balancers.read": {"roles": ["viewer", "operator", "admin"], "description": "Read balancers"},
+        "balancers.write": {"roles": ["operator", "admin"], "description": "Modify balancers"},
+        "route_policies.read": {"roles": ["viewer", "operator", "admin"], "description": "Read route policies"},
+        "route_policies.write": {"roles": ["operator", "admin"], "description": "Modify and apply route policies"},
+        "dns_policies.read": {"roles": ["viewer", "operator", "admin"], "description": "Read DNS policies"},
+        "dns_policies.write": {"roles": ["operator", "admin"], "description": "Modify DNS policies"},
+        "geo_policies.read": {"roles": ["viewer", "operator", "admin"], "description": "Read geo policies"},
+        "geo_policies.write": {"roles": ["operator", "admin"], "description": "Modify geo policies"},
+        "probes.read": {"roles": ["viewer", "operator", "admin"], "description": "Read probe results"},
+        "probes.write": {"roles": ["operator", "admin"], "description": "Run probes"},
+        "topology.read": {"roles": ["viewer", "operator", "admin"], "description": "Read topology graph"},
+        "topology.plan": {"roles": ["viewer", "operator", "admin"], "description": "Run path planner"},
+    }
+
     def __init__(self) -> None:
         self._settings = get_settings()
 
     def enforce_request(self, request: Request) -> JSONResponse | None:
-        access_level = self._classify_request(request)
-        if access_level is None:
+        permission_key = self.classify_permission(request)
+        if permission_key is None:
             return None
 
         auth_result = self._authenticate(request)
@@ -32,22 +58,26 @@ class AdminAccessControl:
             return auth_result
 
         roles = auth_result
-        if access_level == "read":
-            allowed_roles = self._parse_roles(self._settings.admin_api_read_roles)
-        else:
-            allowed_roles = self._parse_roles(self._settings.admin_api_write_roles)
-
         if "admin" in roles:
             return None
+
+        try:
+            allowed_roles = self.resolve_allowed_roles(permission_key)
+        except Exception:
+            return self._json_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Access control lookup failed.",
+            )
+
         if roles.intersection(allowed_roles):
             return None
 
         return self._json_error(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient admin API role.",
+            detail=f"Insufficient admin API role for permission '{permission_key}'.",
         )
 
-    def _classify_request(self, request: Request) -> str | None:
+    def classify_permission(self, request: Request) -> str | None:
         prefix = self._settings.api_prefix.rstrip("/")
         path = request.url.path
         method = request.method.upper()
@@ -61,29 +91,103 @@ class AdminAccessControl:
             f"{prefix}/best-ingress",
             f"{prefix}/session-rebind",
         )
-        admin_exact = {
-            f"{prefix}/health/worker",
-            f"{prefix}/graph",
-            f"{prefix}/paths/plan",
-        }
-        admin_prefixes = (
-            f"{prefix}/jobs",
-            f"{prefix}/nodes",
-            f"{prefix}/links",
-            f"{prefix}/balancers",
-            f"{prefix}/route-policies",
-            f"{prefix}/dns-policies",
-            f"{prefix}/geo-policies",
-            f"{prefix}/probes",
-        )
 
         if path in public_exact:
             return None
         if any(path == candidate or path.startswith(candidate + "/") for candidate in public_prefixes):
             return None
-        if path in admin_exact or any(path == candidate or path.startswith(candidate + "/") for candidate in admin_prefixes):
-            return "read" if method in {"GET", "HEAD", "OPTIONS"} else "write"
+
+        if path == f"{prefix}/health/worker":
+            return "worker_health.read"
+        if path == f"{prefix}/graph":
+            return "topology.read"
+        if path == f"{prefix}/paths/plan":
+            return "topology.plan"
+        if path == f"{prefix}/access-rules" or path == f"{prefix}/access-rules/matrix":
+            return "access_rules.read"
+        if path.startswith(f"{prefix}/access-rules/"):
+            return "access_rules.write" if method not in {"GET", "HEAD", "OPTIONS"} else "access_rules.read"
+
+        path_groups = {
+            "jobs": "jobs",
+            "nodes": "nodes",
+            "links": "links",
+            "balancers": "balancers",
+            "route-policies": "route_policies",
+            "dns-policies": "dns_policies",
+            "geo-policies": "geo_policies",
+            "probes": "probes",
+        }
+        for path_segment, permission_prefix in path_groups.items():
+            root = f"{prefix}/{path_segment}"
+            if path == root or path.startswith(root + "/"):
+                return f"{permission_prefix}.read" if method in {"GET", "HEAD", "OPTIONS"} else f"{permission_prefix}.write"
         return None
+
+    def describe_permission_matrix(self, db=None) -> list[dict]:
+        overrides: dict[str, AccessRule] = {}
+        should_close = False
+        if db is None:
+            db = SessionLocal()
+            should_close = True
+        try:
+            overrides = {
+                rule.permission_key: rule
+                for rule in db.query(AccessRule).all()
+            }
+        finally:
+            if should_close:
+                db.close()
+
+        items: list[dict] = []
+        for permission_key, meta in sorted(self.DEFAULT_PERMISSION_MATRIX.items()):
+            override = overrides.get(permission_key)
+            if override is not None:
+                items.append(
+                    {
+                        "permission_key": permission_key,
+                        "description": override.description or meta.get("description"),
+                        "source": "db",
+                        "allowed_roles": list(override.allowed_roles_json or []),
+                        "enabled": bool(override.enabled),
+                    }
+                )
+            else:
+                items.append(
+                    {
+                        "permission_key": permission_key,
+                        "description": meta.get("description"),
+                        "source": "default",
+                        "allowed_roles": list(meta["roles"]),
+                        "enabled": True,
+                    }
+                )
+        for permission_key, override in sorted(overrides.items()):
+            if permission_key in self.DEFAULT_PERMISSION_MATRIX:
+                continue
+            items.append(
+                {
+                    "permission_key": permission_key,
+                    "description": override.description,
+                    "source": "db",
+                    "allowed_roles": list(override.allowed_roles_json or []),
+                    "enabled": bool(override.enabled),
+                }
+            )
+        return items
+
+    def resolve_allowed_roles(self, permission_key: str) -> set[str]:
+        with SessionLocal() as db:
+            rule = db.query(AccessRule).filter(AccessRule.permission_key == permission_key).one_or_none()
+        if rule is not None:
+            if not rule.enabled:
+                return set()
+            return {str(item).strip().lower() for item in (rule.allowed_roles_json or []) if str(item).strip()}
+
+        default = self.DEFAULT_PERMISSION_MATRIX.get(permission_key)
+        if default is not None:
+            return {str(item).strip().lower() for item in default["roles"] if str(item).strip()}
+        return {"admin"}
 
     def _authenticate(self, request: Request) -> set[str] | JSONResponse:
         mode = self._settings.admin_api_auth_mode.strip().lower()
@@ -131,9 +235,24 @@ class AdminAccessControl:
         ]
         if not configured:
             return None
-        if any(secrets.compare_digest(item, token) for item in configured):
-            return {"admin"}
+        for entry in configured:
+            roles, expected_token = self._parse_admin_token_entry(entry)
+            if secrets.compare_digest(expected_token, token):
+                return roles
         return None
+
+    @staticmethod
+    def _parse_admin_token_entry(entry: str) -> tuple[set[str], str]:
+        if "=" not in entry:
+            return {"admin"}, entry.strip()
+        raw_roles, raw_token = entry.split("=", 1)
+        token = raw_token.strip()
+        roles = {
+            item.strip().lower()
+            for item in raw_roles.split("|")
+            if item.strip()
+        }
+        return roles or {"admin"}, token
 
     def _authenticate_jwt(self, token: str) -> set[str] | JSONResponse:
         try:
@@ -252,10 +371,6 @@ class AdminAccessControl:
             return None
         token = auth_header[7:].strip()
         return token or None
-
-    @staticmethod
-    def _parse_roles(raw: str) -> set[str]:
-        return {item.strip().lower() for item in raw.split(",") if item.strip()}
 
     @staticmethod
     def _json_error(
