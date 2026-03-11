@@ -85,8 +85,10 @@ python -m alembic -c alembic.ini downgrade -1
 - client-routing API supports:
   - `POST /api/v1/bootstrap`
   - `POST /api/v1/probe`
-  - `POST /api/v1/best-ingress`
+  - `POST /api/v1/best-ingress` (includes optional planned ingress->egress path)
   - `POST /api/v1/session-rebind`
 - topology API supports:
   - `GET /api/v1/graph` (nodes + links + derived metrics for backend-driven topology graph)
   - `POST /api/v1/paths/plan` (shortest-path planning by latency/load/loss scoring)
+- background services:
+  - probe scheduler periodically refreshes node/link ping+load metrics into `probe_results`

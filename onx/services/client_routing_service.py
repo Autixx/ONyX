@@ -11,6 +11,7 @@ from onx.db.models.client_probe import ClientProbe
 from onx.db.models.client_session import ClientSession
 from onx.db.models.node import Node, NodeRole, NodeStatus
 from onx.db.models.probe_result import ProbeResult, ProbeType
+from onx.schemas.topology import PathPlanRequest
 from onx.schemas.client_routing import (
     BestIngressRequest,
     BootstrapRequest,
@@ -18,11 +19,13 @@ from onx.schemas.client_routing import (
     ProbeReportRequest,
     SessionRebindRequest,
 )
+from onx.services.topology_service import TopologyService
 
 
 class ClientRoutingService:
     def __init__(self) -> None:
         self._settings = get_settings()
+        self._topology = TopologyService()
 
     def bootstrap(self, db: Session, payload: BootstrapRequest) -> dict:
         now = datetime.now(timezone.utc)
@@ -135,9 +138,18 @@ class ClientRoutingService:
         elif not fresh_found and not payload.require_fresh_probe:
             reason = "fallback-no-fresh-probe"
 
+        planned_path = self._build_planned_path(
+            db,
+            ingress_node_id=selected["node_id"],
+            session=session,
+            payload=payload,
+            now=now,
+        )
+
         return {
             "selected": selected,
             "alternatives": ranked[1:payload.max_candidates],
+            "planned_path": planned_path,
             "sticky_kept": sticky_kept,
             "reason": reason,
             "probe_window_seconds": self._settings.client_probe_fresh_seconds,
@@ -314,6 +326,31 @@ class ClientRoutingService:
             return 0.0
         return min(value, 1.0)
 
+    def _latest_control_ping(self, db: Session, node_id: str) -> float | None:
+        latest = db.scalar(
+            select(ProbeResult)
+            .where(
+                ProbeResult.source_node_id == node_id,
+                ProbeResult.probe_type == ProbeType.PING,
+            )
+            .order_by(ProbeResult.created_at.desc())
+            .limit(1)
+        )
+        if latest is None:
+            return None
+        metrics = latest.metrics_json or {}
+        for key in ("latency_ms", "rtt_ms", "value"):
+            raw = metrics.get(key)
+            if raw is None:
+                continue
+            try:
+                value = float(raw)
+                if value >= 0:
+                    return value
+            except (TypeError, ValueError):
+                continue
+        return None
+
     def _list_ingress_candidates(self, db: Session) -> list[Node]:
         nodes = list(
             db.scalars(
@@ -329,6 +366,155 @@ class ClientRoutingService:
         filtered = [node for node in nodes if node.status != NodeStatus.OFFLINE]
         filtered.sort(key=lambda node: (status_rank[node.status], node.name.lower()))
         return filtered
+
+    def _list_egress_candidates(self, db: Session) -> list[Node]:
+        nodes = list(
+            db.scalars(
+                select(Node).where(Node.role.in_([NodeRole.EGRESS, NodeRole.MIXED]))
+            ).all()
+        )
+        status_rank = {
+            NodeStatus.REACHABLE: 0,
+            NodeStatus.DEGRADED: 1,
+            NodeStatus.UNKNOWN: 2,
+            NodeStatus.OFFLINE: 3,
+        }
+        filtered = [node for node in nodes if node.status != NodeStatus.OFFLINE]
+        filtered.sort(key=lambda node: (status_rank[node.status], node.name.lower()))
+        return filtered
+
+    def _select_egress_candidate(
+        self,
+        db: Session,
+        *,
+        preferred_country: str | None,
+        fallback_ingress_node_id: str,
+        explicit_target_node_id: str | None,
+    ) -> Node | None:
+        if explicit_target_node_id:
+            node = db.get(Node, explicit_target_node_id)
+            if node is None:
+                raise ValueError("Requested target egress node not found.")
+            if node.status == NodeStatus.OFFLINE:
+                raise ValueError("Requested target egress node is offline.")
+            return node
+
+        candidates = self._list_egress_candidates(db)
+        if not candidates:
+            return None
+
+        # Country-aware selection can be added once node geo metadata is first-class.
+        _ = preferred_country
+
+        ranked: list[tuple[float, Node]] = []
+        for node in candidates:
+            status_penalty = {
+                NodeStatus.REACHABLE: 0.0,
+                NodeStatus.DEGRADED: 40.0,
+                NodeStatus.UNKNOWN: 80.0,
+                NodeStatus.OFFLINE: 2500.0,
+            }[node.status]
+            ping = self._latest_control_ping(db, node.id)
+            load = self._latest_control_load(db, node.id)
+            score = status_penalty + (ping if ping is not None else 200.0) + (load * 50.0)
+            ranked.append((score, node))
+        ranked.sort(key=lambda item: item[0])
+
+        # Prefer egress distinct from ingress if alternatives exist.
+        for _, node in ranked:
+            if node.id != fallback_ingress_node_id:
+                return node
+        return ranked[0][1]
+
+    def _build_planned_path(
+        self,
+        db: Session,
+        *,
+        ingress_node_id: str,
+        session: ClientSession,
+        payload: BestIngressRequest,
+        now: datetime,
+    ) -> dict | None:
+        if not payload.plan_path:
+            return None
+
+        try:
+            egress = self._select_egress_candidate(
+                db,
+                preferred_country=session.destination_country_code,
+                fallback_ingress_node_id=ingress_node_id,
+                explicit_target_node_id=payload.target_egress_node_id,
+            )
+        except ValueError as exc:
+            return {
+                "source_node_id": ingress_node_id,
+                "destination_node_id": payload.target_egress_node_id,
+                "node_path": [ingress_node_id],
+                "hops": [],
+                "total_score": None,
+                "reason": "egress-select-failed",
+                "error": str(exc),
+                "generated_at": now,
+            }
+
+        if egress is None:
+            return {
+                "source_node_id": ingress_node_id,
+                "destination_node_id": None,
+                "node_path": [ingress_node_id],
+                "hops": [],
+                "total_score": None,
+                "reason": "egress-not-found",
+                "error": "No egress candidates available.",
+                "generated_at": now,
+            }
+
+        if egress.id == ingress_node_id:
+            return {
+                "source_node_id": ingress_node_id,
+                "destination_node_id": egress.id,
+                "node_path": [ingress_node_id],
+                "hops": [],
+                "total_score": 0.0,
+                "reason": "ingress-is-egress",
+                "error": None,
+                "generated_at": now,
+            }
+
+        try:
+            planned = self._topology.plan_path(
+                db,
+                PathPlanRequest(
+                    source_node_id=ingress_node_id,
+                    destination_node_id=egress.id,
+                    max_hops=payload.path_max_hops,
+                    require_active_links=payload.path_require_active_links,
+                    latency_weight=payload.path_latency_weight,
+                    load_weight=payload.path_load_weight,
+                    loss_weight=payload.path_loss_weight,
+                ),
+            )
+            return {
+                "source_node_id": planned["source_node_id"],
+                "destination_node_id": planned["destination_node_id"],
+                "node_path": planned["node_path"],
+                "hops": planned["hops"],
+                "total_score": planned["total_score"],
+                "reason": "planned",
+                "error": None,
+                "generated_at": now,
+            }
+        except ValueError as exc:
+            return {
+                "source_node_id": ingress_node_id,
+                "destination_node_id": egress.id,
+                "node_path": [ingress_node_id],
+                "hops": [],
+                "total_score": None,
+                "reason": "planner-failed",
+                "error": str(exc),
+                "generated_at": now,
+            }
 
     def _get_active_session(self, db: Session, session_id: str, session_token: str, now: datetime) -> ClientSession:
         session = db.scalar(

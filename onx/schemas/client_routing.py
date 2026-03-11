@@ -67,8 +67,15 @@ class BestIngressRequest(BaseModel):
     session_id: str
     session_token: str
     destination_country_code: str | None = Field(default=None, min_length=2, max_length=8)
+    target_egress_node_id: str | None = None
     require_fresh_probe: bool = True
     max_candidates: int = Field(default=5, ge=1, le=16)
+    plan_path: bool = True
+    path_max_hops: int = Field(default=8, ge=1, le=32)
+    path_require_active_links: bool = True
+    path_latency_weight: float = Field(default=1.0, ge=0.0, le=100.0)
+    path_load_weight: float = Field(default=1.2, ge=0.0, le=100.0)
+    path_loss_weight: float = Field(default=1.5, ge=0.0, le=100.0)
 
 
 class IngressCandidateScore(ONXBaseModel):
@@ -79,9 +86,34 @@ class IngressCandidateScore(ONXBaseModel):
     inputs: dict
 
 
+class PlannedPathHopRead(ONXBaseModel):
+    link_id: str
+    link_name: str
+    from_node_id: str
+    to_node_id: str
+    from_interface: str | None
+    to_interface: str | None
+    latency_ms: float
+    load_ratio: float
+    loss_pct: float
+    edge_score: float
+
+
+class PlannedPathRead(ONXBaseModel):
+    source_node_id: str
+    destination_node_id: str | None
+    node_path: list[str]
+    hops: list[PlannedPathHopRead]
+    total_score: float | None
+    reason: str
+    error: str | None
+    generated_at: datetime
+
+
 class BestIngressResponse(ONXBaseModel):
     selected: IngressCandidateScore
     alternatives: list[IngressCandidateScore]
+    planned_path: PlannedPathRead | None
     sticky_kept: bool
     reason: str
     probe_window_seconds: int

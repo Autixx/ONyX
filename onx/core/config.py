@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     ssh_connect_timeout_seconds: int = 10
     worker_poll_interval_seconds: int = 2
     worker_lease_seconds: int = 300
+    probe_scheduler_enabled: bool = True
+    probe_scheduler_interval_seconds: int = 30
+    probe_scheduler_only_active_links: bool = True
+    probe_ping_count: int = 3
+    probe_ping_timeout_seconds: int = 1
+    probe_load_sample_seconds: int = 1
+    probe_load_reference_bytes_per_sec: float = 125000000.0
     client_session_ttl_seconds: int = 1800
     client_probe_interval_seconds: int = 15
     client_probe_fresh_seconds: int = 120

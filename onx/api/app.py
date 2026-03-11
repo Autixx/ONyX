@@ -16,6 +16,7 @@ from onx.api.routers.topology import router as topology_router
 from onx.core.config import get_settings
 from onx.db.session import init_db
 from onx.workers.job_worker import JobWorker
+from onx.workers.probe_scheduler import ProbeScheduler
 
 
 @asynccontextmanager
@@ -26,9 +27,16 @@ async def lifespan(_: FastAPI):
         lease_seconds=settings.worker_lease_seconds,
         worker_id=settings.worker_id,
     )
+    probe_scheduler = ProbeScheduler(
+        interval_seconds=settings.probe_scheduler_interval_seconds,
+        only_active_links=settings.probe_scheduler_only_active_links,
+    )
     init_db()
     worker.start()
+    if settings.probe_scheduler_enabled:
+        probe_scheduler.start()
     yield
+    probe_scheduler.stop()
     worker.stop()
 
 

@@ -74,13 +74,21 @@ Request:
 - `session_id`
 - `session_token`
 - `destination_country_code` (optional)
+- `target_egress_node_id` (optional explicit egress)
 - `require_fresh_probe` (default `true`)
 - `max_candidates` (default `5`)
+- `plan_path` (default `true`)
+- `path_max_hops` (default `8`)
+- `path_require_active_links` (default `true`)
+- `path_latency_weight` (default `1.0`)
+- `path_load_weight` (default `1.2`)
+- `path_loss_weight` (default `1.5`)
 
 Response:
 
 - `selected`: chosen ingress
 - `alternatives[]`: ranked backups
+- `planned_path`: planned ingress->...->egress route (or planner error payload)
 - `sticky_kept`: whether current ingress was kept due to hysteresis
 - `reason`: `initial-bind | best-score | sticky-hysteresis | fallback-no-fresh-probe`
 - `probe_window_seconds`
