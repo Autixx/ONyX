@@ -86,14 +86,14 @@ def _require_dict(response: ApiResponse, context: str) -> dict:
 
 
 def ensure_node(
-    client: ApiClient,
+    admin_client: ApiClient,
     *,
     name: str,
     role: str,
     management_address: str,
     ssh_host: str,
 ) -> dict:
-    response = client.request(
+    response = admin_client.request(
         "POST",
         "/nodes",
         {
@@ -108,7 +108,7 @@ def ensure_node(
         expected_statuses=(201,),
     )
     node = _require_dict(response, f"create node {name}")
-    patched = client.request(
+    patched = admin_client.request(
         "PATCH",
         f"/nodes/{node['id']}",
         {"status": "reachable"},
@@ -117,8 +117,8 @@ def ensure_node(
     return _require_dict(patched, f"patch node {name}")
 
 
-def ensure_ingress_candidates(client: ApiClient, min_count: int = 2) -> list[dict]:
-    response = client.request("GET", "/nodes", expected_statuses=(200,))
+def ensure_ingress_candidates(admin_client: ApiClient, min_count: int = 2) -> list[dict]:
+    response = admin_client.request("GET", "/nodes", expected_statuses=(200,))
     nodes = response.body if isinstance(response.body, list) else []
     eligible = [
         node
@@ -129,7 +129,7 @@ def ensure_ingress_candidates(client: ApiClient, min_count: int = 2) -> list[dic
     while len(eligible) < min_count:
         suffix = _rand_suffix()
         node = ensure_node(
-            client,
+            admin_client,
             name=f"smoke-gw-{suffix}",
             role="gateway",
             management_address=f"198.51.100.{random.randint(10, 200)}:51820",
@@ -140,24 +140,24 @@ def ensure_ingress_candidates(client: ApiClient, min_count: int = 2) -> list[dic
     return eligible[:min_count] + created
 
 
-def create_test_topology(client: ApiClient) -> tuple[dict, dict, dict]:
+def create_test_topology(admin_client: ApiClient) -> tuple[dict, dict, dict]:
     suffix = _rand_suffix()
     left = ensure_node(
-        client,
+        admin_client,
         name=f"smoke-path-left-{suffix}",
         role="gateway",
         management_address=f"203.0.113.{random.randint(10, 200)}:51820",
         ssh_host=f"203.0.113.{random.randint(10, 200)}",
     )
     right = ensure_node(
-        client,
+        admin_client,
         name=f"smoke-path-right-{suffix}",
         role="egress",
         management_address=f"198.18.0.{random.randint(10, 200)}:51820",
         ssh_host=f"198.18.0.{random.randint(10, 200)}",
     )
 
-    link_response = client.request(
+    link_response = admin_client.request(
         "POST",
         "/links",
         {
@@ -209,7 +209,7 @@ def create_test_topology(client: ApiClient) -> tuple[dict, dict, dict]:
     return left, right, link
 
 
-def check_auth_enforcement(client: ApiClient) -> None:
+def check_client_auth_enforcement(client: ApiClient) -> None:
     response = client.request(
         "POST",
         "/bootstrap",
@@ -222,9 +222,23 @@ def check_auth_enforcement(client: ApiClient) -> None:
     )
     payload = _require_dict(response, "auth check")
     if "Bearer" not in response.headers.get("WWW-Authenticate", ""):
-        raise RuntimeError("401 auth check is missing WWW-Authenticate: Bearer")
+        raise RuntimeError("401 client auth check is missing WWW-Authenticate: Bearer")
     if not payload.get("detail"):
-        raise RuntimeError("401 auth check returned empty detail")
+        raise RuntimeError("401 client auth check returned empty detail")
+
+
+def check_admin_auth_enforcement(client: ApiClient) -> None:
+    response = client.request(
+        "GET",
+        "/nodes",
+        expected_statuses=(401,),
+        bearer_token="",
+    )
+    payload = _require_dict(response, "admin auth check")
+    if "Bearer" not in response.headers.get("WWW-Authenticate", ""):
+        raise RuntimeError("401 admin auth check is missing WWW-Authenticate: Bearer")
+    if not payload.get("detail"):
+        raise RuntimeError("401 admin auth check returned empty detail")
 
 
 def main() -> int:
@@ -236,9 +250,14 @@ def main() -> int:
     )
     parser.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout in seconds")
     parser.add_argument(
-        "--bearer-token",
+        "--client-bearer-token",
         default=None,
         help="Bearer token or JWT for protected client-routing endpoints",
+    )
+    parser.add_argument(
+        "--admin-bearer-token",
+        default=None,
+        help="Bearer token or JWT for protected admin/control-plane endpoints",
     )
     parser.add_argument(
         "--expect-auth",
@@ -252,23 +271,27 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    client = ApiClient(args.base_url, timeout=args.timeout, bearer_token=args.bearer_token)
+    client = ApiClient(args.base_url, timeout=args.timeout, bearer_token=args.client_bearer_token)
+    admin_client = ApiClient(args.base_url, timeout=args.timeout, bearer_token=args.admin_bearer_token)
     unauth_client = ApiClient(args.base_url, timeout=args.timeout)
 
     try:
         if args.expect_auth:
-            check_auth_enforcement(unauth_client)
-            if not args.bearer_token:
-                raise RuntimeError("--expect-auth requires --bearer-token for the rest of the smoke flow")
+            check_client_auth_enforcement(unauth_client)
+            check_admin_auth_enforcement(unauth_client)
+            if not args.client_bearer_token:
+                raise RuntimeError("--expect-auth requires --client-bearer-token for the client flow")
+            if not args.admin_bearer_token:
+                raise RuntimeError("--expect-auth requires --admin-bearer-token for the admin flow")
 
         health = _require_dict(client.request("GET", "/health", expected_statuses=(200,)), "health")
         if health.get("status") != "ok":
             raise RuntimeError("Health endpoint did not return status=ok")
 
-        ingress_candidates = ensure_ingress_candidates(client, min_count=2)
+        ingress_candidates = ensure_ingress_candidates(admin_client, min_count=2)
         print(f"[smoke] ingress candidates available: {len(ingress_candidates)}")
 
-        left_node, right_node, link = create_test_topology(client)
+        left_node, right_node, link = create_test_topology(admin_client)
         print(f"[smoke] test topology created: {left_node['name']} -> {right_node['name']}")
 
         bootstrap = _require_dict(
@@ -345,14 +368,14 @@ def main() -> int:
         if not selected.get("node_id"):
             raise RuntimeError("best-ingress response has no selected node_id")
 
-        graph = _require_dict(client.request("GET", "/graph", expected_statuses=(200,)), "graph")
+        graph = _require_dict(admin_client.request("GET", "/graph", expected_statuses=(200,)), "graph")
         if len(graph.get("nodes", [])) < 2:
             raise RuntimeError("graph returned too few nodes")
         if not any(edge.get("id") == link["id"] for edge in graph.get("edges", [])):
             raise RuntimeError("graph does not include the smoke test link")
 
         path_plan = _require_dict(
-            client.request(
+            admin_client.request(
                 "POST",
                 "/paths/plan",
                 {
@@ -386,6 +409,8 @@ def main() -> int:
             raise RuntimeError("session-rebind response has no current_node_id")
 
         if args.check_rate_limit:
+            if not args.client_bearer_token:
+                raise RuntimeError("--check-rate-limit requires --client-bearer-token")
             limited_response = client.request(
                 "POST",
                 "/session-rebind",

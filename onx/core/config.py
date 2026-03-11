@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     ssh_connect_timeout_seconds: int = 10
     worker_poll_interval_seconds: int = 2
     worker_lease_seconds: int = 300
+    admin_api_auth_mode: str = "disabled"
+    admin_api_tokens: str = ""
+    admin_api_jwt_secret: str = ""
+    admin_api_jwt_issuer: str = ""
+    admin_api_jwt_audience: str = ""
+    admin_api_jwt_leeway_seconds: int = 30
+    admin_api_jwt_require_exp: bool = True
+    admin_api_read_roles: str = "viewer,operator,admin"
+    admin_api_write_roles: str = "operator,admin"
     client_api_auth_mode: str = "disabled"
     client_api_tokens: str = ""
     client_api_jwt_secret: str = ""

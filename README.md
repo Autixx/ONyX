@@ -36,8 +36,6 @@ Current repository state:
 Current ONX limitations:
 
 - no finished UI
-- no full admin auth/ACL layer for all CRUD endpoints yet
-- bearer `token/JWT` auth currently protects only client-routing endpoints
 - no full production HA control-plane yet
 
 ## Repository Layout
@@ -190,8 +188,10 @@ Default install result:
 - bind: `127.0.0.1:8081`
 - env file: `/etc/onx/onx.env`
 - auth info: `/etc/onx/client-auth.txt`
+- admin auth info: `/etc/onx/admin-auth.txt`
 - DB: local PostgreSQL (`onx`)
 - client-routing auth mode: `token`
+- admin/control-plane auth mode: `token`
 - bearer token is auto-generated if not supplied
 
 Useful overrides:
@@ -221,6 +221,14 @@ sudo bash scripts/install_onx_ubuntu.sh \
   --client-auth-mode jwt \
   --client-api-jwt-issuer onyx-control \
   --client-api-jwt-audience onyx-client
+```
+
+Separate admin auth selection:
+
+```bash
+sudo bash scripts/install_onx_ubuntu.sh \
+  --admin-auth-mode token_or_jwt \
+  --admin-api-tokens "admin-token-a,admin-token-b"
 ```
 
 ## ONX Native TLS
@@ -278,7 +286,8 @@ Strict manual smoke:
 ```bash
 python scripts/onx_alpha_smoke.py \
   --base-url http://127.0.0.1:8081/api/v1 \
-  --bearer-token "$(sudo awk -F= '/^tokens=/{print $2}' /etc/onx/client-auth.txt | cut -d, -f1)" \
+  --client-bearer-token "$(sudo awk -F= '/^tokens=/{print $2}' /etc/onx/client-auth.txt | cut -d, -f1)" \
+  --admin-bearer-token "$(sudo awk -F= '/^tokens=/{print $2}' /etc/onx/admin-auth.txt | cut -d, -f1)" \
   --expect-auth \
   --check-rate-limit
 ```
@@ -323,6 +332,7 @@ Default generated auth data:
 
 ```bash
 sudo cat /etc/onx/client-auth.txt
+sudo cat /etc/onx/admin-auth.txt
 ```
 
 Rotate client-routing auth without manual env edits:
@@ -347,10 +357,20 @@ sudo bash scripts/rotate_onx_auth.sh \
   --client-auth-mode token_or_jwt
 ```
 
-Important:
+Rotate admin/control-plane auth:
 
-- this auth currently protects only client-routing endpoints
-- it does not yet protect all admin/control-plane CRUD routes
+```bash
+sudo bash scripts/rotate_onx_admin_auth.sh
+```
+
+Switch admin auth to JWT mode:
+
+```bash
+sudo bash scripts/rotate_onx_admin_auth.sh \
+  --admin-auth-mode jwt \
+  --admin-api-jwt-issuer onyx-admin \
+  --admin-api-jwt-audience onyx-admin-api
+```
 
 ## ONX Service Checks
 
@@ -377,11 +397,27 @@ Current supported auth modes:
 
 Current implementation scope:
 
-- auth and rate-limit are enforced only for:
+- client auth and rate-limit are enforced for:
   - `/bootstrap`
   - `/probe`
   - `/best-ingress`
   - `/session-rebind`
+
+- admin auth/ACL is enforced for:
+  - `/health/worker`
+  - `/jobs/*`
+  - `/nodes/*`
+  - `/links/*`
+  - `/balancers/*`
+  - `/route-policies/*`
+  - `/dns-policies/*`
+  - `/geo-policies/*`
+  - `/probes/*`
+  - `/graph`
+  - `/paths/plan`
+
+- public without auth:
+  - `/health`
 
 Environment examples:
 
@@ -390,11 +426,21 @@ Environment examples:
 export ONX_CLIENT_API_AUTH_MODE=token
 export ONX_CLIENT_API_TOKENS="token-one,token-two"
 
+# admin token mode
+export ONX_ADMIN_API_AUTH_MODE=token
+export ONX_ADMIN_API_TOKENS="admin-token-one,admin-token-two"
+
 # JWT mode (HS256)
 export ONX_CLIENT_API_AUTH_MODE=jwt
 export ONX_CLIENT_API_JWT_SECRET="change-me-long-random-secret"
 export ONX_CLIENT_API_JWT_ISSUER="onyx-control"
 export ONX_CLIENT_API_JWT_AUDIENCE="onyx-client"
+
+# admin JWT mode (HS256)
+export ONX_ADMIN_API_AUTH_MODE=jwt
+export ONX_ADMIN_API_JWT_SECRET="change-me-long-random-admin-secret"
+export ONX_ADMIN_API_JWT_ISSUER="onyx-admin"
+export ONX_ADMIN_API_JWT_AUDIENCE="onyx-admin-api"
 
 # rate limit
 export ONX_CLIENT_RATE_LIMIT_ENABLED=true
@@ -405,6 +451,13 @@ export ONX_CLIENT_RL_REBIND_SESSION_RATE_PER_MINUTE=20
 ```
 
 When limited, endpoints return `429` with `Retry-After`.
+
+ACL rules for admin JWT:
+
+- read methods (`GET`, `HEAD`, `OPTIONS`) accept roles from `ONX_ADMIN_API_READ_ROLES`
+- write methods (`POST`, `PUT`, `PATCH`, `DELETE`) accept roles from `ONX_ADMIN_API_WRITE_ROLES`
+- static admin bearer tokens are treated as full `admin`
+- JWT roles are read from `roles` or `role` claim
 
 ## GeoIP Direct in Legacy Multihop
 

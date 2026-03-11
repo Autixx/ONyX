@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi import Request
 
 from onx.api.routers.balancers import router as balancers_router
 from onx.api.routers.client_routing import router as client_routing_router
@@ -13,6 +14,7 @@ from onx.api.routers.nodes import router as nodes_router
 from onx.api.routers.probes import router as probes_router
 from onx.api.routers.route_policies import router as route_policies_router
 from onx.api.routers.topology import router as topology_router
+from onx.api.security.admin_access import admin_access_control
 from onx.core.config import get_settings
 from onx.db.session import init_db
 from onx.workers.job_worker import JobWorker
@@ -48,6 +50,13 @@ def create_app() -> FastAPI:
         debug=settings.debug,
         lifespan=lifespan,
     )
+
+    @app.middleware("http")
+    async def admin_api_access_middleware(request: Request, call_next):
+        denied = admin_access_control.enforce_request(request)
+        if denied is not None:
+            return denied
+        return await call_next(request)
 
     app.include_router(health_router, prefix=settings.api_prefix)
     app.include_router(client_routing_router, prefix=settings.api_prefix)
