@@ -10,6 +10,13 @@ ENV_FILE_NAME="${ENV_FILE_NAME:-onx.env}"
 VENV_DIR_NAME="${VENV_DIR_NAME:-.venv-onx}"
 BIND_HOST="${BIND_HOST:-127.0.0.1}"
 BIND_PORT="${BIND_PORT:-8081}"
+ENABLE_TLS_OPENSSL="${ENABLE_TLS_OPENSSL:-false}"
+TLS_LOCAL_BIND="${TLS_LOCAL_BIND:-true}"
+TLS_DOMAIN="${TLS_DOMAIN:-}"
+TLS_IP="${TLS_IP:-}"
+TLS_CERT_DAYS="${TLS_CERT_DAYS:-825}"
+TLS_HTTPS_PORT="${TLS_HTTPS_PORT:-443}"
+TLS_FORCE_REGEN="${TLS_FORCE_REGEN:-false}"
 
 INSTALL_POSTGRES="${INSTALL_POSTGRES:-true}"
 CONFIGURE_LOCAL_POSTGRES="${CONFIGURE_LOCAL_POSTGRES:-true}"
@@ -35,6 +42,13 @@ Options:
   --venv-dir-name <name>        Venv directory under install dir (default: .venv-onx)
   --bind-host <ip>              ONX API bind host (default: 127.0.0.1)
   --bind-port <port>            ONX API bind port (default: 8081)
+  --enable-tls-openssl          Configure nginx + OpenSSL self-signed HTTPS for ONX
+  --tls-domain <name>           TLS certificate CN/SAN DNS name
+  --tls-ip <addr>               TLS certificate SAN IP (recommended: server public IP)
+  --tls-cert-days <num>         self-signed cert validity days (default: 825)
+  --tls-https-port <port>       nginx HTTPS listen port (default: 443)
+  --tls-force                   Regenerate certificate even if it already exists
+  --no-tls-local-bind           Keep ONX API on the requested bind host instead of forcing 127.0.0.1
   --no-install-postgres         Skip postgresql package install
   --no-configure-local-postgres Do not create local db/user via postgres superuser
   --postgres-host <host>        Postgres host (default: 127.0.0.1)
@@ -128,6 +142,34 @@ while [[ $# -gt 0 ]]; do
       BIND_PORT="$2"
       shift 2
       ;;
+    --enable-tls-openssl)
+      ENABLE_TLS_OPENSSL="true"
+      shift 1
+      ;;
+    --tls-domain)
+      TLS_DOMAIN="$2"
+      shift 2
+      ;;
+    --tls-ip)
+      TLS_IP="$2"
+      shift 2
+      ;;
+    --tls-cert-days)
+      TLS_CERT_DAYS="$2"
+      shift 2
+      ;;
+    --tls-https-port)
+      TLS_HTTPS_PORT="$2"
+      shift 2
+      ;;
+    --tls-force)
+      TLS_FORCE_REGEN="true"
+      shift 1
+      ;;
+    --no-tls-local-bind)
+      TLS_LOCAL_BIND="false"
+      shift 1
+      ;;
     --no-install-postgres)
       INSTALL_POSTGRES="false"
       shift 1
@@ -181,12 +223,18 @@ fi
 command -v apt-get >/dev/null 2>&1 || fail "This installer supports apt-based systems only."
 validate_port "${BIND_PORT}" || fail "Invalid bind port: ${BIND_PORT}"
 validate_port "${POSTGRES_PORT}" || fail "Invalid postgres port: ${POSTGRES_PORT}"
+validate_port "${TLS_HTTPS_PORT}" || fail "Invalid TLS https port: ${TLS_HTTPS_PORT}"
 validate_bool "${ONX_DEBUG}" || fail "--onx-debug must be true or false."
+validate_bool "${ENABLE_TLS_OPENSSL}" || fail "TLS flag must be true or false."
+validate_bool "${TLS_LOCAL_BIND}" || fail "TLS local bind flag must be true or false."
+validate_bool "${TLS_FORCE_REGEN}" || fail "TLS force flag must be true or false."
 validate_name "${POSTGRES_DB}" || fail "Invalid postgres db name: ${POSTGRES_DB}"
 validate_name "${POSTGRES_USER}" || fail "Invalid postgres user name: ${POSTGRES_USER}"
 if [[ "${POSTGRES_PASSWORD}" == *"'"* ]]; then
   fail "Postgres password must not contain single quote (')."
 fi
+[[ "${TLS_CERT_DAYS}" =~ ^[0-9]+$ ]] || fail "tls-cert-days must be a positive integer."
+(( TLS_CERT_DAYS >= 1 )) || fail "tls-cert-days must be >= 1."
 
 if [[ -z "${POSTGRES_PASSWORD}" ]]; then
   POSTGRES_PASSWORD="$(openssl rand -hex 24)"
@@ -198,6 +246,18 @@ fi
 ENV_FILE_PATH="${CONFIG_DIR}/${ENV_FILE_NAME}"
 VENV_DIR="${INSTALL_DIR}/${VENV_DIR_NAME}"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+TLS_UPSTREAM_HOST="${BIND_HOST}"
+
+if [[ "${ENABLE_TLS_OPENSSL}" == "true" && "${TLS_LOCAL_BIND}" == "true" ]]; then
+  BIND_HOST="127.0.0.1"
+fi
+if [[ "${BIND_HOST}" == "0.0.0.0" ]]; then
+  TLS_UPSTREAM_HOST="127.0.0.1"
+elif [[ "${BIND_HOST}" == "::" ]]; then
+  TLS_UPSTREAM_HOST="::1"
+else
+  TLS_UPSTREAM_HOST="${BIND_HOST}"
+fi
 
 echo "[1/9] Installing OS dependencies..."
 export DEBIAN_FRONTEND=noninteractive
@@ -316,6 +376,27 @@ echo "[9/9] Enabling and starting service..."
 systemctl daemon-reload
 systemctl enable --now "${SERVICE_NAME}.service"
 
+if [[ "${ENABLE_TLS_OPENSSL}" == "true" ]]; then
+  echo "[tls] Configuring nginx HTTPS reverse proxy for ONX..."
+  TLS_ARGS=(
+    "--service-name" "${SERVICE_NAME}"
+    "--upstream-host" "${TLS_UPSTREAM_HOST}"
+    "--upstream-port" "${BIND_PORT}"
+    "--https-port" "${TLS_HTTPS_PORT}"
+    "--cert-days" "${TLS_CERT_DAYS}"
+  )
+  if [[ -n "${TLS_DOMAIN}" ]]; then
+    TLS_ARGS+=("--domain" "${TLS_DOMAIN}")
+  fi
+  if [[ -n "${TLS_IP}" ]]; then
+    TLS_ARGS+=("--ip" "${TLS_IP}")
+  fi
+  if [[ "${TLS_FORCE_REGEN}" == "true" ]]; then
+    TLS_ARGS+=("--force")
+  fi
+  bash "${INSTALL_DIR}/scripts/setup_onx_tls_openssl.sh" "${TLS_ARGS[@]}"
+fi
+
 echo
 echo "ONX install complete."
 echo "Service:  ${SERVICE_NAME}.service"
@@ -323,6 +404,9 @@ echo "Env file: ${ENV_FILE_PATH}"
 echo "Status:   systemctl status ${SERVICE_NAME}.service --no-pager"
 echo "Logs:     journalctl -u ${SERVICE_NAME}.service -f"
 echo "Health:   curl -fsS http://${BIND_HOST}:${BIND_PORT}/api/v1/health"
+if [[ "${ENABLE_TLS_OPENSSL}" == "true" ]]; then
+  echo "HTTPS:    https://${TLS_DOMAIN:-${TLS_IP:-<server-ip>}}:${TLS_HTTPS_PORT}/api/v1/health"
+fi
 echo
 echo "If needed, edit auth/limits in ${ENV_FILE_PATH} and restart service:"
 echo "  sudo systemctl restart ${SERVICE_NAME}.service"

@@ -115,6 +115,21 @@ sudo bash scripts/install_onx_ubuntu.sh \
   --postgres-password 'strong-password'
 ```
 
+Install with nginx + self-signed HTTPS immediately:
+
+```bash
+sudo bash scripts/install_onx_ubuntu.sh \
+  --enable-tls-openssl \
+  --tls-ip <SERVER_PUBLIC_IP>
+```
+
+Optional TLS flags:
+- `--tls-domain <fqdn>`: put DNS SAN/CN into cert
+- `--tls-cert-days <num>`: cert validity
+- `--tls-https-port <port>`: nginx HTTPS port (default `443`)
+- `--tls-force`: regenerate cert files
+- `--no-tls-local-bind`: keep ONX API on requested public bind instead of forcing `127.0.0.1`
+
 Update ONX in-place:
 
 ```bash
@@ -128,6 +143,15 @@ Service checks:
 systemctl status onx-api.service --no-pager
 journalctl -u onx-api.service -f
 curl -fsS http://127.0.0.1:8081/api/v1/health
+```
+
+Enable HTTPS later for an existing ONX install:
+
+```bash
+sudo bash scripts/setup_onx_tls_openssl.sh \
+  --ip <SERVER_PUBLIC_IP> \
+  --upstream-host 127.0.0.1 \
+  --upstream-port 8081
 ```
 
 ## ONX alpha smoke check
