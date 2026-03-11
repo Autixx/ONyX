@@ -4,6 +4,8 @@
 
 Draft v0.2
 
+Implemented delta: the repo now contains a functioning backend alpha slice beyond the original blueprint, including admin/client auth, DB-backed access rules, audit logs API, retention scheduler, topology/path APIs, native Ubuntu install/update scripts, and control-plane state export/import.
+
 ## Scope
 
 This document defines the first implementation slice of ONX:
@@ -66,12 +68,20 @@ The repository should grow this structure:
     deps.py
     errors.py
     routers/
+      access_rules.py
+      audit_logs.py
       health.py
+      jobs.py
       nodes.py
       links.py
+      balancers.py
+      route_policies.py
+      dns_policies.py
+      geo_policies.py
       probes.py
-      jobs.py
-      drivers.py
+      topology.py
+      client_routing.py
+      maintenance.py
 
   /core
     __init__.py
@@ -90,8 +100,13 @@ The repository should grow this structure:
       link.py
       link_endpoint.py
       route_policy.py
+      dns_policy.py
+      geo_policy.py
       balancer.py
       probe_result.py
+      access_rule.py
+      client_session.py
+      client_probe.py
       job.py
       event_log.py
     repositories/
@@ -113,9 +128,14 @@ The repository should grow this structure:
     node_service.py
     link_service.py
     probe_service.py
-    deployment_service.py
-    capability_service.py
+    route_policy_service.py
+    dns_policy_service.py
+    geo_policy_service.py
+    balancer_service.py
     secret_service.py
+    event_log_service.py
+    retention_service.py
+    control_plane_state_service.py
 
   /drivers
     __init__.py
@@ -143,9 +163,10 @@ The repository should grow this structure:
     handshake.py
     speedtest.py
 
-  /tasks
-    scheduler.py
-    jobs.py
+  /workers
+    job_worker.py
+    probe_scheduler.py
+    retention_scheduler.py
 
   /tests
     conftest.py
@@ -184,6 +205,13 @@ Responsibilities:
 - capability refresh
 - delayed verification jobs
 - deployment retries
+- retention cleanup for history tables
+
+Current implementation:
+
+- `JobWorker`
+- `ProbeScheduler`
+- `RetentionScheduler`
 
 ### Process 3: Remote Execution
 
@@ -287,6 +315,11 @@ Reason:
 - PostgreSQL is the correct long-term target for jobs, events, and topology state
 
 The ORM and migration layer must be written so moving from SQLite to PostgreSQL is low-friction.
+
+Current operational note:
+
+- local development still supports SQLite
+- native Ubuntu installer targets PostgreSQL by default
 
 ## Schema v1
 
@@ -420,14 +453,21 @@ Columns:
 
 - `id` UUID PK
 - `node_id` FK -> `nodes.id`
-- `ingress_ref` string
+- `name` string
+- `ingress_interface` string
 - `action` enum: `direct | next_hop | balancer`
-- `target_ref` string nullable
+- `target_interface` string nullable
+- `target_gateway` string nullable
+- `balancer_id` FK nullable
 - `routed_networks` JSON
 - `excluded_networks` JSON
-- `priority` integer
+- `table_id` integer
+- `rule_priority` integer
+- `firewall_mark` integer
+- `masquerade` boolean
 - `enabled` boolean
-- `spec_json` JSON
+- `applied_state` JSON nullable
+- `last_applied_at` datetime nullable
 - `created_at` datetime
 - `updated_at` datetime
 
@@ -440,13 +480,31 @@ Purpose:
 Columns:
 
 - `id` UUID PK
-- `node_id` FK -> `nodes.id`
-- `ingress_ref` string
+- `route_policy_id` FK -> `route_policies.id`
 - `enabled` boolean
 - `dns_address` string
 - `capture_protocols` JSON
 - `capture_ports` JSON
-- `exceptions` JSON
+- `exceptions_networks` JSON
+- `applied_state` JSON nullable
+- `last_applied_at` datetime nullable
+- `created_at` datetime
+- `updated_at` datetime
+
+### Table: `geo_policies`
+
+Purpose:
+
+- stores per-country route handling attached to one route policy
+
+Columns:
+
+- `id` UUID PK
+- `route_policy_id` FK -> `route_policies.id`
+- `country_code` string
+- `mode` enum: `direct | multihop`
+- `source_url_template` string
+- `enabled` boolean
 - `created_at` datetime
 - `updated_at` datetime
 
@@ -459,10 +517,12 @@ Purpose:
 Columns:
 
 - `id` UUID PK
-- `name` string unique
+- `node_id` FK -> `nodes.id`
+- `name` string
 - `method` enum: `random | leastload | leastping`
-- `member_refs` JSON
-- `health_policy_json` JSON nullable
+- `members` JSON
+- `enabled` boolean
+- `state_json` JSON nullable
 - `created_at` datetime
 - `updated_at` datetime
 
@@ -475,13 +535,42 @@ Purpose:
 Columns:
 
 - `id` UUID PK
-- `probe_type` enum: `ssh | handshake | ping | tcp | udp | speedtest`
+- `probe_type` enum: `ping | interface_load`
 - `source_node_id` UUID nullable
-- `target_node_id` UUID nullable
-- `target_link_id` UUID nullable
+- `balancer_id` UUID nullable
+- `member_interface` string nullable
 - `status` enum: `success | failed | degraded`
 - `metrics_json` JSON
+- `error_text` text nullable
 - `created_at` datetime
+
+### Table: `access_rules`
+
+Purpose:
+
+- stores DB-backed overrides for admin/control-plane permissions
+
+Columns:
+
+- `id` UUID PK
+- `permission_key` string unique
+- `description` text nullable
+- `allowed_roles_json` JSON
+- `enabled` boolean
+- `created_at` datetime
+- `updated_at` datetime
+
+### Table: `client_sessions`
+
+Purpose:
+
+- stores client-to-ingress routing session state for ingress selection and rebind
+
+### Table: `client_probes`
+
+Purpose:
+
+- stores client-submitted ingress probe measurements used for best-ingress decisions
 
 ### Table: `jobs`
 
@@ -535,8 +624,12 @@ Can be added immediately after:
 
 - `route_policies`
 - `dns_policies`
+- `geo_policies`
 - `balancers`
 - `probe_results`
+- `access_rules`
+- `client_sessions`
+- `client_probes`
 
 ## Driver Support Matrix for v0.2
 
@@ -598,6 +691,12 @@ Response:
   "version": "0.1.0"
 }
 ```
+
+#### `GET /api/v1/health/worker`
+
+Purpose:
+
+- worker and scheduler runtime snapshot
 
 ### Nodes
 
@@ -808,27 +907,93 @@ Purpose:
 
 - fetch job execution result
 
+#### `POST /api/v1/jobs/{job_id}/cancel`
+
+Purpose:
+
+- request cooperative cancellation
+
+#### `POST /api/v1/jobs/{job_id}/retry-now`
+
+Purpose:
+
+- requeue an eligible failed or pending job immediately
+
 ### Probes
 
-#### `POST /api/v1/probes/ping`
+#### `GET /api/v1/probes/results`
 
 Purpose:
 
-- run node or link-associated ping probe
+- list stored balancer/topology probe results
 
-#### `POST /api/v1/probes/handshake`
-
-Purpose:
-
-- run handshake verification on a link
-
-#### `POST /api/v1/probes/speedtest`
+#### `POST /api/v1/probes/balancers/{id}/run`
 
 Purpose:
 
-- run local node-to-node speed probe
+- run fresh ping/interface-load probes for balancer members
 
-This endpoint may exist in schema before full implementation.
+### Access Rules
+
+#### `GET /api/v1/access-rules`
+
+- list DB overrides
+
+#### `GET /api/v1/access-rules/matrix`
+
+- effective permission matrix
+
+#### `PUT /api/v1/access-rules/{permission_key}`
+
+- upsert permission override
+
+#### `DELETE /api/v1/access-rules/{permission_key}`
+
+- delete override and fall back to defaults
+
+### Audit Logs
+
+#### `GET /api/v1/audit-logs`
+
+- read control-plane audit events
+
+### Maintenance
+
+#### `GET /api/v1/maintenance/retention`
+
+- show retention policy
+
+#### `POST /api/v1/maintenance/cleanup`
+
+- run immediate cleanup for `probe_results` and `event_logs`
+
+### Client Routing
+
+#### `POST /api/v1/bootstrap`
+
+- register or refresh client session bootstrap context
+
+#### `POST /api/v1/probe`
+
+- submit client-side ingress measurements
+
+#### `POST /api/v1/best-ingress`
+
+- pick best ingress and optionally a planned path
+
+#### `POST /api/v1/session-rebind`
+
+- update routing session when a better ingress is selected
+
+### Topology
+
+#### `GET /api/v1/graph`
+
+- graph payload for backend-driven topology view
+
+#### `POST /api/v1/paths/plan`
+
+- shortest-path planning by weighted metrics
 
 ## Pydantic Schema Groups
 
@@ -901,6 +1066,21 @@ Responsibilities:
 
 - create and store probe results
 - map probe outputs to health summary
+
+### `RetentionService`
+
+Responsibilities:
+
+- apply retention policy to history tables
+- support both scheduled and manual cleanup
+
+### `ControlPlaneStateService`
+
+Responsibilities:
+
+- export deterministic backup of core control-plane objects
+- import and replace state safely enough for alpha recovery workflows
+- avoid exporting management secrets unless explicitly requested
 
 ### `SecretService`
 
@@ -1006,6 +1186,22 @@ Only after these milestones should the project move to:
 - balancers
 - topology graph
 - additional drivers
+
+## Current Alpha Delta
+
+Beyond the original milestone sequence, the current alpha backend already includes:
+
+- route policies + deterministic `apply-planned`
+- DNS and geo policies
+- balancers
+- topology graph and path planner
+- client-routing protocol
+- client/admin auth layers
+- DB-backed admin access rules
+- audit logs API
+- retention scheduler and manual cleanup API
+- control-plane state export/import
+- native Ubuntu install/update scripts with TLS helpers
 
 ## Immediate Next Work Item
 

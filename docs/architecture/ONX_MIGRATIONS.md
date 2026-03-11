@@ -93,6 +93,7 @@ python -m alembic -c alembic.ini downgrade -1
   - `POST /api/v1/paths/plan` (shortest-path planning by latency/load/loss scoring)
 - background services:
   - probe scheduler periodically refreshes node/link ping+load metrics into `probe_results`
+  - retention scheduler periodically cleans `probe_results` and `event_logs`
 - client-routing security:
   - bearer auth for `/bootstrap`, `/probe`, `/best-ingress`, `/session-rebind`
   - in-memory token bucket rate limits with `429 + Retry-After`
@@ -105,3 +106,10 @@ python -m alembic -c alembic.ini downgrade -1
     - `GET /api/v1/access-rules/matrix`
     - `PUT /api/v1/access-rules/{permission_key}`
     - `DELETE /api/v1/access-rules/{permission_key}`
+- audit / maintenance additions:
+  - `GET /api/v1/audit-logs`
+  - `GET /api/v1/maintenance/retention`
+  - `POST /api/v1/maintenance/cleanup`
+- backup/import helpers:
+  - `scripts/onx_acl_matrix.py` exports/imports ACL matrix overrides
+  - `scripts/onx_control_plane_state.py` exports/imports core control-plane state

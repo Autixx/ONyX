@@ -4,6 +4,8 @@
 
 Draft v0.1
 
+Implemented backend delta: alpha control-plane skeleton is live in `onx/` with native Ubuntu install, auth/ACL, audit logs, retention runtime, topology/path APIs, and control-plane state backup/import.
+
 ## Purpose
 
 This document defines the technical shape of `ONX` (`ONyX` as the product name), the core terms, the architectural boundaries, and the implementation sequence.
@@ -218,6 +220,21 @@ The actual state currently rendered and applied on a node.
 
 A mismatch between desired state and applied state.
 
+### Control-Plane State Backup
+
+A serialized export of the main control-plane objects used for backup, migration, and disaster recovery.
+
+Current backup/import scope:
+
+- nodes
+- links
+- balancers
+- route policies
+- DNS policies
+- geo policies
+
+Management secrets may be exported explicitly, but are excluded by default.
+
 ## Architectural Model
 
 ONX is split into three primary layers.
@@ -231,6 +248,10 @@ Responsibilities:
 - schedules validation and deployment jobs
 - computes topology and policy plans
 - gathers status and probe results
+- enforces admin/client auth boundaries
+- stores audit events
+- runs retention and cleanup policies
+- exports and imports control-plane state
 
 ### 2. Data Plane
 
@@ -563,6 +584,8 @@ ONX must expose:
 - probe history
 - deployment logs
 - drift between desired and applied state
+- audit events for sensitive control-plane changes
+- retention policy status and cleanup results
 
 ## Visual Topology Model
 
@@ -596,12 +619,24 @@ Initial assumptions:
 - SSH credentials stored as secrets
 - key material separated from plain config objects
 - audit trail for applies and deletes
+- separate auth contour for client-routing endpoints
+- separate auth contour for admin/control-plane endpoints
+- admin API permissions may be overridden by DB-backed access rules
 
 Later:
 
 - role-based access control
 - agent mutual authentication
 - signed job execution
+
+Current implemented security slice:
+
+- bearer auth for client-routing endpoints
+- optional HS256 JWT for client-routing endpoints
+- in-memory token-bucket rate limiting for client-routing endpoints
+- bearer/JWT auth for admin endpoints
+- role-aware static admin tokens (`viewer`, `operator`, `admin`)
+- DB-backed `access_rules` overrides per `permission_key`
 
 ## API-First Development Rule
 
@@ -629,8 +664,16 @@ Initial groups:
 - `/policies`
 - `/balancers`
 - `/dns-policies`
+- `/geo-policies`
 - `/probes`
 - `/graph`
+- `/paths`
+- `/access-rules`
+- `/audit-logs`
+- `/maintenance`
+- `/bootstrap`
+- `/best-ingress`
+- `/session-rebind`
 - `/jobs`
 
 ## First Implementation Sequence
@@ -726,6 +769,8 @@ The exact order may change, but no new driver should be added before the driver 
 - Rollback must exist before high-risk automation
 - Mixed transports must be normalized through drivers, not special cases
 - L7 support must remain optional and layered on top of the base overlay fabric
+- Control-plane backup/export must be machine-readable and deterministic enough for recovery workflows
+- Runtime history tables must have explicit retention and cleanup strategy
 
 ## Open Questions
 
