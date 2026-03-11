@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     ssh_connect_timeout_seconds: int = 10
     worker_poll_interval_seconds: int = 2
     worker_lease_seconds: int = 300
+    client_session_ttl_seconds: int = 1800
+    client_probe_interval_seconds: int = 15
+    client_probe_fresh_seconds: int = 120
+    client_probe_retention_seconds: int = 86400
+    client_rebind_hysteresis_score: float = 15.0
     worker_id: str = Field(
         default_factory=lambda: f"{socket.gethostname()}-{os.getpid()}-{uuid4().hex[:8]}",
     )

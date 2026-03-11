@@ -40,6 +40,7 @@ python -m alembic -c alembic.ini downgrade -1
 - `0005_add_geo_policies` adds per-route-policy geo rules (`direct`/`multihop`) with country-based CIDR source templates.
 - `0006_add_balancers_and_route_policy_balancer` adds balancers (`random`/`leastload`/`leastping`) and route policy action `balancer` with `balancer_id`.
 - `0007_add_probe_results` adds persisted probe history for member ping/load metrics used by balancer selection.
+- `0008_add_client_routing_protocol` adds `client_sessions` and `client_probes` for client-driven ingress selection.
 - jobs API supports:
   - `POST /api/v1/jobs/{id}/cancel`
   - `POST /api/v1/jobs/{id}/retry-now`
@@ -81,3 +82,8 @@ python -m alembic -c alembic.ini downgrade -1
 - probe API supports:
   - `GET /api/v1/probes/results`
   - `POST /api/v1/probes/balancers/{id}/run` (records fresh ping/load probes for members)
+- client-routing API supports:
+  - `POST /api/v1/bootstrap`
+  - `POST /api/v1/probe`
+  - `POST /api/v1/best-ingress`
+  - `POST /api/v1/session-rebind`

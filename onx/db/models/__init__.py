@@ -2,6 +2,8 @@
 
 from onx.db.models.event_log import EventLog
 from onx.db.models.balancer import Balancer
+from onx.db.models.client_probe import ClientProbe
+from onx.db.models.client_session import ClientSession
 from onx.db.models.dns_policy import DNSPolicy
 from onx.db.models.geo_policy import GeoPolicy
 from onx.db.models.job import Job
@@ -24,6 +26,8 @@ __all__ = [
     "DNSPolicy",
     "GeoPolicy",
     "Balancer",
+    "ClientSession",
+    "ClientProbe",
     "ProbeResult",
     "Job",
     "JobLock",
