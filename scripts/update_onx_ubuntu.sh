@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INSTALL_DIR="${INSTALL_DIR:-/opt/wgd-awg-multihop}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/onyx}"
 SERVICE_NAME="${SERVICE_NAME:-onx-api}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/onx}"
 ENV_FILE_NAME="${ENV_FILE_NAME:-onx.env}"
-GIT_REF="${GIT_REF:-dev}"
+GIT_REF="${GIT_REF:-main}"
 VENV_DIR_NAME="${VENV_DIR_NAME:-.venv-onx}"
 REFRESH_TLS_OPENSSL="${REFRESH_TLS_OPENSSL:-false}"
 TLS_DOMAIN="${TLS_DOMAIN:-}"
@@ -21,11 +21,11 @@ usage() {
 Usage: sudo bash scripts/update_onx_ubuntu.sh [options]
 
 Options:
-  --install-dir <path>      ONX project directory (default: /opt/wgd-awg-multihop)
+  --install-dir <path>      ONyX project directory (default: /opt/onyx)
   --service-name <name>     systemd service name (default: onx-api)
   --config-dir <path>       ONX config directory (default: /etc/onx)
   --env-file-name <name>    env filename in config dir (default: onx.env)
-  --ref <branch|tag|sha>    git ref to pull (default: dev)
+  --ref <branch|tag|sha>    git ref to pull (default: main)
   --venv-dir-name <name>    venv directory under install dir (default: .venv-onx)
   --refresh-tls-openssl     Re-run nginx/OpenSSL TLS setup for ONX and reload nginx
   --tls-domain <name>       TLS certificate CN/SAN DNS name

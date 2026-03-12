@@ -59,22 +59,22 @@ Acceptance:
 Run:
 
 ```bash
-sudo git clone https://github.com/Autixx/WGD_AWG_fix_multihop.git /opt/wgd-awg-multihop
-cd /opt/wgd-awg-multihop
-sudo git checkout dev
+sudo git clone https://github.com/Autixx/ONyX.git /opt/onyx
+cd /opt/onyx
+sudo git checkout main
 ```
 
 Acceptance:
 
-- repo exists under `/opt/wgd-awg-multihop`
-- branch is `dev`
+- repo exists under `/opt/onyx`
+- branch is `main`
 
 ## 3. Native Install
 
 Run:
 
 ```bash
-cd /opt/wgd-awg-multihop
+cd /opt/onyx
 sudo bash scripts/install_onx_ubuntu.sh --run-alpha-smoke --smoke-expect-auth --smoke-check-rate-limit
 ```
 
@@ -125,7 +125,7 @@ Acceptance:
 Run:
 
 ```bash
-python /opt/wgd-awg-multihop/scripts/onx_alpha_smoke.py \
+python /opt/onyx/scripts/onx_alpha_smoke.py \
   --base-url http://127.0.0.1:8081/api/v1 \
   --client-bearer-token "$(sudo awk -F= '/^primary_token=/{print $2}' /etc/onx/client-auth.txt)" \
   --admin-bearer-token "$(sudo awk -F= '/^primary_token=/{print $2}' /etc/onx/admin-auth.txt)" \
@@ -161,7 +161,7 @@ Acceptance:
 Run:
 
 ```bash
-cd /opt/wgd-awg-multihop
+cd /opt/onyx
 python scripts/onx_acl_matrix.py --env-file /etc/onx/onx.env export --output /tmp/onx-acl.json
 python scripts/onx_acl_matrix.py --env-file /etc/onx/onx.env import --input /tmp/onx-acl.json
 ```
@@ -177,7 +177,7 @@ Acceptance:
 Run:
 
 ```bash
-cd /opt/wgd-awg-multihop
+cd /opt/onyx
 python scripts/onx_control_plane_state.py --env-file /etc/onx/onx.env export --output /tmp/onx-state.json
 ```
 
@@ -213,8 +213,8 @@ Acceptance:
 Run:
 
 ```bash
-cd /opt/wgd-awg-multihop
-sudo bash scripts/update_onx_ubuntu.sh --ref dev
+cd /opt/onyx
+sudo bash scripts/update_onx_ubuntu.sh --ref main
 ```
 
 Acceptance:

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/Autixx/WGD_AWG_fix_multihop.git}"
-GIT_REF="${GIT_REF:-dev}"
-INSTALL_DIR="${INSTALL_DIR:-/opt/wgd-awg-multihop}"
+REPO_URL="${REPO_URL:-https://github.com/Autixx/ONyX.git}"
+GIT_REF="${GIT_REF:-main}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/onyx}"
 SERVICE_NAME="${SERVICE_NAME:-onx-api}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/onx}"
 ENV_FILE_NAME="${ENV_FILE_NAME:-onx.env}"
@@ -50,8 +50,8 @@ Usage: sudo bash scripts/install_onx_ubuntu.sh [options]
 
 Options:
   --repo-url <url>              Git repository URL
-  --ref <branch|tag|sha>        Git ref to checkout (default: dev)
-  --install-dir <path>          Install directory (default: /opt/wgd-awg-multihop)
+  --ref <branch|tag|sha>        Git ref to checkout (default: main)
+  --install-dir <path>          Install directory (default: /opt/onyx)
   --service-name <name>         systemd service name (default: onx-api)
   --config-dir <path>           ONX config directory (default: /etc/onx)
   --env-file-name <name>        Environment filename in config dir (default: onx.env)

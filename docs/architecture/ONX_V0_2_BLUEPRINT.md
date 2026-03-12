@@ -21,14 +21,14 @@ This document assumes the terms defined in [ONX_TECHNICAL_DESIGN.md](q:/MyVeryOw
 
 ## Implementation Strategy
 
-The first ONX implementation must not try to replace the current legacy code in one pass.
+The first ONX implementation must stay backend-first and avoid mixing control-plane work
+with unrelated UI or transport experiments.
 
 Instead:
 
-- keep the current legacy WGDashboard-based code operational
-- add a new `onx/` implementation tree beside it
+- keep the `onx/` implementation tree focused on control-plane concerns
 - build ONX as a clean backend-first subsystem
-- reuse legacy AWG/WG operational knowledge only where it is proven and useful
+- reuse prior AWG/WG operational knowledge only where it is proven and useful
 
 The first production-worthy ONX flow should be:
 
