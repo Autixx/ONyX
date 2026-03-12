@@ -1,0 +1,304 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import getpass
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+
+DEFAULT_ENV_FILE = "/etc/onx/onx.env"
+DEFAULT_ADMIN_AUTH_FILE = "/etc/onx/admin-auth.txt"
+DEFAULT_BASE_URL = "http://127.0.0.1:8081/api/v1"
+TERMINAL_JOB_STATES = {"succeeded", "failed", "rolled_back", "cancelled", "dead"}
+NODE_ROLES = ("gateway", "relay", "egress", "mixed")
+AUTH_TYPES = ("password", "private_key")
+
+
+def _load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ[key.strip()] = value.strip()
+
+
+def _read_primary_token(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip() == "primary_token":
+            token = value.strip()
+            return token or None
+    return None
+
+
+def _derive_base_url(base_url: str | None) -> str:
+    if base_url:
+        return base_url.rstrip("/")
+    return os.environ.get("ONX_ADMIN_API_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+
+
+def _build_headers(token: str | None) -> dict[str, str]:
+    headers = {
+        "Accept": "application/json",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _request_json(
+    base_url: str,
+    method: str,
+    path: str,
+    *,
+    token: str | None,
+    payload: dict | None = None,
+) -> dict | list:
+    body: bytes | None = None
+    headers = _build_headers(token)
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    request = urllib.request.Request(
+        url=f"{base_url}{path}",
+        data=body,
+        headers=headers,
+        method=method.upper(),
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            raw = response.read().decode("utf-8")
+            if not raw.strip():
+                return {}
+            return json.loads(raw)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code} for {method} {path}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Request failed for {method} {path}: {exc}") from exc
+
+
+def _prompt(message: str, *, default: str | None = None, allow_empty: bool = False) -> str:
+    while True:
+        suffix = f" [{default}]" if default not in (None, "") else ""
+        value = input(f"{message}{suffix}: ").strip()
+        if value:
+            return value
+        if default is not None:
+            return default
+        if allow_empty:
+            return ""
+        print("Value is required.")
+
+
+def _prompt_choice(message: str, choices: tuple[str, ...], *, default: str) -> str:
+    choices_rendered = "/".join(choices)
+    while True:
+        value = _prompt(f"{message} ({choices_rendered})", default=default).lower()
+        if value in choices:
+            return value
+        print(f"Unsupported value: {value}")
+
+
+def _prompt_int(message: str, *, default: int) -> int:
+    while True:
+        value = _prompt(message, default=str(default))
+        try:
+            result = int(value)
+        except ValueError:
+            print("Enter a valid integer.")
+            continue
+        if 1 <= result <= 65535:
+            return result
+        print("Port must be in range 1..65535.")
+
+
+def _prompt_secret(auth_type: str, private_key_file: str | None = None) -> str:
+    if auth_type == "password":
+        while True:
+            secret = getpass.getpass("SSH password: ")
+            if secret:
+                return secret
+            print("Password is required.")
+
+    default_key_file = private_key_file or os.path.expanduser("~/.ssh/id_ed25519")
+    while True:
+        key_file = _prompt("SSH private key file", default=default_key_file)
+        path = Path(key_file).expanduser().resolve()
+        if not path.exists():
+            print(f"File not found: {path}")
+            continue
+        content = path.read_text(encoding="utf-8")
+        if not content.strip():
+            print("Private key file is empty.")
+            continue
+        return content
+
+
+def _resolve_node(base_url: str, token: str | None, node_ref: str) -> dict:
+    try:
+        return _request_json(base_url, "GET", f"/nodes/{node_ref}", token=token)
+    except RuntimeError:
+        nodes = _request_json(base_url, "GET", "/nodes", token=token)
+        if not isinstance(nodes, list):
+            raise RuntimeError("Unexpected /nodes response.")
+        matches = [node for node in nodes if str(node.get("name")) == node_ref]
+        if not matches:
+            raise RuntimeError(f"Node '{node_ref}' not found.")
+        if len(matches) > 1:
+            raise RuntimeError(f"Node name '{node_ref}' is not unique.")
+        return matches[0]
+
+
+def _print_json(payload: dict | list) -> None:
+    sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def _add_node(args: argparse.Namespace) -> int:
+    name = args.name or _prompt("Node name")
+    role = args.role or _prompt_choice("Node role", NODE_ROLES, default="mixed")
+    ssh_host = args.ssh_host or _prompt("SSH host / IP")
+    management_address = args.management_address or _prompt("Management address", default=ssh_host)
+    ssh_port = args.ssh_port or _prompt_int("SSH port", default=22)
+    ssh_user = args.ssh_user or _prompt("SSH user", default="root")
+    auth_type = args.auth_type or _prompt_choice("SSH auth type", AUTH_TYPES, default="private_key")
+    secret_value = args.secret_value or _prompt_secret(auth_type, private_key_file=args.private_key_file)
+
+    base_url = _derive_base_url(args.base_url)
+    payload = {
+        "name": name,
+        "role": role,
+        "management_address": management_address,
+        "ssh_host": ssh_host,
+        "ssh_port": ssh_port,
+        "ssh_user": ssh_user,
+        "auth_type": auth_type,
+    }
+    node = _request_json(base_url, "POST", "/nodes", token=args.admin_token, payload=payload)
+    if not isinstance(node, dict):
+        raise RuntimeError("Unexpected node creation response.")
+
+    secret_kind = "ssh_password" if auth_type == "password" else "ssh_private_key"
+    secret_payload = {
+        "kind": secret_kind,
+        "value": secret_value,
+    }
+    _request_json(base_url, "PUT", f"/nodes/{node['id']}/secret", token=args.admin_token, payload=secret_payload)
+
+    result = {
+        "status": "ok",
+        "node_id": node["id"],
+        "node_name": node["name"],
+        "role": node["role"],
+        "next_steps": [
+            f"python scripts/onx_nodes.py discover {node['id']}",
+            f"curl -H 'Authorization: Bearer <ADMIN_TOKEN>' {base_url}/nodes/{node['id']}/capabilities",
+        ],
+    }
+    _print_json(result)
+    return 0
+
+
+def _poll_job(base_url: str, token: str | None, job_id: str, interval: int) -> dict:
+    last_state = None
+    last_step = None
+    while True:
+        job = _request_json(base_url, "GET", f"/jobs/{job_id}", token=token)
+        if not isinstance(job, dict):
+            raise RuntimeError("Unexpected job response.")
+        state = str(job.get("state") or "")
+        step = str(job.get("current_step") or "")
+        if state != last_state or step != last_step:
+            print(f"job={job_id} state={state} step={step or '-'}")
+            last_state = state
+            last_step = step
+        if state in TERMINAL_JOB_STATES:
+            return job
+        time.sleep(interval)
+
+
+def _discover(args: argparse.Namespace) -> int:
+    base_url = _derive_base_url(args.base_url)
+    node = _resolve_node(base_url, args.admin_token, args.node_ref)
+    job = _request_json(
+        base_url,
+        "POST",
+        f"/nodes/{node['id']}/discover",
+        token=args.admin_token,
+        payload={},
+    )
+    if not isinstance(job, dict):
+        raise RuntimeError("Unexpected discover job response.")
+
+    if not args.wait:
+        _print_json(job)
+        return 0
+
+    final_job = _poll_job(base_url, args.admin_token, str(job["id"]), args.poll_interval)
+    capabilities = _request_json(base_url, "GET", f"/nodes/{node['id']}/capabilities", token=args.admin_token)
+    summary = {
+        "node_id": node["id"],
+        "node_name": node["name"],
+        "job_id": final_job["id"],
+        "job_state": final_job["state"],
+        "error_text": final_job.get("error_text"),
+        "result": final_job.get("result_payload_json"),
+        "capabilities": capabilities,
+    }
+    _print_json(summary)
+    return 0 if str(final_job["state"]) == "succeeded" else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Interactive ONX node administration helper.")
+    parser.add_argument("--env-file", default=DEFAULT_ENV_FILE, help="Path to ONX env file")
+    parser.add_argument("--base-url", default=None, help=f"ONX admin API base URL (default: {DEFAULT_BASE_URL})")
+    parser.add_argument("--admin-auth-file", default=DEFAULT_ADMIN_AUTH_FILE, help="Path to ONX admin auth file")
+    parser.add_argument("--admin-token", default=None, help="Admin bearer token (auto-read from admin auth file if omitted)")
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    add_parser = subparsers.add_parser("add-node", help="Interactively add one node and store its SSH secret")
+    add_parser.add_argument("--name", default=None, help="Node name")
+    add_parser.add_argument("--role", choices=NODE_ROLES, default=None, help="Node role")
+    add_parser.add_argument("--management-address", default=None, help="Management address")
+    add_parser.add_argument("--ssh-host", default=None, help="SSH host")
+    add_parser.add_argument("--ssh-port", type=int, default=None, help="SSH port")
+    add_parser.add_argument("--ssh-user", default=None, help="SSH user")
+    add_parser.add_argument("--auth-type", choices=AUTH_TYPES, default=None, help="SSH auth type")
+    add_parser.add_argument("--private-key-file", default=None, help="SSH private key path for private_key mode")
+    add_parser.add_argument("--secret-value", default=None, help="SSH password or private key content")
+    add_parser.set_defaults(handler=_add_node)
+
+    discover_parser = subparsers.add_parser("discover", help="Run discovery job for an existing node")
+    discover_parser.add_argument("node_ref", help="Node ID or node name")
+    discover_parser.add_argument("--no-wait", action="store_false", dest="wait", help="Only enqueue discovery job")
+    discover_parser.add_argument("--poll-interval", type=int, default=2, help="Job poll interval in seconds")
+    discover_parser.set_defaults(handler=_discover, wait=True)
+
+    args = parser.parse_args()
+    _load_env_file(Path(args.env_file).resolve())
+    if not args.admin_token:
+        args.admin_token = _read_primary_token(Path(args.admin_auth_file).resolve())
+    if os.name == "nt":
+        os.environ.setdefault("PYTHONUTF8", "1")
+    return args.handler(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

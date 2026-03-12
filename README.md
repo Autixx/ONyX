@@ -184,6 +184,44 @@ Implemented backend surface at this stage:
   - `/best-ingress`
   - `/session-rebind`
 
+## ONX Node Admin CLI
+
+Interactive local helper for node onboarding:
+
+```bash
+python scripts/onx_nodes.py add-node
+```
+
+It will prompt for:
+
+- node name
+- role
+- management address
+- SSH host / port / user
+- auth mode (`password` or `private_key`)
+- password or private key file
+
+Then it will:
+
+1. create the node in ONX
+2. store the SSH secret
+
+Run discovery for an existing node:
+
+```bash
+python scripts/onx_nodes.py discover <NODE_ID_OR_NAME>
+```
+
+By default `discover` waits for the job to finish and prints capabilities.
+
+Useful overrides:
+
+```bash
+python scripts/onx_nodes.py --base-url http://127.0.0.1:8081/api/v1 add-node
+python scripts/onx_nodes.py --admin-token "<ADMIN_TOKEN>" discover node-msk-1
+python scripts/onx_nodes.py discover node-msk-1 --no-wait
+```
+
 ## ONX Native Install
 
 Ubuntu 22.04 / 24.04, no Docker:
