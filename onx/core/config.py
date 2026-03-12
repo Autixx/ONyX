@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     onx_link_runner_path: str = "/usr/local/lib/onx/onx-link-runner"
     onx_link_unit_path: str = "/etc/systemd/system/onx-link@.service"
     onx_runtime_version: str = "1"
+    onx_awg_tools_repo: str = "https://github.com/amnezia-vpn/amneziawg-tools.git"
+    onx_awg_tools_ref: str = "master"
+    onx_awg_go_repo: str = "https://github.com/amnezia-vpn/amneziawg-go.git"
+    onx_awg_go_ref: str = "master"
+    onx_go_bootstrap_version: str = "1.24.13"
 
     model_config = SettingsConfigDict(
         env_prefix="ONX_",

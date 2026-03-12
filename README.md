@@ -13,6 +13,7 @@ This repository currently contains two parallel tracks:
 - node registry
 - SSH-based deployment flow
 - AWG site-to-site link model
+- remote AWG prerequisite installation during runtime bootstrap
 - jobs / retries / locks
 - route policies
 - DNS / Geo / balancer policy models
@@ -256,6 +257,17 @@ Then it will:
 
 3. runs `discover`
 4. runs `bootstrap-runtime`
+
+`bootstrap-runtime` now also auto-installs the remote AWG stack required for
+site-to-site links on Ubuntu managed nodes:
+
+- `awg`
+- `awg-quick`
+- `amneziawg-go`
+- `iptables`
+- `ipset`
+- `resolvconf`
+- Go toolchain bootstrap if needed for `amneziawg-go`
 
 Run discovery for an existing node:
 

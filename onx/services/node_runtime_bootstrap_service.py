@@ -9,6 +9,7 @@ from onx.core.config import get_settings
 from onx.db.models.node import Node, NodeAuthType
 from onx.db.models.node_capability import NodeCapability
 from onx.db.models.node_secret import NodeSecretKind
+from onx.services.discovery_service import DiscoveryService
 from onx.services.interface_runtime_service import InterfaceRuntimeService
 from onx.services.secret_service import SecretService
 
@@ -21,6 +22,7 @@ class NodeRuntimeBootstrapService:
         self._runtime = runtime_service
         self._settings = get_settings()
         self._secrets = SecretService()
+        self._discovery = DiscoveryService()
 
     def _get_management_secret(self, db: Session, node: Node) -> str:
         secret_kind = (
@@ -39,8 +41,16 @@ class NodeRuntimeBootstrapService:
         management_secret = self._get_management_secret(db, node)
 
         if progress_callback:
+            progress_callback("installing awg prerequisites")
+        awg_install = self._runtime.ensure_awg_stack(node, management_secret)
+
+        if progress_callback:
             progress_callback("installing runtime assets")
         self._runtime.ensure_runtime(node, management_secret)
+
+        if progress_callback:
+            progress_callback("refreshing capability snapshot")
+        discovery_result = self._discovery.discover_node(db, node, progress_callback=None)
 
         capability = db.scalar(
             select(NodeCapability).where(
@@ -67,6 +77,8 @@ class NodeRuntimeBootstrapService:
         return {
             "node_id": node.id,
             "node_name": node.name,
+            "awg_install": awg_install,
+            "capabilities": discovery_result["capabilities"],
             "runtime_capability": {
                 "name": capability.capability_name,
                 "supported": capability.supported,
@@ -74,4 +86,3 @@ class NodeRuntimeBootstrapService:
                 "checked_at": capability.checked_at.isoformat(),
             },
         }
-
