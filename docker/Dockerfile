@@ -4,7 +4,7 @@
 #
 
 # Pull the current golang-alpine image.
-FROM golang:1.25-alpine AS awg-go
+FROM golang:1.26-alpine AS awg-go
 
 # Install build-dependencies.
 RUN apk add --no-cache \
