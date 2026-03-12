@@ -74,6 +74,13 @@ def _fetch_nodes(base_url: str, admin_token: str | None) -> list[dict]:
     return payload
 
 
+def _fetch_jobs(base_url: str, admin_token: str | None) -> list[dict]:
+    payload = nodes_cli._request_json(base_url, "GET", "/jobs", token=admin_token)
+    if not isinstance(payload, list):
+        raise RuntimeError("Unexpected /jobs response.")
+    return payload
+
+
 def _is_user_managed_node(node: dict) -> bool:
     name = str(node.get("name") or "")
     return not any(name.startswith(prefix) for prefix in HIDE_NODE_PREFIXES)
@@ -142,6 +149,15 @@ def _show_command_screen(title: str, command: list[str]) -> None:
     print(f"Exit code: {rc}")
     print()
     _pause()
+
+
+def _format_payload(payload: object) -> list[str]:
+    if payload is None:
+        return ["-"]
+    text = str(payload)
+    if len(text) <= 160:
+        return [text]
+    return [text[:157] + "..."]
 
 
 def _status_screen(base_url: str, service_name: str) -> None:
@@ -484,6 +500,170 @@ def _run_smoke(base_url: str, install_dir: Path, client_auth_file: Path, admin_a
     _show_command_screen("ONX / Smoke Test", command)
 
 
+def _pick_job(base_url: str, admin_token: str | None, title: str) -> dict | None:
+    try:
+        jobs = _fetch_jobs(base_url, admin_token)
+    except Exception as exc:
+        _render([title, "", f"Error: {exc}", ""])
+        _pause()
+        return None
+
+    if not jobs:
+        _render([title, "", "No jobs found.", ""])
+        _pause()
+        return None
+
+    jobs = sorted(jobs, key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    while True:
+        lines = [title, ""]
+        for index, job in enumerate(jobs[:20], start=1):
+            lines.append(
+                f"{index}. {job.get('kind')} "
+                f"[state={job.get('state')}, target={job.get('target_type')}:{job.get('target_id')}]"
+            )
+        lines.extend(["", "Select job number or press Enter to cancel.", ""])
+        _render(lines)
+        raw = input("Choice: ").strip()
+        if not raw:
+            return None
+        try:
+            selected_index = int(raw)
+        except ValueError:
+            continue
+        if 1 <= selected_index <= min(len(jobs), 20):
+            return jobs[selected_index - 1]
+
+
+def _list_jobs_screen(base_url: str, admin_token: str | None) -> None:
+    try:
+        jobs = _fetch_jobs(base_url, admin_token)
+    except Exception as exc:
+        _render(["ONX / Jobs", "", f"Error: {exc}", ""])
+        _pause()
+        return
+
+    lines = ["ONX / Jobs", ""]
+    if not jobs:
+        lines.extend(["No jobs found.", ""])
+        _render(lines)
+        _pause()
+        return
+
+    header = f"{'#':<4} {'KIND':<12} {'STATE':<12} {'TARGET':<20} {'STEP':<24} {'CREATED':<26}"
+    lines.append(header)
+    lines.append("-" * len(header))
+    jobs = sorted(jobs, key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    for index, job in enumerate(jobs[:30], start=1):
+        target = f"{job.get('target_type')}:{job.get('target_id')}"
+        lines.append(
+            f"{index:<4} "
+            f"{str(job.get('kind') or '-'):<12} "
+            f"{str(job.get('state') or '-'):<12} "
+            f"{target[:20]:<20} "
+            f"{str(job.get('current_step') or '-')[:24]:<24} "
+            f"{str(job.get('created_at') or '-'):<26}"
+        )
+    lines.append("")
+    _render(lines)
+    _pause()
+
+
+def _view_last_job_result_screen(base_url: str, admin_token: str | None) -> None:
+    try:
+        jobs = _fetch_jobs(base_url, admin_token)
+    except Exception as exc:
+        _render(["ONX / Last Job Result", "", f"Error: {exc}", ""])
+        _pause()
+        return
+
+    if not jobs:
+        _render(["ONX / Last Job Result", "", "No jobs found.", ""])
+        _pause()
+        return
+
+    jobs = sorted(jobs, key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    job = jobs[0]
+    lines = [
+        "ONX / Last Job Result",
+        "",
+        f"id: {job.get('id')}",
+        f"kind: {job.get('kind')}",
+        f"state: {job.get('state')}",
+        f"target: {job.get('target_type')}:{job.get('target_id')}",
+        f"step: {job.get('current_step') or '-'}",
+        f"created_at: {job.get('created_at')}",
+        f"started_at: {job.get('started_at') or '-'}",
+        f"finished_at: {job.get('finished_at') or '-'}",
+        f"error_text: {job.get('error_text') or '-'}",
+        "result_payload:",
+    ]
+    lines.extend(_format_payload(job.get("result_payload_json")))
+    lines.append("")
+    _render(lines)
+    _pause()
+
+
+def _view_job_events_screen(base_url: str, admin_token: str | None) -> None:
+    job = _pick_job(base_url, admin_token, "ONX / Job Events")
+    if job is None:
+        return
+    try:
+        events = nodes_cli._request_json(
+            base_url,
+            "GET",
+            f"/jobs/{job['id']}/events",
+            token=admin_token,
+        )
+    except Exception as exc:
+        _render(["ONX / Job Events", "", f"Error: {exc}", ""])
+        _pause()
+        return
+
+    lines = [
+        "ONX / Job Events",
+        "",
+        f"Job: {job.get('id')}",
+        "",
+    ]
+    if not isinstance(events, list) or not events:
+        lines.extend(["No events found.", ""])
+        _render(lines)
+        _pause()
+        return
+
+    for event in events[:30]:
+        lines.append(
+            f"- [{event.get('created_at')}] {event.get('level')} {event.get('message')}"
+        )
+    lines.append("")
+    _render(lines)
+    _pause()
+
+
+def _jobs_menu(base_url: str, admin_token: str | None) -> None:
+    while True:
+        _render(
+            [
+                "ONX / Jobs",
+                "",
+                "1. List jobs",
+                "2. View last job result",
+                "3. View job events",
+                "4. Back",
+                "",
+            ]
+        )
+        choice = input("Choice: ").strip()
+        if choice == "1":
+            _list_jobs_screen(base_url, admin_token)
+        elif choice == "2":
+            _view_last_job_result_screen(base_url, admin_token)
+        elif choice == "3":
+            _view_job_events_screen(base_url, admin_token)
+        elif choice == "4":
+            return
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Interactive ONX admin menu.")
     parser.add_argument("--env-file", default=DEFAULT_ENV_FILE, help="Path to ONX env file")
@@ -513,9 +693,10 @@ def main() -> int:
                     "",
                     "1. Daemon status",
                     "2. Node operations",
-                    "3. Restart daemon",
-                    "4. Smoke-test",
-                    "5. Exit",
+                    "3. Jobs",
+                    "4. Restart daemon",
+                    "5. Smoke-test",
+                    "6. Exit",
                     "",
                 ]
             )
@@ -525,10 +706,12 @@ def main() -> int:
             elif choice == "2":
                 _nodes_menu(base_url, admin_token)
             elif choice == "3":
-                _restart_daemon(args.service_name)
+                _jobs_menu(base_url, admin_token)
             elif choice == "4":
-                _run_smoke(base_url, install_dir, client_auth_file, admin_auth_file)
+                _restart_daemon(args.service_name)
             elif choice == "5":
+                _run_smoke(base_url, install_dir, client_auth_file, admin_auth_file)
+            elif choice == "6":
                 return 0
     finally:
         _leave_alt_screen()

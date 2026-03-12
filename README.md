@@ -201,6 +201,7 @@ Menu actions:
 - node availability check
 - runtime bootstrap
 - capability view
+- jobs list / last result / events
 - daemon restart
 - alpha smoke test
 
