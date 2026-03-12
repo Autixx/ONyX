@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import StrEnum
+from onx.compat import StrEnum
 from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, JSON, String, UniqueConstraint, func

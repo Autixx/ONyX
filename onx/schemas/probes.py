@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import StrEnum
+from onx.compat import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
