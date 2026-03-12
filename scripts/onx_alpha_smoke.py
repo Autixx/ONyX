@@ -56,11 +56,11 @@ class ApiClient:
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
                 status = int(response.status)
-                response_headers = {key: value for key, value in response.headers.items()}
+                response_headers = {str(key).lower(): value for key, value in response.headers.items()}
                 raw_body = response.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             status = int(exc.code)
-            response_headers = {key: value for key, value in exc.headers.items()}
+            response_headers = {str(key).lower(): value for key, value in exc.headers.items()}
             raw_body = exc.read().decode("utf-8", errors="replace")
         except urllib.error.URLError as exc:
             raise RuntimeError(f"{method} {path} failed: {exc}") from exc
@@ -221,7 +221,7 @@ def check_client_auth_enforcement(client: ApiClient) -> None:
         bearer_token="",
     )
     payload = _require_dict(response, "auth check")
-    if "Bearer" not in response.headers.get("WWW-Authenticate", ""):
+    if "Bearer" not in response.headers.get("www-authenticate", ""):
         raise RuntimeError("401 client auth check is missing WWW-Authenticate: Bearer")
     if not payload.get("detail"):
         raise RuntimeError("401 client auth check returned empty detail")
@@ -235,7 +235,7 @@ def check_admin_auth_enforcement(client: ApiClient) -> None:
         bearer_token="",
     )
     payload = _require_dict(response, "admin auth check")
-    if "Bearer" not in response.headers.get("WWW-Authenticate", ""):
+    if "Bearer" not in response.headers.get("www-authenticate", ""):
         raise RuntimeError("401 admin auth check is missing WWW-Authenticate: Bearer")
     if not payload.get("detail"):
         raise RuntimeError("401 admin auth check returned empty detail")
@@ -424,7 +424,7 @@ def main() -> int:
             limited = _require_dict(limited_response, "session-rebind rate-limit check")
             if not limited.get("detail"):
                 raise RuntimeError("429 response is missing detail")
-            retry_after = limited_response.headers.get("Retry-After", "")
+            retry_after = limited_response.headers.get("retry-after", "")
             if not retry_after.isdigit() or int(retry_after) < 1:
                 raise RuntimeError("429 response is missing valid Retry-After header")
 
