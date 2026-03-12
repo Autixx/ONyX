@@ -189,6 +189,9 @@ cd /opt/onyx
 sudo bash scripts/update_onx_ubuntu.sh --ref main
 ```
 
+The updater also backfills browser-auth/static-UI env defaults for older installs and creates
+`/etc/onx/admin-web-auth.txt` if it does not exist yet.
+
 Refresh TLS during update:
 
 ```bash
