@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     api_prefix: str = "/api/v1"
     debug: bool = False
+    web_ui_enabled: bool = True
+    web_ui_dir: str = "/opt/onyx/apps/web-admin/dist"
     database_url: str = Field(
         default=f"sqlite:///{(Path(__file__).resolve().parents[2] / 'onx_dev.db').as_posix()}",
     )
@@ -31,6 +33,20 @@ class Settings(BaseSettings):
     admin_api_jwt_require_exp: bool = True
     admin_api_read_roles: str = "viewer,operator,admin"
     admin_api_write_roles: str = "operator,admin"
+    admin_web_auth_enabled: bool = True
+    admin_web_bootstrap_username: str = "admin"
+    admin_web_bootstrap_password: str = ""
+    admin_web_bootstrap_roles: str = "admin"
+    admin_web_session_cookie_name: str = "onx_session"
+    admin_web_session_ttl_seconds: int = 43200
+    admin_web_secure_cookies: bool = True
+    admin_web_cookie_same_site: str = "lax"
+    admin_web_cookie_domain: str = ""
+    admin_web_cookie_path: str = "/"
+    admin_web_password_hash_iterations: int = 600000
+    admin_web_session_touch_interval_seconds: int = 300
+    admin_web_session_idle_timeout_seconds: int = 43200
+    admin_web_ws_heartbeat_seconds: int = 20
     client_api_auth_mode: str = "disabled"
     client_api_tokens: str = ""
     client_api_jwt_secret: str = ""

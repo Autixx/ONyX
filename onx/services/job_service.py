@@ -9,6 +9,7 @@ from onx.db.models.event_log import EventLevel
 from onx.db.models.job import Job, JobKind, JobState, JobTargetType
 from onx.db.models.job_lock import JobLock
 from onx.services.event_log_service import EventLogService
+from onx.services.realtime_service import realtime_service
 
 
 class JobCancelledError(RuntimeError):
@@ -31,6 +32,28 @@ class JobService:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._events = EventLogService()
+
+    @staticmethod
+    def _publish_job_event(job: Job, event_name: str) -> None:
+        realtime_service.publish(
+            event_name,
+            {
+                "id": job.id,
+                "kind": job.kind.value,
+                "target_type": job.target_type.value,
+                "target_id": job.target_id,
+                "state": job.state.value,
+                "current_step": job.current_step,
+                "worker_owner": job.worker_owner,
+                "attempt_count": job.attempt_count,
+                "cancel_requested": job.cancel_requested,
+                "error_text": job.error_text,
+                "created_at": job.created_at.isoformat() if job.created_at else None,
+                "started_at": job.started_at.isoformat() if job.started_at else None,
+                "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+                "lease_expires_at": job.lease_expires_at.isoformat() if job.lease_expires_at else None,
+            },
+        )
 
     def create_job(
         self,
@@ -71,6 +94,7 @@ class JobService:
         db.add(job)
         db.commit()
         db.refresh(job)
+        self._publish_job_event(job, "job.created")
         self._events.log(
             db,
             job_id=job.id,
@@ -93,6 +117,7 @@ class JobService:
         db.add(job)
         db.commit()
         db.refresh(job)
+        self._publish_job_event(job, "job.started")
         self._events.log(
             db,
             job_id=job.id,
@@ -217,6 +242,7 @@ class JobService:
             message=event_message,
             details=details,
         )
+        self._publish_job_event(job, "job.claimed")
         return job
 
     @staticmethod
@@ -322,6 +348,7 @@ class JobService:
         db.add(job)
         db.commit()
         db.refresh(job)
+        self._publish_job_event(job, "job.cancel_requested")
         self._events.log(
             db,
             job_id=job.id,
@@ -366,6 +393,7 @@ class JobService:
         db.add(job)
         db.commit()
         db.refresh(job)
+        self._publish_job_event(job, "job.retry_requested")
         self._events.log(
             db,
             job_id=job.id,
@@ -408,6 +436,7 @@ class JobService:
         db.add(job)
         db.commit()
         db.refresh(job)
+        self._publish_job_event(job, "job.cancelled")
         self._events.log(
             db,
             job_id=job.id,
@@ -440,6 +469,7 @@ class JobService:
         db.add(job)
         db.commit()
         db.refresh(job)
+        self._publish_job_event(job, "job.step")
         self._events.log(
             db,
             job_id=job.id,
@@ -465,6 +495,7 @@ class JobService:
         db.add(job)
         db.commit()
         db.refresh(job)
+        self._publish_job_event(job, "job.succeeded")
         self._events.log(
             db,
             job_id=job.id,
@@ -489,6 +520,7 @@ class JobService:
         db.add(job)
         db.commit()
         db.refresh(job)
+        self._publish_job_event(job, "job.failed")
         self._events.log(
             db,
             job_id=job.id,
@@ -520,6 +552,7 @@ class JobService:
             db.add(job)
             db.commit()
             db.refresh(job)
+            self._publish_job_event(job, "job.retry_scheduled")
             self._events.log(
                 db,
                 job_id=job.id,

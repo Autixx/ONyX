@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi import Request
 
+from onx.api.routers.admin_web_auth import router as admin_web_auth_router
 from onx.api.routers.access_rules import router as access_rules_router
 from onx.api.routers.audit_logs import router as audit_logs_router
 from onx.api.routers.balancers import router as balancers_router
@@ -15,11 +17,16 @@ from onx.api.routers.links import router as links_router
 from onx.api.routers.maintenance import router as maintenance_router
 from onx.api.routers.nodes import router as nodes_router
 from onx.api.routers.probes import router as probes_router
+from onx.api.routers.realtime import router as realtime_router
 from onx.api.routers.route_policies import router as route_policies_router
 from onx.api.routers.topology import router as topology_router
+from onx.api.spa import SPAStaticFiles
 from onx.api.security.admin_access import admin_access_control
 from onx.core.config import get_settings
 from onx.db.session import init_db
+from onx.db.session import SessionLocal
+from onx.services.admin_web_auth_service import admin_web_auth_service
+from onx.services.realtime_service import realtime_service
 from onx.workers.job_worker import JobWorker
 from onx.workers.probe_scheduler import ProbeScheduler
 from onx.workers.retention_scheduler import RetentionScheduler
@@ -41,12 +48,16 @@ async def lifespan(_: FastAPI):
         interval_seconds=settings.retention_scheduler_interval_seconds,
     )
     init_db()
+    with SessionLocal() as db:
+        admin_web_auth_service.ensure_bootstrap_user(db)
+    realtime_service.start()
     worker.start()
     if settings.probe_scheduler_enabled:
         probe_scheduler.start()
     if settings.retention_scheduler_enabled:
         retention_scheduler.start()
     yield
+    realtime_service.stop()
     retention_scheduler.stop()
     probe_scheduler.stop()
     worker.stop()
@@ -69,6 +80,7 @@ def create_app() -> FastAPI:
         return await call_next(request)
 
     app.include_router(health_router, prefix=settings.api_prefix)
+    app.include_router(admin_web_auth_router, prefix=settings.api_prefix)
     app.include_router(client_routing_router, prefix=settings.api_prefix)
     app.include_router(access_rules_router, prefix=settings.api_prefix)
     app.include_router(audit_logs_router, prefix=settings.api_prefix)
@@ -82,7 +94,19 @@ def create_app() -> FastAPI:
     app.include_router(probes_router, prefix=settings.api_prefix)
     app.include_router(topology_router, prefix=settings.api_prefix)
     app.include_router(maintenance_router, prefix=settings.api_prefix)
+    app.include_router(realtime_router, prefix=settings.api_prefix)
+    _mount_static_ui(app, settings)
     return app
+
+
+def _mount_static_ui(app: FastAPI, settings) -> None:
+    if not settings.web_ui_enabled:
+        return
+    web_ui_dir = Path(settings.web_ui_dir).expanduser()
+    index_path = web_ui_dir / "index.html"
+    if not index_path.exists():
+        return
+    app.mount("/", SPAStaticFiles(directory=str(web_ui_dir), html=True), name="web-ui")
 
 
 app = create_app()

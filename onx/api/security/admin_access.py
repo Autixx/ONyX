@@ -8,11 +8,13 @@ import secrets
 import time
 
 from fastapi import Request, status
+from fastapi import WebSocket
 from fastapi.responses import JSONResponse
 
 from onx.core.config import get_settings
 from onx.db.models.access_rule import AccessRule
 from onx.db.session import SessionLocal
+from onx.services.admin_web_auth_service import admin_web_auth_service
 
 
 def _b64url_decode(value: str) -> bytes:
@@ -94,6 +96,7 @@ class AdminAccessControl:
             f"{prefix}/health",
         }
         public_prefixes = (
+            f"{prefix}/auth",
             f"{prefix}/bootstrap",
             f"{prefix}/probe",
             f"{prefix}/best-ingress",
@@ -204,6 +207,10 @@ class AdminAccessControl:
         return {"admin"}
 
     def _authenticate(self, request: Request) -> tuple[set[str], str] | JSONResponse:
+        session_result = self._authenticate_session_request(request)
+        if session_result is not None:
+            return session_result
+
         mode = self._settings.admin_api_auth_mode.strip().lower()
         if mode in {"", "disabled", "off", "none"}:
             return {"admin"}, "disabled"
@@ -230,6 +237,65 @@ class AdminAccessControl:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unsupported auth mode '{self._settings.admin_api_auth_mode}'.",
         )
+
+    def authenticate_websocket(self, websocket: WebSocket) -> tuple[set[str], str] | None:
+        session_result = self._authenticate_session_websocket(websocket)
+        if session_result is not None:
+            return session_result
+
+        mode = self._settings.admin_api_auth_mode.strip().lower()
+        if mode in {"", "disabled", "off", "none"}:
+            return {"admin"}, "disabled"
+
+        token = self._extract_websocket_bearer_token(websocket)
+        if token is None:
+            return None
+
+        if mode == "token":
+            roles = self._validate_static_token(token)
+            return (roles, "token") if roles is not None else None
+        if mode == "jwt":
+            auth_result = self._authenticate_jwt(token)
+            return auth_result if not isinstance(auth_result, JSONResponse) else None
+        if mode == "token_or_jwt":
+            roles = self._validate_static_token(token)
+            if roles is not None:
+                return roles, "token"
+            auth_result = self._authenticate_jwt(token)
+            return auth_result if not isinstance(auth_result, JSONResponse) else None
+        return None
+
+    def _authenticate_session_request(self, request: Request) -> tuple[set[str], str] | None:
+        if not self._settings.admin_web_auth_enabled:
+            return None
+        token = request.cookies.get(self._settings.admin_web_session_cookie_name)
+        if not token:
+            return None
+        with SessionLocal() as db:
+            resolved = admin_web_auth_service.resolve_session(db, token)
+            if resolved is None:
+                return None
+            user, session = resolved
+            session = admin_web_auth_service.touch_session(db, session)
+            request.state.admin_web_user = user
+            request.state.admin_web_session = session
+            return set(admin_web_auth_service.build_user_roles(user)), "session"
+
+    def _authenticate_session_websocket(self, websocket: WebSocket) -> tuple[set[str], str] | None:
+        if not self._settings.admin_web_auth_enabled:
+            return None
+        token = websocket.cookies.get(self._settings.admin_web_session_cookie_name)
+        if not token:
+            token = websocket.query_params.get("session")
+        if not token:
+            return None
+        with SessionLocal() as db:
+            resolved = admin_web_auth_service.resolve_session(db, token)
+            if resolved is None:
+                return None
+            user, session = resolved
+            admin_web_auth_service.touch_session(db, session)
+            return set(admin_web_auth_service.build_user_roles(user)), "session"
 
     def _authenticate_token(self, token: str) -> tuple[set[str], str] | JSONResponse:
         roles = self._validate_static_token(token)
@@ -385,6 +451,15 @@ class AdminAccessControl:
             return None
         token = auth_header[7:].strip()
         return token or None
+
+    @staticmethod
+    def _extract_websocket_bearer_token(websocket: WebSocket) -> str | None:
+        auth_header = websocket.headers.get("Authorization", "").strip()
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+            return token or None
+        query_token = websocket.query_params.get("token")
+        return query_token.strip() if query_token and query_token.strip() else None
 
     @staticmethod
     def _json_error(

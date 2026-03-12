@@ -1,6 +1,8 @@
 """SQLAlchemy models for ONX."""
 
 from onx.db.models.access_rule import AccessRule
+from onx.db.models.admin_session import AdminSession
+from onx.db.models.admin_user import AdminUser
 from onx.db.models.event_log import EventLog
 from onx.db.models.balancer import Balancer
 from onx.db.models.client_probe import ClientProbe
@@ -19,6 +21,8 @@ from onx.db.models.route_policy import RoutePolicy
 
 __all__ = [
     "AccessRule",
+    "AdminUser",
+    "AdminSession",
     "Node",
     "NodeSecret",
     "NodeCapability",

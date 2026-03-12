@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from onx.db.models.event_log import EventLevel, EventLog
+from onx.services.realtime_service import realtime_service
 
 
 class EventLogService:
@@ -27,6 +28,19 @@ class EventLogService:
         db.add(event)
         db.commit()
         db.refresh(event)
+        realtime_service.publish(
+            "audit.event",
+            {
+                "id": event.id,
+                "job_id": event.job_id,
+                "entity_type": event.entity_type,
+                "entity_id": event.entity_id,
+                "level": event.level.value,
+                "message": event.message,
+                "details_json": event.details_json,
+                "created_at": event.created_at.isoformat() if event.created_at else None,
+            },
+        )
         return event
 
     def list_events(

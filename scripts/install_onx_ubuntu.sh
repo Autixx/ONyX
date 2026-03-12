@@ -33,6 +33,11 @@ ADMIN_API_TOKENS="${ADMIN_API_TOKENS:-}"
 ADMIN_API_JWT_SECRET="${ADMIN_API_JWT_SECRET:-}"
 ADMIN_API_JWT_ISSUER="${ADMIN_API_JWT_ISSUER:-onyx-admin}"
 ADMIN_API_JWT_AUDIENCE="${ADMIN_API_JWT_AUDIENCE:-onyx-admin-api}"
+ADMIN_WEB_AUTH_ENABLED="${ADMIN_WEB_AUTH_ENABLED:-true}"
+ADMIN_WEB_BOOTSTRAP_USERNAME="${ADMIN_WEB_BOOTSTRAP_USERNAME:-admin}"
+ADMIN_WEB_BOOTSTRAP_PASSWORD="${ADMIN_WEB_BOOTSTRAP_PASSWORD:-}"
+WEB_UI_ENABLED="${WEB_UI_ENABLED:-true}"
+WEB_UI_DIR="${WEB_UI_DIR:-}"
 
 INSTALL_POSTGRES="${INSTALL_POSTGRES:-true}"
 CONFIGURE_LOCAL_POSTGRES="${CONFIGURE_LOCAL_POSTGRES:-true}"
@@ -81,6 +86,13 @@ Options:
   --admin-api-jwt-secret <v>    HS256 JWT secret for admin/control-plane auth
   --admin-api-jwt-issuer <v>    JWT issuer hint written to env (default: onyx-admin)
   --admin-api-jwt-audience <v>  JWT audience hint written to env (default: onyx-admin-api)
+  --admin-web-auth-enabled      Enable browser login/session auth (default: true)
+  --admin-web-bootstrap-username <v>
+                                Initial admin web-auth username (default: admin)
+  --admin-web-bootstrap-password <v>
+                                Initial admin web-auth password (auto-generated if empty)
+  --web-ui-enabled              Enable same-origin static UI hosting scaffold (default: true)
+  --web-ui-dir <path>           Static UI build directory (default: /opt/onyx/apps/web-admin/dist)
   --no-install-postgres         Skip postgresql package install
   --no-configure-local-postgres Do not create local db/user via postgres superuser
   --postgres-host <host>        Postgres host (default: 127.0.0.1)
@@ -266,6 +278,26 @@ while [[ $# -gt 0 ]]; do
       ADMIN_API_JWT_AUDIENCE="$2"
       shift 2
       ;;
+    --admin-web-auth-enabled)
+      ADMIN_WEB_AUTH_ENABLED="true"
+      shift 1
+      ;;
+    --admin-web-bootstrap-username)
+      ADMIN_WEB_BOOTSTRAP_USERNAME="$2"
+      shift 2
+      ;;
+    --admin-web-bootstrap-password)
+      ADMIN_WEB_BOOTSTRAP_PASSWORD="$2"
+      shift 2
+      ;;
+    --web-ui-enabled)
+      WEB_UI_ENABLED="true"
+      shift 1
+      ;;
+    --web-ui-dir)
+      WEB_UI_DIR="$2"
+      shift 2
+      ;;
     --no-install-postgres)
       INSTALL_POSTGRES="false"
       shift 1
@@ -327,6 +359,8 @@ validate_bool "${TLS_FORCE_REGEN}" || fail "TLS force flag must be true or false
 validate_bool "${RUN_ALPHA_SMOKE}" || fail "run-alpha-smoke flag must be true or false."
 validate_bool "${SMOKE_EXPECT_AUTH}" || fail "smoke-expect-auth flag must be true or false."
 validate_bool "${SMOKE_CHECK_RATE_LIMIT}" || fail "smoke-check-rate-limit flag must be true or false."
+validate_bool "${ADMIN_WEB_AUTH_ENABLED}" || fail "admin-web-auth-enabled flag must be true or false."
+validate_bool "${WEB_UI_ENABLED}" || fail "web-ui-enabled flag must be true or false."
 validate_name "${POSTGRES_DB}" || fail "Invalid postgres db name: ${POSTGRES_DB}"
 validate_name "${POSTGRES_USER}" || fail "Invalid postgres user name: ${POSTGRES_USER}"
 if [[ "${POSTGRES_PASSWORD}" == *"'"* ]]; then
@@ -343,6 +377,9 @@ case "${ADMIN_API_AUTH_MODE}" in
   disabled|token|jwt|token_or_jwt) ;;
   *) fail "admin-auth-mode must be one of: disabled, token, jwt, token_or_jwt" ;;
 esac
+if [[ -z "${WEB_UI_DIR}" ]]; then
+  WEB_UI_DIR="${INSTALL_DIR}/apps/web-admin/dist"
+fi
 
 if [[ -z "${POSTGRES_PASSWORD}" ]]; then
   POSTGRES_PASSWORD="$(openssl rand -hex 24)"
@@ -370,6 +407,9 @@ if [[ "${ADMIN_API_AUTH_MODE}" == "jwt" || "${ADMIN_API_AUTH_MODE}" == "token_or
     ADMIN_API_JWT_SECRET="$(openssl rand -hex 32)"
   fi
 fi
+if [[ "${ADMIN_WEB_AUTH_ENABLED}" == "true" && -z "${ADMIN_WEB_BOOTSTRAP_PASSWORD}" ]]; then
+  ADMIN_WEB_BOOTSTRAP_PASSWORD="onx-web-$(openssl rand -hex 12)"
+fi
 
 ENV_FILE_PATH="${CONFIG_DIR}/${ENV_FILE_NAME}"
 VENV_DIR="${INSTALL_DIR}/${VENV_DIR_NAME}"
@@ -378,6 +418,7 @@ LAUNCHER_PATH="/usr/local/bin/onx"
 TLS_UPSTREAM_HOST="${BIND_HOST}"
 CLIENT_AUTH_INFO_PATH="${CONFIG_DIR}/client-auth.txt"
 ADMIN_AUTH_INFO_PATH="${CONFIG_DIR}/admin-auth.txt"
+ADMIN_WEB_AUTH_INFO_PATH="${CONFIG_DIR}/admin-web-auth.txt"
 
 if [[ "${ENABLE_TLS_OPENSSL}" == "true" && "${TLS_LOCAL_BIND}" == "true" ]]; then
   BIND_HOST="127.0.0.1"
@@ -479,6 +520,8 @@ ONX_DEBUG=${ONX_DEBUG}
 ONX_API_PREFIX=/api/v1
 ONX_DATABASE_URL=${DB_URL}
 ONX_MASTER_KEY=${ONX_MASTER_KEY}
+ONX_WEB_UI_ENABLED=${WEB_UI_ENABLED}
+ONX_WEB_UI_DIR=${WEB_UI_DIR}
 
 # Client routing auth: disabled | token | jwt | token_or_jwt
 ONX_CLIENT_API_AUTH_MODE=${CLIENT_API_AUTH_MODE}
@@ -499,6 +542,14 @@ ONX_ADMIN_API_TOKENS=${ADMIN_API_TOKENS}
 ONX_ADMIN_API_JWT_SECRET=${ADMIN_API_JWT_SECRET}
 ONX_ADMIN_API_JWT_ISSUER=${ADMIN_API_JWT_ISSUER}
 ONX_ADMIN_API_JWT_AUDIENCE=${ADMIN_API_JWT_AUDIENCE}
+ONX_ADMIN_WEB_AUTH_ENABLED=${ADMIN_WEB_AUTH_ENABLED}
+ONX_ADMIN_WEB_BOOTSTRAP_USERNAME=${ADMIN_WEB_BOOTSTRAP_USERNAME}
+ONX_ADMIN_WEB_BOOTSTRAP_PASSWORD=${ADMIN_WEB_BOOTSTRAP_PASSWORD}
+ONX_ADMIN_WEB_BOOTSTRAP_ROLES=admin
+ONX_ADMIN_WEB_SESSION_COOKIE_NAME=onx_session
+ONX_ADMIN_WEB_SESSION_TTL_SECONDS=43200
+ONX_ADMIN_WEB_SECURE_COOKIES=true
+ONX_ADMIN_WEB_COOKIE_SAME_SITE=lax
 EOF
 chmod 600 "${ENV_FILE_PATH}"
 {
@@ -540,6 +591,14 @@ chmod 600 "${CLIENT_AUTH_INFO_PATH}"
   fi
 } > "${ADMIN_AUTH_INFO_PATH}"
 chmod 600 "${ADMIN_AUTH_INFO_PATH}"
+{
+  echo "# Generated by install_onx_ubuntu.sh"
+  echo "enabled=${ADMIN_WEB_AUTH_ENABLED}"
+  echo "username=${ADMIN_WEB_BOOTSTRAP_USERNAME}"
+  echo "password=${ADMIN_WEB_BOOTSTRAP_PASSWORD}"
+  echo "cookie_name=onx_session"
+} > "${ADMIN_WEB_AUTH_INFO_PATH}"
+chmod 600 "${ADMIN_WEB_AUTH_INFO_PATH}"
 
 echo "[5/9] Creating Python venv..."
 python3 -m venv "${VENV_DIR}"
@@ -652,6 +711,7 @@ echo "Service:  ${SERVICE_NAME}.service"
 echo "Env file: ${ENV_FILE_PATH}"
 echo "Auth:     ${CLIENT_AUTH_INFO_PATH}"
 echo "Admin:    ${ADMIN_AUTH_INFO_PATH}"
+echo "Web auth: ${ADMIN_WEB_AUTH_INFO_PATH}"
 echo "Status:   systemctl status ${SERVICE_NAME}.service --no-pager"
 echo "Logs:     journalctl -u ${SERVICE_NAME}.service -f"
 echo "Health:   curl -fsS http://${BIND_HOST}:${BIND_PORT}/api/v1/health"
@@ -669,4 +729,7 @@ fi
 if [[ "${ADMIN_API_AUTH_MODE}" != "disabled" ]]; then
   echo "Admin auth mode:  ${ADMIN_API_AUTH_MODE}"
   echo "Admin auth file:  ${ADMIN_AUTH_INFO_PATH}"
+fi
+if [[ "${ADMIN_WEB_AUTH_ENABLED}" == "true" ]]; then
+  echo "Web login file:   ${ADMIN_WEB_AUTH_INFO_PATH}"
 fi

@@ -23,24 +23,25 @@ What is already ready:
 - native Ubuntu deployment
 - nginx-based HTTPS wrapper
 - admin auth for control-plane API
+- browser login/session auth for admin UI
 - client auth for client-routing API
 - DB-backed ACL rules
 - jobs, retries, events, audit logs
 - topology graph and path planner
+- websocket admin event stream
+- same-origin static UI hosting scaffold
 
 What is not implemented yet:
 
-- browser-specific auth/session flow
-- user accounts for operators
-- refresh-token or cookie auth
+- multi-user operator management UI
+- refresh-token flow
 - CORS middleware for cross-origin SPA hosting
-- websocket/SSE push updates
-- static frontend hosting inside ONyX
+- client-facing public portal
 
 Implication:
 
-- The first web UI should be an operator UI using the existing admin bearer token or admin JWT.
-- The safest deployment model is same-host or reverse-proxied same-origin UI.
+- The first web UI should use same-origin HTTPS and secure admin session cookies.
+- Manual bearer-token entry is no longer required for browser use.
 
 ## Deployment and TLS
 
@@ -70,7 +71,7 @@ This is sufficient for the first operator web UI.
 
 ### Important browser constraint
 
-There is currently no CORS middleware in FastAPI.
+There is still no CORS middleware in FastAPI.
 
 Therefore the first UI should be deployed in one of these ways:
 
@@ -84,7 +85,26 @@ Do not assume the API is cross-origin ready.
 
 ### Admin UI auth
 
-The operator web UI should use the admin API auth surface.
+The operator web UI should use the browser auth surface first and rely on the admin API
+through secure same-origin cookies.
+
+Browser auth endpoints:
+
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
+- `POST /api/v1/auth/change-password`
+
+Browser session transport:
+
+- HTTP-only secure cookie
+- same-origin HTTPS only
+- websocket auth via same cookie
+
+Bootstrap credentials on native install:
+
+- file: `/etc/onx/admin-web-auth.txt`
+- default bootstrap username: `admin`
 
 Supported modes:
 
@@ -97,6 +117,8 @@ Current default install mode:
 
 - admin auth: `token`
 - admin token stored in `/etc/onx/admin-auth.txt`
+- admin web auth: `enabled`
+- bootstrap browser credentials stored in `/etc/onx/admin-web-auth.txt`
 
 Admin API auth is enforced for:
 
@@ -118,6 +140,7 @@ Admin API auth is enforced for:
 Public:
 
 - `/api/v1/health`
+- `/api/v1/auth/*`
 
 ### Admin UI auth recommendation
 

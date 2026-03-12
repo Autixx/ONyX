@@ -16,6 +16,9 @@ Current alpha surface:
 - admin TUI (`onx`)
 - native Ubuntu install / update flow
 - native TLS setup
+- browser login/session auth
+- admin websocket event stream
+- same-origin static UI hosting scaffold
 - post-install alpha smoke
 
 ## Repository Layout
@@ -66,8 +69,18 @@ Default install result:
 - env file: `/etc/onx/onx.env`
 - client auth info: `/etc/onx/client-auth.txt`
 - admin auth info: `/etc/onx/admin-auth.txt`
+- admin web auth info: `/etc/onx/admin-web-auth.txt`
 - DB: local PostgreSQL (`onx`)
 - install dir: `/opt/onyx`
+
+Web UI foundation now present on backend:
+
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
+- `POST /api/v1/auth/change-password`
+- `WS /api/v1/ws/admin/events`
+- static UI mount from `/opt/onyx/apps/web-admin/dist` when build exists
 
 Useful overrides:
 
@@ -99,6 +112,9 @@ sudo bash scripts/setup_onx_tls_openssl.sh \
   --upstream-host 127.0.0.1 \
   --upstream-port 8081
 ```
+
+Because ONyX is deployed same-origin behind nginx, browser auth cookies and websocket
+connections work over the same HTTPS origin.
 
 ## Alpha Smoke
 
@@ -190,6 +206,41 @@ systemctl status onx-api.service --no-pager
 journalctl -u onx-api.service -f
 curl -fsS http://127.0.0.1:8081/api/v1/health
 ```
+
+## Web UI Backend Contract
+
+Admin browser login:
+
+```bash
+curl -k -X POST https://<HOST>/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"<PASSWORD_FROM_/etc/onx/admin-web-auth.txt>"}'
+```
+
+Current session:
+
+```bash
+curl -k https://<HOST>/api/v1/auth/me
+```
+
+Admin realtime stream:
+
+- websocket endpoint: `/api/v1/ws/admin/events`
+- same-origin browser auth uses secure session cookie
+- event types currently emitted:
+  - `system.connected`
+  - `system.ping`
+  - `job.created`
+  - `job.started`
+  - `job.claimed`
+  - `job.cancel_requested`
+  - `job.retry_requested`
+  - `job.cancelled`
+  - `job.step`
+  - `job.succeeded`
+  - `job.failed`
+  - `job.retry_scheduled`
+  - `audit.event`
 
 ## Branching Note
 
