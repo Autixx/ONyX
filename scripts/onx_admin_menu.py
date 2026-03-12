@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import onx_nodes as nodes_cli
@@ -67,6 +71,92 @@ def _run_command(command: list[str], *, cwd: Path | None = None) -> int:
     return completed.returncode
 
 
+def _editor_command() -> list[str]:
+    editor = os.environ.get("EDITOR")
+    if editor:
+        return shlex.split(editor)
+    for candidate in ("nano", "vim", "vi"):
+        resolved = shutil.which(candidate)
+        if resolved:
+            return [resolved]
+    if os.name == "nt":
+        return ["notepad"]
+    return ["vi"]
+
+
+def _edit_json_payload(title: str, payload: dict) -> dict | None:
+    editor = _editor_command()
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
+            handle.write(json.dumps(payload, indent=2, sort_keys=True))
+            handle.write("\n")
+            temp_path = Path(handle.name)
+
+        _render([title, "", f"Opening editor: {' '.join(editor)}", ""])
+        subprocess.run(editor + [str(temp_path)], check=False)
+        raw = temp_path.read_text(encoding="utf-8")
+        if not raw.strip():
+            return None
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        _render([title, "", f"Invalid JSON: {exc}", ""])
+        _pause()
+        return None
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+
+def _show_payload_screen(title: str, payload: object) -> None:
+    text = json.dumps(payload, indent=2, sort_keys=True, default=str)
+    _render([title, ""] + text.splitlines() + [""])
+    _pause()
+
+
+def _show_simple_list(title: str, rows: list[str], empty_message: str) -> None:
+    if not rows:
+        _render([title, "", empty_message, ""])
+        _pause()
+        return
+    _render([title, ""] + rows + [""])
+    _pause()
+
+
+def _pick_entity(title: str, items: list[dict], formatter) -> dict | None:
+    if not items:
+        _render([title, "", "No items found.", ""])
+        _pause()
+        return None
+    while True:
+        lines = [title, ""]
+        for index, item in enumerate(items, start=1):
+            lines.append(f"{index}. {formatter(item)}")
+        lines.extend(["", "Select item number or press Enter to cancel.", ""])
+        _render(lines)
+        raw = input("Choice: ").strip()
+        if not raw:
+            return None
+        try:
+            selected = int(raw)
+        except ValueError:
+            continue
+        if 1 <= selected <= len(items):
+            return items[selected - 1]
+
+
+def _prompt_bool(message: str, default: bool) -> bool:
+    default_marker = "Y/n" if default else "y/N"
+    while True:
+        raw = input(f"{message} [{default_marker}]: ").strip().lower()
+        if not raw:
+            return default
+        if raw in {"y", "yes"}:
+            return True
+        if raw in {"n", "no"}:
+            return False
+
+
 def _fetch_nodes(base_url: str, admin_token: str | None) -> list[dict]:
     payload = nodes_cli._request_json(base_url, "GET", "/nodes", token=admin_token)
     if not isinstance(payload, list):
@@ -78,6 +168,62 @@ def _fetch_jobs(base_url: str, admin_token: str | None) -> list[dict]:
     payload = nodes_cli._request_json(base_url, "GET", "/jobs", token=admin_token)
     if not isinstance(payload, list):
         raise RuntimeError("Unexpected /jobs response.")
+    return payload
+
+
+def _fetch_links(base_url: str, admin_token: str | None) -> list[dict]:
+    payload = nodes_cli._request_json(base_url, "GET", "/links", token=admin_token)
+    if not isinstance(payload, list):
+        raise RuntimeError("Unexpected /links response.")
+    return payload
+
+
+def _fetch_route_policies(base_url: str, admin_token: str | None) -> list[dict]:
+    payload = nodes_cli._request_json(base_url, "GET", "/route-policies", token=admin_token)
+    if not isinstance(payload, list):
+        raise RuntimeError("Unexpected /route-policies response.")
+    return payload
+
+
+def _fetch_dns_policies(base_url: str, admin_token: str | None) -> list[dict]:
+    payload = nodes_cli._request_json(base_url, "GET", "/dns-policies", token=admin_token)
+    if not isinstance(payload, list):
+        raise RuntimeError("Unexpected /dns-policies response.")
+    return payload
+
+
+def _fetch_geo_policies(base_url: str, admin_token: str | None) -> list[dict]:
+    payload = nodes_cli._request_json(base_url, "GET", "/geo-policies", token=admin_token)
+    if not isinstance(payload, list):
+        raise RuntimeError("Unexpected /geo-policies response.")
+    return payload
+
+
+def _fetch_balancers(base_url: str, admin_token: str | None) -> list[dict]:
+    payload = nodes_cli._request_json(base_url, "GET", "/balancers", token=admin_token)
+    if not isinstance(payload, list):
+        raise RuntimeError("Unexpected /balancers response.")
+    return payload
+
+
+def _fetch_access_rules(base_url: str, admin_token: str | None) -> list[dict]:
+    payload = nodes_cli._request_json(base_url, "GET", "/access-rules", token=admin_token)
+    if not isinstance(payload, list):
+        raise RuntimeError("Unexpected /access-rules response.")
+    return payload
+
+
+def _fetch_probe_results(base_url: str, admin_token: str | None, limit: int = 50) -> list[dict]:
+    payload = nodes_cli._request_json(base_url, "GET", f"/probes/results?limit={limit}", token=admin_token)
+    if not isinstance(payload, list):
+        raise RuntimeError("Unexpected /probes/results response.")
+    return payload
+
+
+def _fetch_audit_logs(base_url: str, admin_token: str | None, limit: int = 50) -> list[dict]:
+    payload = nodes_cli._request_json(base_url, "GET", f"/audit-logs?limit={limit}", token=admin_token)
+    if not isinstance(payload, list):
+        raise RuntimeError("Unexpected /audit-logs response.")
     return payload
 
 
@@ -158,6 +304,27 @@ def _format_payload(payload: object) -> list[str]:
     if len(text) <= 160:
         return [text]
     return [text[:157] + "..."]
+
+
+def _json_action(
+    *,
+    title: str,
+    base_url: str,
+    token: str | None,
+    method: str,
+    path: str,
+    template: dict,
+) -> None:
+    payload = _edit_json_payload(title, template)
+    if payload is None:
+        return
+    try:
+        response = nodes_cli._request_json(base_url, method, path, token=token, payload=payload)
+    except Exception as exc:
+        _render([title, "", f"Error: {exc}", ""])
+        _pause()
+        return
+    _show_payload_screen(title, response)
 
 
 def _status_screen(base_url: str, service_name: str) -> None:
@@ -467,6 +634,87 @@ def _nodes_menu(base_url: str, admin_token: str | None) -> None:
             return
 
 
+def _worker_health_screen(base_url: str, admin_token: str | None) -> None:
+    try:
+        payload = nodes_cli._request_json(base_url, "GET", "/health/worker", token=admin_token)
+    except Exception as exc:
+        _render(["ONX / Worker Health", "", f"Error: {exc}", ""])
+        _pause()
+        return
+    _show_payload_screen("ONX / Worker Health", payload)
+
+
+def _retention_policy_screen(base_url: str, admin_token: str | None) -> None:
+    try:
+        payload = nodes_cli._request_json(base_url, "GET", "/maintenance/retention", token=admin_token)
+    except Exception as exc:
+        _render(["ONX / Retention Policy", "", f"Error: {exc}", ""])
+        _pause()
+        return
+    _show_payload_screen("ONX / Retention Policy", payload)
+
+
+def _run_retention_cleanup_screen(base_url: str, admin_token: str | None) -> None:
+    try:
+        payload = nodes_cli._request_json(base_url, "POST", "/maintenance/cleanup", token=admin_token, payload={})
+    except Exception as exc:
+        _render(["ONX / Retention Cleanup", "", f"Error: {exc}", ""])
+        _pause()
+        return
+    _show_payload_screen("ONX / Retention Cleanup", payload)
+
+
+def _probe_results_screen(base_url: str, admin_token: str | None) -> None:
+    try:
+        items = _fetch_probe_results(base_url, admin_token, limit=50)
+    except Exception as exc:
+        _render(["ONX / Probe Results", "", f"Error: {exc}", ""])
+        _pause()
+        return
+    rows = [
+        f"- {item.get('probe_type')} source={item.get('source_node_id')} member={item.get('member_interface')} "
+        f"value={item.get('value')} at={item.get('created_at')}"
+        for item in items
+    ]
+    _show_simple_list("ONX / Probe Results", rows, "No probe results found.")
+
+
+def _system_menu(base_url: str, admin_token: str | None, service_name: str, install_dir: Path, client_auth_file: Path, admin_auth_file: Path) -> None:
+    while True:
+        _render(
+            [
+                "ONX / System",
+                "",
+                "1. Daemon status",
+                "2. Worker health",
+                "3. Retention policy",
+                "4. Run retention cleanup",
+                "5. Probe results",
+                "6. Restart daemon",
+                "7. Smoke-test",
+                "8. Back",
+                "",
+            ]
+        )
+        choice = input("Choice: ").strip()
+        if choice == "1":
+            _status_screen(base_url, service_name)
+        elif choice == "2":
+            _worker_health_screen(base_url, admin_token)
+        elif choice == "3":
+            _retention_policy_screen(base_url, admin_token)
+        elif choice == "4":
+            _run_retention_cleanup_screen(base_url, admin_token)
+        elif choice == "5":
+            _probe_results_screen(base_url, admin_token)
+        elif choice == "6":
+            _restart_daemon(service_name)
+        elif choice == "7":
+            _run_smoke(base_url, install_dir, client_auth_file, admin_auth_file)
+        elif choice == "8":
+            return
+
+
 def _restart_daemon(service_name: str) -> None:
     _show_command_screen("ONX / Restart Daemon", ["systemctl", "restart", service_name])
 
@@ -640,6 +888,19 @@ def _view_job_events_screen(base_url: str, admin_token: str | None) -> None:
     _pause()
 
 
+def _job_action_screen(base_url: str, admin_token: str | None, title: str, suffix: str) -> None:
+    job = _pick_job(base_url, admin_token, title)
+    if job is None:
+        return
+    try:
+        payload = nodes_cli._request_json(base_url, "POST", f"/jobs/{job['id']}/{suffix}", token=admin_token, payload={})
+    except Exception as exc:
+        _render([title, "", f"Error: {exc}", ""])
+        _pause()
+        return
+    _show_payload_screen(title, payload)
+
+
 def _jobs_menu(base_url: str, admin_token: str | None) -> None:
     while True:
         _render(
@@ -649,7 +910,10 @@ def _jobs_menu(base_url: str, admin_token: str | None) -> None:
                 "1. List jobs",
                 "2. View last job result",
                 "3. View job events",
-                "4. Back",
+                "4. Cancel job",
+                "5. Retry job now",
+                "6. Force-cancel job",
+                "7. Back",
                 "",
             ]
         )
@@ -661,7 +925,586 @@ def _jobs_menu(base_url: str, admin_token: str | None) -> None:
         elif choice == "3":
             _view_job_events_screen(base_url, admin_token)
         elif choice == "4":
+            _job_action_screen(base_url, admin_token, "ONX / Cancel Job", "cancel")
+        elif choice == "5":
+            _job_action_screen(base_url, admin_token, "ONX / Retry Job Now", "retry-now")
+        elif choice == "6":
+            _job_action_screen(base_url, admin_token, "ONX / Force-cancel Job", "force-cancel")
+        elif choice == "7":
             return
+
+
+def _pick_link(base_url: str, admin_token: str | None, title: str) -> dict | None:
+    try:
+        links = _fetch_links(base_url, admin_token)
+    except Exception as exc:
+        _render([title, "", f"Error: {exc}", ""])
+        _pause()
+        return None
+    return _pick_entity(
+        title,
+        links,
+        lambda link: f"{link.get('name')} [state={link.get('state')}, driver={link.get('driver_name')}, topology={link.get('topology_type')}]",
+    )
+
+
+def _list_links_screen(base_url: str, admin_token: str | None) -> None:
+    try:
+        links = _fetch_links(base_url, admin_token)
+    except Exception as exc:
+        _render(["ONX / Links", "", f"Error: {exc}", ""])
+        _pause()
+        return
+    rows = [
+        f"{index}. {link.get('name')} [state={link.get('state')}, driver={link.get('driver_name')}, topology={link.get('topology_type')}]"
+        for index, link in enumerate(links, start=1)
+    ]
+    _show_simple_list("ONX / Links", rows, "No links found.")
+
+
+def _view_link_screen(base_url: str, admin_token: str | None) -> None:
+    link = _pick_link(base_url, admin_token, "ONX / View Link")
+    if link is None:
+        return
+    try:
+        payload = nodes_cli._request_json(base_url, "GET", f"/links/{link['id']}", token=admin_token)
+    except Exception as exc:
+        _render(["ONX / View Link", "", f"Error: {exc}", ""])
+        _pause()
+        return
+    _show_payload_screen(f"ONX / Link / {link['name']}", payload)
+
+
+def _create_link_screen(base_url: str, admin_token: str | None) -> None:
+    left_node = _pick_user_node(base_url, admin_token, "ONX / Create Link / Left Node")
+    if left_node is None:
+        return
+    right_candidates = [node for node in _user_nodes(base_url, admin_token) if node["id"] != left_node["id"]]
+    right_node = _pick_entity("ONX / Create Link / Right Node", right_candidates, lambda node: node.get("name", "-"))
+    if right_node is None:
+        return
+    name = nodes_cli._prompt("Link name")
+    payload = {
+        "name": name,
+        "driver_name": "awg",
+        "topology_type": "p2p",
+        "left_node_id": left_node["id"],
+        "right_node_id": right_node["id"],
+        "spec": {
+            "mode": "site_to_site",
+            "left": {
+                "interface_name": "awg10",
+                "listen_port": 8443,
+                "address_v4": "10.77.77.1/30",
+                "mtu": 1420,
+                "endpoint_host": left_node.get("management_address") or left_node.get("ssh_host"),
+            },
+            "right": {
+                "interface_name": "awg11",
+                "listen_port": 8444,
+                "address_v4": "10.77.77.2/30",
+                "mtu": 1420,
+                "endpoint_host": right_node.get("management_address") or right_node.get("ssh_host"),
+            },
+            "peer": {
+                "persistent_keepalive": 21,
+                "mtu": 1420,
+                "left_allowed_ips": ["10.77.77.2/32"],
+                "right_allowed_ips": ["10.77.77.1/32"],
+            },
+            "awg_obfuscation": {
+                "jc": 4,
+                "jmin": 40,
+                "jmax": 120,
+                "s1": 20,
+                "s2": 40,
+                "s3": 80,
+                "s4": 120,
+                "h1": 10101,
+                "h2": 20202,
+                "h3": 30303,
+                "h4": 40404,
+            },
+        },
+    }
+    _json_action(
+        title="ONX / Create Link",
+        base_url=base_url,
+        token=admin_token,
+        method="POST",
+        path="/links",
+        template=payload,
+    )
+
+
+def _validate_link_screen(base_url: str, admin_token: str | None) -> None:
+    link = _pick_link(base_url, admin_token, "ONX / Validate Link")
+    if link is None:
+        return
+    try:
+        payload = nodes_cli._request_json(base_url, "POST", f"/links/{link['id']}/validate", token=admin_token, payload={})
+    except Exception as exc:
+        _render(["ONX / Validate Link", "", f"Error: {exc}", ""])
+        _pause()
+        return
+    _show_payload_screen(f"ONX / Validate Link / {link['name']}", payload)
+
+
+def _apply_link_screen(base_url: str, admin_token: str | None) -> None:
+    link = _pick_link(base_url, admin_token, "ONX / Apply Link")
+    if link is None:
+        return
+    try:
+        payload = nodes_cli._request_json(base_url, "POST", f"/links/{link['id']}/apply", token=admin_token, payload={})
+    except Exception as exc:
+        _render(["ONX / Apply Link", "", f"Error: {exc}", ""])
+        _pause()
+        return
+    _show_payload_screen(f"ONX / Apply Link / {link['name']}", payload)
+
+
+def _links_menu(base_url: str, admin_token: str | None) -> None:
+    while True:
+        _render(
+            [
+                "ONX / Links",
+                "",
+                "1. List links",
+                "2. View link",
+                "3. Create link",
+                "4. Validate link",
+                "5. Apply link",
+                "6. Back",
+                "",
+            ]
+        )
+        choice = input("Choice: ").strip()
+        if choice == "1":
+            _list_links_screen(base_url, admin_token)
+        elif choice == "2":
+            _view_link_screen(base_url, admin_token)
+        elif choice == "3":
+            _create_link_screen(base_url, admin_token)
+        elif choice == "4":
+            _validate_link_screen(base_url, admin_token)
+        elif choice == "5":
+            _apply_link_screen(base_url, admin_token)
+        elif choice == "6":
+            return
+
+
+def _pick_route_policy(base_url: str, admin_token: str | None, title: str) -> dict | None:
+    try:
+        items = _fetch_route_policies(base_url, admin_token)
+    except Exception as exc:
+        _render([title, "", f"Error: {exc}", ""])
+        _pause()
+        return None
+    return _pick_entity(
+        title,
+        items,
+        lambda item: f"{item.get('name')} [node={item.get('node_id')}, ingress={item.get('ingress_interface')}, action={item.get('action')}]",
+    )
+
+
+def _route_policies_menu(base_url: str, admin_token: str | None) -> None:
+    def list_screen() -> None:
+        items = _fetch_route_policies(base_url, admin_token)
+        rows = [f"{i}. {item.get('name')} [node={item.get('node_id')}, action={item.get('action')}, enabled={item.get('enabled')}]" for i, item in enumerate(items, start=1)]
+        _show_simple_list("ONX / Policies / Route", rows, "No route policies found.")
+
+    def create_screen() -> None:
+        node = _pick_user_node(base_url, admin_token, "ONX / Create Route Policy / Node")
+        if node is None:
+            return
+        _json_action(
+            title="ONX / Create Route Policy",
+            base_url=base_url,
+            token=admin_token,
+            method="POST",
+            path="/route-policies",
+            template={
+                "node_id": node["id"],
+                "name": "route-policy-1",
+                "ingress_interface": "awg0",
+                "action": "next_hop",
+                "target_interface": "awg1",
+                "target_gateway": None,
+                "balancer_id": None,
+                "routed_networks": ["0.0.0.0/0"],
+                "excluded_networks": [],
+                "table_id": 51820,
+                "rule_priority": 10000,
+                "firewall_mark": 51820,
+                "masquerade": True,
+                "enabled": True,
+            },
+        )
+
+    def update_screen() -> None:
+        item = _pick_route_policy(base_url, admin_token, "ONX / Update Route Policy")
+        if item is None:
+            return
+        _json_action(
+            title="ONX / Update Route Policy",
+            base_url=base_url,
+            token=admin_token,
+            method="PATCH",
+            path=f"/route-policies/{item['id']}",
+            template={
+                "name": item.get("name"),
+                "ingress_interface": item.get("ingress_interface"),
+                "action": item.get("action"),
+                "target_interface": item.get("target_interface"),
+                "target_gateway": item.get("target_gateway"),
+                "balancer_id": item.get("balancer_id"),
+                "routed_networks": item.get("routed_networks"),
+                "excluded_networks": item.get("excluded_networks"),
+                "table_id": item.get("table_id"),
+                "rule_priority": item.get("rule_priority"),
+                "firewall_mark": item.get("firewall_mark"),
+                "masquerade": item.get("masquerade"),
+                "enabled": item.get("enabled"),
+            },
+        )
+
+    def delete_screen() -> None:
+        item = _pick_route_policy(base_url, admin_token, "ONX / Delete Route Policy")
+        if item is None:
+            return
+        if not _prompt_bool(f"Delete route policy '{item['name']}'?", False):
+            return
+        nodes_cli._request_json(base_url, "DELETE", f"/route-policies/{item['id']}", token=admin_token)
+        _render(["ONX / Delete Route Policy", "", "Route policy deleted.", ""])
+        _pause()
+
+    def plan_screen() -> None:
+        item = _pick_route_policy(base_url, admin_token, "ONX / Plan Route Policy")
+        if item is None:
+            return
+        payload = nodes_cli._request_json(base_url, "GET", f"/route-policies/{item['id']}/plan", token=admin_token)
+        _show_payload_screen("ONX / Route Policy Plan", payload)
+
+    def apply_screen() -> None:
+        item = _pick_route_policy(base_url, admin_token, "ONX / Apply Route Policy")
+        if item is None:
+            return
+        payload = nodes_cli._request_json(base_url, "POST", f"/route-policies/{item['id']}/apply", token=admin_token, payload={})
+        _show_payload_screen("ONX / Apply Route Policy", payload)
+
+    while True:
+        _render(
+            [
+                "ONX / Policies / Route",
+                "",
+                "1. List route policies",
+                "2. Create route policy",
+                "3. Update route policy",
+                "4. Delete route policy",
+                "5. Plan route policy",
+                "6. Apply route policy",
+                "7. Back",
+                "",
+            ]
+        )
+        choice = input("Choice: ").strip()
+        if choice == "1":
+            list_screen()
+        elif choice == "2":
+            create_screen()
+        elif choice == "3":
+            update_screen()
+        elif choice == "4":
+            delete_screen()
+        elif choice == "5":
+            plan_screen()
+        elif choice == "6":
+            apply_screen()
+        elif choice == "7":
+            return
+
+
+def _pick_simple_policy(base_url: str, admin_token: str | None, title: str, fetcher, formatter) -> dict | None:
+    try:
+        items = fetcher(base_url, admin_token)
+    except Exception as exc:
+        _render([title, "", f"Error: {exc}", ""])
+        _pause()
+        return None
+    return _pick_entity(title, items, formatter)
+
+
+def _dns_policies_menu(base_url: str, admin_token: str | None) -> None:
+    while True:
+        _render(["ONX / Policies / DNS", "", "1. List DNS policies", "2. Create DNS policy", "3. Update DNS policy", "4. Delete DNS policy", "5. Apply DNS policy", "6. Back", ""])
+        choice = input("Choice: ").strip()
+        if choice == "1":
+            items = _fetch_dns_policies(base_url, admin_token)
+            rows = [f"{i}. route={item.get('route_policy_id')} dns={item.get('dns_address')} enabled={item.get('enabled')}" for i, item in enumerate(items, start=1)]
+            _show_simple_list("ONX / Policies / DNS", rows, "No DNS policies found.")
+        elif choice == "2":
+            route = _pick_route_policy(base_url, admin_token, "ONX / Create DNS Policy / Route Policy")
+            if route is not None:
+                _json_action(title="ONX / Create DNS Policy", base_url=base_url, token=admin_token, method="POST", path="/dns-policies", template={"route_policy_id": route["id"], "enabled": True, "dns_address": "10.66.66.1", "capture_protocols": ["udp"], "capture_ports": [53], "exceptions_networks": []})
+        elif choice == "3":
+            item = _pick_simple_policy(base_url, admin_token, "ONX / Update DNS Policy", _fetch_dns_policies, lambda it: f"{it.get('id')} [dns={it.get('dns_address')}]")
+            if item is not None:
+                _json_action(title="ONX / Update DNS Policy", base_url=base_url, token=admin_token, method="PATCH", path=f"/dns-policies/{item['id']}", template={"enabled": item.get("enabled"), "dns_address": item.get("dns_address"), "capture_protocols": item.get("capture_protocols"), "capture_ports": item.get("capture_ports"), "exceptions_networks": item.get("exceptions_networks")})
+        elif choice == "4":
+            item = _pick_simple_policy(base_url, admin_token, "ONX / Delete DNS Policy", _fetch_dns_policies, lambda it: f"{it.get('id')} [dns={it.get('dns_address')}]")
+            if item is not None and _prompt_bool(f"Delete DNS policy '{item['id']}'?", False):
+                nodes_cli._request_json(base_url, "DELETE", f"/dns-policies/{item['id']}", token=admin_token)
+                _render(["ONX / Delete DNS Policy", "", "DNS policy deleted.", ""])
+                _pause()
+        elif choice == "5":
+            item = _pick_simple_policy(base_url, admin_token, "ONX / Apply DNS Policy", _fetch_dns_policies, lambda it: f"{it.get('id')} [dns={it.get('dns_address')}]")
+            if item is not None:
+                payload = nodes_cli._request_json(base_url, "POST", f"/dns-policies/{item['id']}/apply", token=admin_token, payload={})
+                _show_payload_screen("ONX / Apply DNS Policy", payload)
+        elif choice == "6":
+            return
+
+
+def _geo_policies_menu(base_url: str, admin_token: str | None) -> None:
+    while True:
+        _render(["ONX / Policies / Geo", "", "1. List geo policies", "2. Create geo policy", "3. Update geo policy", "4. Delete geo policy", "5. Apply geo policy", "6. Back", ""])
+        choice = input("Choice: ").strip()
+        if choice == "1":
+            items = _fetch_geo_policies(base_url, admin_token)
+            rows = [f"{i}. {item.get('country_code')} route={item.get('route_policy_id')} mode={item.get('mode')} enabled={item.get('enabled')}" for i, item in enumerate(items, start=1)]
+            _show_simple_list("ONX / Policies / Geo", rows, "No geo policies found.")
+        elif choice == "2":
+            route = _pick_route_policy(base_url, admin_token, "ONX / Create Geo Policy / Route Policy")
+            if route is not None:
+                _json_action(title="ONX / Create Geo Policy", base_url=base_url, token=admin_token, method="POST", path="/geo-policies", template={"route_policy_id": route["id"], "country_code": "RU", "mode": "direct", "source_url_template": "https://www.ipdeny.com/ipblocks/data/aggregated/{country}-aggregated.zone", "enabled": True})
+        elif choice == "3":
+            item = _pick_simple_policy(base_url, admin_token, "ONX / Update Geo Policy", _fetch_geo_policies, lambda it: f"{it.get('country_code')} [route={it.get('route_policy_id')}]")
+            if item is not None:
+                _json_action(title="ONX / Update Geo Policy", base_url=base_url, token=admin_token, method="PATCH", path=f"/geo-policies/{item['id']}", template={"country_code": item.get("country_code"), "mode": item.get("mode"), "source_url_template": item.get("source_url_template"), "enabled": item.get("enabled")})
+        elif choice == "4":
+            item = _pick_simple_policy(base_url, admin_token, "ONX / Delete Geo Policy", _fetch_geo_policies, lambda it: f"{it.get('country_code')} [route={it.get('route_policy_id')}]")
+            if item is not None and _prompt_bool(f"Delete geo policy '{item['country_code']}'?", False):
+                nodes_cli._request_json(base_url, "DELETE", f"/geo-policies/{item['id']}", token=admin_token)
+                _render(["ONX / Delete Geo Policy", "", "Geo policy deleted.", ""])
+                _pause()
+        elif choice == "5":
+            item = _pick_simple_policy(base_url, admin_token, "ONX / Apply Geo Policy", _fetch_geo_policies, lambda it: f"{it.get('country_code')} [route={it.get('route_policy_id')}]")
+            if item is not None:
+                payload = nodes_cli._request_json(base_url, "POST", f"/geo-policies/{item['id']}/apply", token=admin_token, payload={})
+                _show_payload_screen("ONX / Apply Geo Policy", payload)
+        elif choice == "6":
+            return
+
+
+def _balancers_menu(base_url: str, admin_token: str | None) -> None:
+    while True:
+        _render(["ONX / Policies / Balancers", "", "1. List balancers", "2. Create balancer", "3. Update balancer", "4. Delete balancer", "5. Pick balancer member", "6. Run balancer probes", "7. Back", ""])
+        choice = input("Choice: ").strip()
+        if choice == "1":
+            items = _fetch_balancers(base_url, admin_token)
+            rows = [f"{i}. {item.get('name')} [node={item.get('node_id')}, method={item.get('method')}, members={len(item.get('members') or [])}]" for i, item in enumerate(items, start=1)]
+            _show_simple_list("ONX / Policies / Balancers", rows, "No balancers found.")
+        elif choice == "2":
+            node = _pick_user_node(base_url, admin_token, "ONX / Create Balancer / Node")
+            if node is not None:
+                _json_action(title="ONX / Create Balancer", base_url=base_url, token=admin_token, method="POST", path="/balancers", template={"node_id": node["id"], "name": "balancer-1", "method": "random", "members": [{"interface_name": "awg1", "gateway": None, "ping_target": "1.1.1.1", "weight": 1}], "enabled": True})
+        elif choice == "3":
+            item = _pick_simple_policy(base_url, admin_token, "ONX / Update Balancer", _fetch_balancers, lambda it: f"{it.get('name')} [method={it.get('method')}]")
+            if item is not None:
+                _json_action(title="ONX / Update Balancer", base_url=base_url, token=admin_token, method="PATCH", path=f"/balancers/{item['id']}", template={"name": item.get("name"), "method": item.get("method"), "members": item.get("members"), "enabled": item.get("enabled")})
+        elif choice == "4":
+            item = _pick_simple_policy(base_url, admin_token, "ONX / Delete Balancer", _fetch_balancers, lambda it: f"{it.get('name')} [method={it.get('method')}]")
+            if item is not None and _prompt_bool(f"Delete balancer '{item['name']}'?", False):
+                nodes_cli._request_json(base_url, "DELETE", f"/balancers/{item['id']}", token=admin_token)
+                _render(["ONX / Delete Balancer", "", "Balancer deleted.", ""])
+                _pause()
+        elif choice == "5":
+            item = _pick_simple_policy(base_url, admin_token, "ONX / Pick Balancer Member", _fetch_balancers, lambda it: f"{it.get('name')} [method={it.get('method')}]")
+            if item is not None:
+                payload = nodes_cli._request_json(base_url, "POST", f"/balancers/{item['id']}/pick", token=admin_token, payload={})
+                _show_payload_screen("ONX / Pick Balancer Member", payload)
+        elif choice == "6":
+            item = _pick_simple_policy(base_url, admin_token, "ONX / Run Balancer Probes", _fetch_balancers, lambda it: f"{it.get('name')} [method={it.get('method')}]")
+            if item is not None:
+                _json_action(title="ONX / Run Balancer Probes", base_url=base_url, token=admin_token, method="POST", path=f"/probes/balancers/{item['id']}/run", template={"include_ping": True, "include_interface_load": True})
+        elif choice == "7":
+            return
+
+
+def _policies_menu(base_url: str, admin_token: str | None) -> None:
+    while True:
+        _render(["ONX / Policies", "", "1. Route policies", "2. DNS policies", "3. Geo policies", "4. Balancers", "5. Back", ""])
+        choice = input("Choice: ").strip()
+        if choice == "1":
+            _route_policies_menu(base_url, admin_token)
+        elif choice == "2":
+            _dns_policies_menu(base_url, admin_token)
+        elif choice == "3":
+            _geo_policies_menu(base_url, admin_token)
+        elif choice == "4":
+            _balancers_menu(base_url, admin_token)
+        elif choice == "5":
+            return
+
+
+def _audit_logs_screen(base_url: str, admin_token: str | None) -> None:
+    try:
+        items = _fetch_audit_logs(base_url, admin_token, limit=50)
+    except Exception as exc:
+        _render(["ONX / Audit Logs", "", f"Error: {exc}", ""])
+        _pause()
+        return
+    rows = [f"- [{item.get('created_at')}] {item.get('level')} {item.get('entity_type')}:{item.get('entity_id')} {item.get('message')}" for item in items]
+    _show_simple_list("ONX / Audit Logs", rows, "No audit logs found.")
+
+
+def _list_access_rules_screen(base_url: str, admin_token: str | None) -> None:
+    try:
+        items = _fetch_access_rules(base_url, admin_token)
+    except Exception as exc:
+        _render(["ONX / Access Rules", "", f"Error: {exc}", ""])
+        _pause()
+        return
+    rows = [f"- {item.get('permission_key')} roles={item.get('allowed_roles')} enabled={item.get('enabled')}" for item in items]
+    _show_simple_list("ONX / Access Rules", rows, "No access rules found.")
+
+
+def _access_rule_matrix_screen(base_url: str, admin_token: str | None) -> None:
+    payload = nodes_cli._request_json(base_url, "GET", "/access-rules/matrix", token=admin_token)
+    _show_payload_screen("ONX / Access Rule Matrix", payload)
+
+
+def _upsert_access_rule_screen(base_url: str, admin_token: str | None) -> None:
+    permission_key = nodes_cli._prompt("Permission key")
+    _json_action(
+        title=f"ONX / Upsert Access Rule / {permission_key}",
+        base_url=base_url,
+        token=admin_token,
+        method="PUT",
+        path=f"/access-rules/{permission_key}",
+        template={"description": "Custom access rule", "allowed_roles": ["admin"], "enabled": True},
+    )
+
+
+def _delete_access_rule_screen(base_url: str, admin_token: str | None) -> None:
+    try:
+        items = _fetch_access_rules(base_url, admin_token)
+    except Exception as exc:
+        _render(["ONX / Delete Access Rule", "", f"Error: {exc}", ""])
+        _pause()
+        return
+    item = _pick_entity("ONX / Delete Access Rule", items, lambda row: row.get("permission_key", "-"))
+    if item is None:
+        return
+    if not _prompt_bool(f"Delete access rule '{item['permission_key']}'?", False):
+        return
+    nodes_cli._request_json(base_url, "DELETE", f"/access-rules/{item['permission_key']}", token=admin_token)
+    _render(["ONX / Delete Access Rule", "", "Access rule deleted.", ""])
+    _pause()
+
+
+def _audit_access_menu(base_url: str, admin_token: str | None) -> None:
+    while True:
+        _render(["ONX / Audit & Access", "", "1. Audit logs", "2. List access rules", "3. View access rule matrix", "4. Upsert access rule", "5. Delete access rule", "6. Back", ""])
+        choice = input("Choice: ").strip()
+        if choice == "1":
+            _audit_logs_screen(base_url, admin_token)
+        elif choice == "2":
+            _list_access_rules_screen(base_url, admin_token)
+        elif choice == "3":
+            _access_rule_matrix_screen(base_url, admin_token)
+        elif choice == "4":
+            _upsert_access_rule_screen(base_url, admin_token)
+        elif choice == "5":
+            _delete_access_rule_screen(base_url, admin_token)
+        elif choice == "6":
+            return
+
+
+def _graph_summary_screen(base_url: str, admin_token: str | None) -> None:
+    payload = nodes_cli._request_json(base_url, "GET", "/graph", token=admin_token)
+    if not isinstance(payload, dict):
+        _show_payload_screen("ONX / Graph Summary", payload)
+        return
+    rows = [
+        f"Generated at: {payload.get('generated_at')}",
+        f"Nodes: {len(payload.get('nodes') or [])}",
+        f"Edges: {len(payload.get('edges') or [])}",
+        "",
+    ]
+    for node in (payload.get("nodes") or [])[:20]:
+        rows.append(f"- node {node.get('name')} role={node.get('role')} status={node.get('status')}")
+    _show_simple_list("ONX / Graph Summary", rows, "No graph data.")
+
+
+def _plan_path_screen(base_url: str, admin_token: str | None) -> None:
+    source = _pick_user_node(base_url, admin_token, "ONX / Plan Path / Source")
+    if source is None:
+        return
+    destination_candidates = [node for node in _user_nodes(base_url, admin_token) if node["id"] != source["id"]]
+    destination = _pick_entity("ONX / Plan Path / Destination", destination_candidates, lambda node: node.get("name", "-"))
+    if destination is None:
+        return
+    _json_action(
+        title="ONX / Plan Path",
+        base_url=base_url,
+        token=admin_token,
+        method="POST",
+        path="/paths/plan",
+        template={
+            "source_node_id": source["id"],
+            "destination_node_id": destination["id"],
+            "max_hops": 8,
+            "require_active_links": True,
+            "avoid_node_ids": [],
+            "latency_weight": 1.0,
+            "load_weight": 1.2,
+            "loss_weight": 1.5,
+        },
+    )
+
+
+def _topology_menu(base_url: str, admin_token: str | None) -> None:
+    while True:
+        _render(["ONX / Topology", "", "1. Graph summary", "2. Plan path", "3. Back", ""])
+        choice = input("Choice: ").strip()
+        if choice == "1":
+            _graph_summary_screen(base_url, admin_token)
+        elif choice == "2":
+            _plan_path_screen(base_url, admin_token)
+        elif choice == "3":
+            return
+
+
+def _api_debug_menu(base_url: str, admin_token: str | None, client_token: str | None) -> None:
+    while True:
+        _render(["ONX / API Debug", "", "1. Raw GET", "2. Raw POST", "3. Raw PATCH", "4. Raw PUT", "5. Raw DELETE", "6. Back", ""])
+        choice = input("Choice: ").strip()
+        if choice == "6":
+            return
+        method_map = {"1": "GET", "2": "POST", "3": "PATCH", "4": "PUT", "5": "DELETE"}
+        method = method_map.get(choice)
+        if method is None:
+            continue
+        path = nodes_cli._prompt("API path", default="/health")
+        auth_mode = nodes_cli._prompt_choice("Auth mode", ("none", "admin", "client"), default="admin")
+        token = None
+        if auth_mode == "admin":
+            token = admin_token
+        elif auth_mode == "client":
+            token = client_token
+        payload = None
+        if method in {"POST", "PATCH", "PUT"}:
+            payload = _edit_json_payload(f"ONX / API Debug / {method}", {"example": "value"})
+            if payload is None:
+                continue
+        try:
+            response = nodes_cli._request_json(base_url, method, path, token=token, payload=payload)
+        except Exception as exc:
+            _render(["ONX / API Debug", "", f"Error: {exc}", ""])
+            _pause()
+            continue
+        _show_payload_screen(f"ONX / API Debug / {method} {path}", response)
 
 
 def main() -> int:
@@ -676,6 +1519,7 @@ def main() -> int:
 
     _load_env(Path(args.env_file).resolve())
     admin_token = _read_primary_token(Path(args.admin_auth_file).resolve())
+    client_token = _read_primary_token(Path(args.client_auth_file).resolve())
     base_url = _derive_base_url(args.base_url)
     install_dir = Path(args.install_dir).resolve()
     client_auth_file = Path(args.client_auth_file).resolve()
@@ -691,27 +1535,36 @@ def main() -> int:
                     _service_summary(args.service_name),
                     _health_summary(base_url),
                     "",
-                    "1. Daemon status",
-                    "2. Node operations",
-                    "3. Jobs",
-                    "4. Restart daemon",
-                    "5. Smoke-test",
-                    "6. Exit",
+                    "1. System",
+                    "2. Nodes",
+                    "3. Links",
+                    "4. Policies",
+                    "5. Jobs",
+                    "6. Audit / Access",
+                    "7. Topology",
+                    "8. API Debug",
+                    "9. Exit",
                     "",
                 ]
             )
             choice = input("Choice: ").strip()
             if choice == "1":
-                _status_screen(base_url, args.service_name)
+                _system_menu(base_url, admin_token, args.service_name, install_dir, client_auth_file, admin_auth_file)
             elif choice == "2":
                 _nodes_menu(base_url, admin_token)
             elif choice == "3":
-                _jobs_menu(base_url, admin_token)
+                _links_menu(base_url, admin_token)
             elif choice == "4":
-                _restart_daemon(args.service_name)
+                _policies_menu(base_url, admin_token)
             elif choice == "5":
-                _run_smoke(base_url, install_dir, client_auth_file, admin_auth_file)
+                _jobs_menu(base_url, admin_token)
             elif choice == "6":
+                _audit_access_menu(base_url, admin_token)
+            elif choice == "7":
+                _topology_menu(base_url, admin_token)
+            elif choice == "8":
+                _api_debug_menu(base_url, admin_token, client_token)
+            elif choice == "9":
                 return 0
     finally:
         _leave_alt_screen()

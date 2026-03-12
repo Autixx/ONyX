@@ -196,14 +196,39 @@ onx
 
 Menu actions:
 
-- daemon status
-- node create/provision/list/edit/delete by name
-- node availability check
-- runtime bootstrap
-- capability view
-- jobs list / last result / events
-- daemon restart
-- alpha smoke test
+- `System`:
+  - daemon status
+  - worker health
+  - retention policy / cleanup
+  - probe results
+  - daemon restart
+  - alpha smoke test
+- `Nodes`:
+  - create / provision / list / edit / delete by name
+  - availability check
+  - runtime bootstrap
+  - capability view
+- `Links`:
+  - list / view / create / validate / apply
+- `Policies`:
+  - route policies
+  - DNS policies
+  - geo policies
+  - balancers
+- `Jobs`:
+  - list
+  - last result
+  - events
+  - cancel / retry-now / force-cancel
+- `Audit / Access`:
+  - audit logs
+  - access rules
+  - access rule matrix
+- `Topology`:
+  - graph summary
+  - path planning
+- `API Debug`:
+  - raw GET / POST / PATCH / PUT / DELETE with admin or client token
 
 ```bash
 python scripts/onx_nodes.py list-nodes
