@@ -33,6 +33,7 @@ Important docs:
 - [ONX_V0_2_BLUEPRINT.md](Q:\ONyX_export\docs\architecture\ONX_V0_2_BLUEPRINT.md)
 - [ONX_CLIENT_PROTOCOL_V1.md](Q:\ONyX_export\docs\architecture\ONX_CLIENT_PROTOCOL_V1.md)
 - [ONX_WEB_UI_HANDOFF.md](Q:\ONyX_export\docs\architecture\ONX_WEB_UI_HANDOFF.md)
+- [ONX_CLAUDE_UI_PROMPT_SPEC.md](Q:\ONyX_export\docs\architecture\ONX_CLAUDE_UI_PROMPT_SPEC.md)
 - [ONX_CLIENT_DELIVERY_ARCHITECTURE.md](Q:\ONyX_export\docs\architecture\ONX_CLIENT_DELIVERY_ARCHITECTURE.md)
 - [ONX_DEVICE_IDENTITY_AND_PROFILE_DELIVERY.md](Q:\ONyX_export\docs\architecture\ONX_DEVICE_IDENTITY_AND_PROFILE_DELIVERY.md)
 - [ONX_SUBSCRIPTIONS_AND_BILLING.md](Q:\ONyX_export\docs\architecture\ONX_SUBSCRIPTIONS_AND_BILLING.md)
