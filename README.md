@@ -209,6 +209,7 @@ Menu actions:
   - availability check
   - runtime bootstrap
   - capability view
+  - AWG readiness check
 - `Links`:
   - list / view / create / validate / apply
 - `Policies`:
@@ -268,6 +269,11 @@ site-to-site links on Ubuntu managed nodes:
 - `ipset`
 - `resolvconf`
 - Go toolchain bootstrap if needed for `amneziawg-go`
+
+Managed node SSH access for this step must be either:
+
+- `root`, or
+- a user with passwordless `sudo`
 
 Run discovery for an existing node:
 

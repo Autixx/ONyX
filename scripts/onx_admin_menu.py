@@ -20,6 +20,15 @@ DEFAULT_CLIENT_AUTH_FILE = "/etc/onx/client-auth.txt"
 DEFAULT_BASE_URL = "http://127.0.0.1:8081/api/v1"
 DEFAULT_SERVICE_NAME = "onx-api.service"
 HIDE_NODE_PREFIXES = ("smoke-",)
+AWG_READY_CAPABILITIES = (
+    "awg",
+    "awg_quick",
+    "amneziawg_go",
+    "iptables",
+    "ipset",
+    "systemctl",
+    "onx_link_runtime",
+)
 
 
 def _read_primary_token(path: Path) -> str | None:
@@ -595,6 +604,51 @@ def _view_node_capabilities_screen(base_url: str, admin_token: str | None) -> No
     _pause()
 
 
+def _awg_readiness_screen(base_url: str, admin_token: str | None) -> None:
+    node = _pick_user_node(base_url, admin_token, "ONX / AWG Readiness Check")
+    if node is None:
+        return
+    try:
+        capabilities = nodes_cli._request_json(
+            base_url,
+            "GET",
+            f"/nodes/{node['id']}/capabilities",
+            token=admin_token,
+        )
+    except Exception as exc:
+        _render(["ONX / AWG Readiness Check", "", f"Error: {exc}", ""])
+        _pause()
+        return
+
+    if not isinstance(capabilities, list):
+        _render(["ONX / AWG Readiness Check", "", "Unexpected capabilities payload.", ""])
+        _pause()
+        return
+
+    capability_map = {
+        str(item.get("capability_name") or ""): bool(item.get("supported"))
+        for item in capabilities
+    }
+    missing = [name for name in AWG_READY_CAPABILITIES if not capability_map.get(name, False)]
+    ready = not missing
+
+    lines = [
+        "ONX / AWG Readiness Check",
+        "",
+        f"Node: {node['name']}",
+        f"Status: {'READY' if ready else 'NOT READY'}",
+        "",
+        "Required capabilities:",
+    ]
+    for name in AWG_READY_CAPABILITIES:
+        lines.append(f"- {name}: {'ok' if capability_map.get(name, False) else 'missing'}")
+    if missing:
+        lines.extend(["", "Missing for AWG s2s:", f"- {', '.join(missing)}"])
+    lines.append("")
+    _render(lines)
+    _pause()
+
+
 def _nodes_menu(base_url: str, admin_token: str | None) -> None:
     while True:
         _render(
@@ -609,7 +663,8 @@ def _nodes_menu(base_url: str, admin_token: str | None) -> None:
                 "6. Check node availability",
                 "7. Bootstrap runtime",
                 "8. View node capabilities",
-                "9. Back",
+                "9. AWG readiness check",
+                "10. Back",
                 "",
             ]
         )
@@ -631,6 +686,8 @@ def _nodes_menu(base_url: str, admin_token: str | None) -> None:
         elif choice == "8":
             _view_node_capabilities_screen(base_url, admin_token)
         elif choice == "9":
+            _awg_readiness_screen(base_url, admin_token)
+        elif choice == "10":
             return
 
 

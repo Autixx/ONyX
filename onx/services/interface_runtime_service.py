@@ -80,10 +80,21 @@ AWG_INSTALL_SCRIPT = dedent(
 
     export DEBIAN_FRONTEND=noninteractive
     export PATH="/usr/local/go/bin:/usr/local/bin:${PATH}"
+    SUDO=""
 
     fail() {
       echo "$*" >&2
       exit 1
+    }
+
+    setup_privilege() {
+      if [[ "$(id -u)" -eq 0 ]]; then
+        return
+      fi
+      if ! command -v sudo >/dev/null 2>&1; then
+        fail "[awg] Remote package install requires root or passwordless sudo."
+      fi
+      SUDO="sudo"
     }
 
     sync_git_checkout() {
@@ -124,11 +135,11 @@ AWG_INSTALL_SCRIPT = dedent(
 
       echo "[awg] Installing Go ${GO_BOOTSTRAP_VERSION} from ${url}"
       curl -fsSL "${url}" -o "${tarball}"
-      rm -rf /usr/local/go
-      tar -C /usr/local -xzf "${tarball}"
+      ${SUDO} rm -rf /usr/local/go
+      ${SUDO} tar -C /usr/local -xzf "${tarball}"
       rm -f "${tarball}"
-      ln -sf /usr/local/go/bin/go /usr/local/bin/go
-      ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+      ${SUDO} ln -sf /usr/local/go/bin/go /usr/local/bin/go
+      ${SUDO} ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
     }
 
     install_awg_stack() {
@@ -148,8 +159,8 @@ AWG_INSTALL_SCRIPT = dedent(
         return
       fi
 
-      apt-get update
-      apt-get install -y \
+      ${SUDO} apt-get update
+      ${SUDO} apt-get install -y \
         ca-certificates \
         curl \
         git \
@@ -174,7 +185,7 @@ AWG_INSTALL_SCRIPT = dedent(
       if [[ "${tools_missing}" == "true" ]]; then
         echo "[awg] Building amneziawg-tools (${AWG_TOOLS_REF})..."
         sync_git_checkout "${AWG_TOOLS_REPO}" "${AWG_TOOLS_REF}" "${tools_dir}"
-        make -C "${tools_dir}/src" -j"${make_jobs}" install WITH_WGQUICK=yes WITH_SYSTEMDUNITS=yes
+        ${SUDO} make -C "${tools_dir}/src" -j"${make_jobs}" install WITH_WGQUICK=yes WITH_SYSTEMDUNITS=yes
       fi
 
       if [[ "${go_missing}" == "true" ]]; then
@@ -187,7 +198,7 @@ AWG_INSTALL_SCRIPT = dedent(
           cd "${go_dir}"
           GOTOOLCHAIN=auto go mod tidy
         )
-        make -C "${go_dir}" -j"${make_jobs}" install
+        ${SUDO} make -C "${go_dir}" -j"${make_jobs}" install
       fi
 
       rm -rf "${build_root}"
@@ -200,6 +211,7 @@ AWG_INSTALL_SCRIPT = dedent(
       command -v systemctl >/dev/null 2>&1 || fail "[awg] Install failed: systemctl not found."
     }
 
+    setup_privilege
     install_awg_stack
     """
 )
