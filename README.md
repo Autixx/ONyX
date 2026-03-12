@@ -197,8 +197,10 @@ onx
 Menu actions:
 
 - daemon status
-- node create/list/edit/delete by name
+- node create/provision/list/edit/delete by name
 - node availability check
+- runtime bootstrap
+- capability view
 - daemon restart
 - alpha smoke test
 

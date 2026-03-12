@@ -246,6 +246,24 @@ def _create_node_screen(base_url: str, admin_token: str | None) -> None:
     _pause()
 
 
+def _provision_node_screen(base_url: str, admin_token: str | None) -> None:
+    _render(
+        [
+            "ONX / Provision Node",
+            "",
+            "Interactive node provisioning will start now.",
+            "This will create the node, run discovery, and bootstrap runtime.",
+            "",
+        ]
+    )
+    try:
+        nodes_cli._provision_node(_build_nodes_args(base_url=base_url, admin_token=admin_token))
+    except Exception as exc:
+        print(f"Error: {exc}")
+    print()
+    _pause()
+
+
 def _edit_node_screen(base_url: str, admin_token: str | None) -> None:
     node = _pick_user_node(base_url, admin_token, "ONX / Edit Node")
     if node is None:
@@ -299,6 +317,34 @@ def _delete_node_screen(base_url: str, admin_token: str | None) -> None:
     _pause()
 
 
+def _bootstrap_runtime_screen(base_url: str, admin_token: str | None) -> None:
+    node = _pick_user_node(base_url, admin_token, "ONX / Bootstrap Runtime")
+    if node is None:
+        return
+    _render(
+        [
+            "ONX / Bootstrap Runtime",
+            "",
+            f"Selected node: {node['name']}",
+            "Running bootstrap-runtime job...",
+            "",
+        ]
+    )
+    try:
+        nodes_cli._bootstrap_runtime(
+            _build_nodes_args(
+                base_url=base_url,
+                admin_token=admin_token,
+                node_ref=str(node["name"]),
+                wait=True,
+            )
+        )
+    except Exception as exc:
+        print(f"Error: {exc}")
+    print()
+    _pause()
+
+
 def _check_node_availability_screen(base_url: str, admin_token: str | None) -> None:
     node = _pick_user_node(base_url, admin_token, "ONX / Check Node Availability")
     if node is None:
@@ -327,6 +373,45 @@ def _check_node_availability_screen(base_url: str, admin_token: str | None) -> N
     _pause()
 
 
+def _view_node_capabilities_screen(base_url: str, admin_token: str | None) -> None:
+    node = _pick_user_node(base_url, admin_token, "ONX / View Node Capabilities")
+    if node is None:
+        return
+    try:
+        capabilities = nodes_cli._request_json(
+            base_url,
+            "GET",
+            f"/nodes/{node['id']}/capabilities",
+            token=admin_token,
+        )
+    except Exception as exc:
+        _render(["ONX / View Node Capabilities", "", f"Error: {exc}", ""])
+        _pause()
+        return
+
+    lines = [
+        "ONX / View Node Capabilities",
+        "",
+        f"Node: {node['name']}",
+        "",
+    ]
+    if not isinstance(capabilities, list) or not capabilities:
+        lines.extend(["No capabilities found.", ""])
+        _render(lines)
+        _pause()
+        return
+
+    for item in capabilities:
+        lines.append(
+            f"- {item.get('capability_name')}: "
+            f"supported={item.get('supported')} "
+            f"checked_at={item.get('checked_at')}"
+        )
+    lines.append("")
+    _render(lines)
+    _pause()
+
+
 def _nodes_menu(base_url: str, admin_token: str | None) -> None:
     while True:
         _render(
@@ -334,11 +419,14 @@ def _nodes_menu(base_url: str, admin_token: str | None) -> None:
                 "ONX / Nodes",
                 "",
                 "1. Create node",
-                "2. List nodes",
-                "3. Edit existing node",
-                "4. Delete node",
-                "5. Check node availability",
-                "6. Back",
+                "2. Provision node",
+                "3. List nodes",
+                "4. Edit existing node",
+                "5. Delete node",
+                "6. Check node availability",
+                "7. Bootstrap runtime",
+                "8. View node capabilities",
+                "9. Back",
                 "",
             ]
         )
@@ -346,14 +434,20 @@ def _nodes_menu(base_url: str, admin_token: str | None) -> None:
         if choice == "1":
             _create_node_screen(base_url, admin_token)
         elif choice == "2":
-            _list_nodes_screen(base_url, admin_token)
+            _provision_node_screen(base_url, admin_token)
         elif choice == "3":
-            _edit_node_screen(base_url, admin_token)
+            _list_nodes_screen(base_url, admin_token)
         elif choice == "4":
-            _delete_node_screen(base_url, admin_token)
+            _edit_node_screen(base_url, admin_token)
         elif choice == "5":
-            _check_node_availability_screen(base_url, admin_token)
+            _delete_node_screen(base_url, admin_token)
         elif choice == "6":
+            _check_node_availability_screen(base_url, admin_token)
+        elif choice == "7":
+            _bootstrap_runtime_screen(base_url, admin_token)
+        elif choice == "8":
+            _view_node_capabilities_screen(base_url, admin_token)
+        elif choice == "9":
             return
 
 
