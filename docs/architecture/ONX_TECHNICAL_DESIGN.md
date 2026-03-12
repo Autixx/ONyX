@@ -14,6 +14,7 @@ This is not end-user documentation. It is the source-of-truth design note for ba
 
 Device-bound client delivery is further specified in:
 
+- `ONX_CLIENT_DELIVERY_ARCHITECTURE.md`
 - `ONX_DEVICE_IDENTITY_AND_PROFILE_DELIVERY.md`
 
 Subscription and billing architecture is further specified in:
