@@ -1,0 +1,1215 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ONyX вЂ” Control Plane</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg0:#080c10;--bg1:#0d1117;--bg2:#111820;--bg3:#161e28;
+  --acc:#00c8b4;--acc2:#00e5cc;--adim:rgba(0,200,180,0.07);
+  --bdr:rgba(0,200,180,0.14);--bdr2:rgba(0,200,180,0.28);
+  --red:#ff4560;--amb:#f5a623;--grn:#00e676;--blu:#4da6ff;--pur:#a78bfa;
+  --t0:#e8f0f8;--t1:#8fa8c0;--t2:#4a6478;
+  --mono:'Courier New',Courier,monospace;
+}
+html,body{height:100%;background:var(--bg0);color:var(--t0);font-family:var(--mono);font-size:13px;}
+body{display:flex;flex-direction:column;}
+
+/* в”Ђв”Ђ SCROLLBARS в”Ђв”Ђ */
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:var(--bg1);}
+::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:2px;}
+
+/* в”Ђв”Ђ LOGIN в”Ђв”Ђ */
+#loginWrap{position:fixed;inset:0;background:var(--bg0);display:flex;align-items:center;justify-content:center;z-index:100;}
+.lbox{width:320px;background:var(--bg2);border:1px solid var(--bdr2);border-radius:4px;padding:36px 32px;}
+.llogo{font-size:22px;font-weight:700;color:var(--acc2);letter-spacing:.12em;margin-bottom:2px;}
+.lsub{font-size:10px;color:var(--t2);margin-bottom:28px;letter-spacing:.1em;}
+.flbl{display:block;font-size:10px;color:var(--t2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px;}
+.finp{width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:9px 11px;color:var(--t0);font-family:var(--mono);font-size:13px;outline:none;margin-bottom:12px;transition:border-color .12s;}
+.finp:focus{border-color:var(--acc);}
+.lerr{font-size:11px;color:var(--red);min-height:16px;margin-bottom:8px;}
+.lbtn{width:100%;padding:10px;background:var(--acc);color:#080c10;border:none;border-radius:3px;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.06em;transition:background .12s;}
+.lbtn:hover{background:var(--acc2);}
+
+/* в”Ђв”Ђ APP SHELL в”Ђв”Ђ */
+#appWrap{display:none;flex-direction:column;height:100vh;overflow:hidden;}
+
+/* в”Ђв”Ђ TOPBAR в”Ђв”Ђ */
+.topbar{height:46px;background:var(--bg1);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 20px;gap:14px;flex-shrink:0;}
+.logo{font-size:16px;font-weight:700;color:var(--acc2);letter-spacing:.12em;}
+.logo-sep{color:var(--t2);font-size:11px;letter-spacing:.1em;}
+.ws-row{display:flex;align-items:center;gap:6px;margin-left:auto;}
+.wsdot{width:7px;height:7px;border-radius:50%;background:var(--grn);animation:blink 2.2s ease-in-out infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.25;}}
+.wsdot.off{background:var(--red);animation:none;}
+.wslbl{font-size:11px;color:var(--t1);}
+.ubtn{font-size:11px;color:var(--t1);padding:4px 11px;border:1px solid var(--bdr);border-radius:3px;cursor:pointer;background:none;font-family:var(--mono);margin-left:12px;transition:all .12s;}
+.ubtn:hover{color:var(--t0);border-color:var(--bdr2);}
+
+/* в”Ђв”Ђ LAYOUT в”Ђв”Ђ */
+.layout{display:flex;flex:1;overflow:hidden;}
+
+/* в”Ђв”Ђ SIDEBAR в”Ђв”Ђ */
+.sidebar{width:196px;background:var(--bg1);border-right:1px solid var(--bdr);flex-shrink:0;overflow-y:auto;display:flex;flex-direction:column;}
+.nav-grp{padding:14px 0 6px;}
+.nav-lbl{font-size:9px;letter-spacing:.16em;color:var(--t2);padding:0 16px;margin-bottom:3px;text-transform:uppercase;}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 16px;cursor:pointer;color:var(--t1);font-size:12px;border-left:2px solid transparent;transition:all .12s;user-select:none;white-space:nowrap;}
+.nav-item:hover{color:var(--t0);background:var(--adim);}
+.nav-item.active{color:var(--acc2);border-left-color:var(--acc);background:var(--adim);}
+.nbadge{margin-left:auto;font-size:10px;padding:1px 6px;border-radius:2px;}
+.nbadge.ok{background:rgba(0,230,118,.12);color:var(--grn);}
+.nbadge.err{background:rgba(255,69,96,.15);color:var(--red);}
+.sidebar-footer{margin-top:auto;padding:12px 16px;border-top:1px solid var(--bdr);font-size:10px;color:var(--t2);}
+
+/* в”Ђв”Ђ MAIN в”Ђв”Ђ */
+.main{flex:1;overflow-y:auto;overflow-x:hidden;background:var(--bg0);}
+.page{display:none;padding:22px 24px;}
+.page.active{display:block;}
+
+/* в”Ђв”Ђ PAGE HEADER в”Ђв”Ђ */
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
+.ptitle{font-size:16px;font-weight:700;color:var(--t0);letter-spacing:.05em;display:flex;align-items:center;gap:10px;}
+.tag{font-size:10px;color:var(--acc);border:1px solid var(--bdr2);padding:2px 7px;border-radius:2px;letter-spacing:.08em;}
+.pbtn-row{display:flex;gap:8px;}
+
+/* в”Ђв”Ђ BUTTONS в”Ђв”Ђ */
+.btn{padding:7px 14px;font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:3px;border:1px solid var(--bdr2);background:transparent;color:var(--acc);transition:all .12s;}
+.btn:hover{background:var(--adim);border-color:var(--acc);}
+.btn.pri{background:var(--acc);color:#080c10;border-color:var(--acc);}
+.btn.pri:hover{background:var(--acc2);}
+.btn.red{color:var(--red);border-color:rgba(255,69,96,.3);}
+.btn.red:hover{background:rgba(255,69,96,.08);}
+.btn.sm{padding:3px 9px;font-size:10px;}
+
+/* в”Ђв”Ђ STAT GRID в”Ђв”Ђ */
+.sgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px;}
+.scard{background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;padding:14px 16px;}
+.slbl{font-size:9px;color:var(--t2);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;}
+.sval{font-size:24px;font-weight:700;color:var(--t0);line-height:1;}
+.ssub{font-size:10px;color:var(--t2);margin-top:5px;}
+
+/* в”Ђв”Ђ TABLE в”Ђв”Ђ */
+.tw{background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;overflow:hidden;margin-bottom:18px;}
+.th-row{padding:9px 14px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;font-size:10px;color:var(--t2);letter-spacing:.08em;text-transform:uppercase;}
+table{width:100%;border-collapse:collapse;}
+thead th{text-align:left;padding:9px 14px;font-size:9px;color:var(--t2);letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid var(--bdr);font-weight:400;}
+tbody tr{border-bottom:1px solid rgba(0,200,180,.04);cursor:pointer;transition:background .1s;}
+tbody tr:last-child{border-bottom:none;}
+tbody tr:hover{background:var(--adim);}
+td{padding:9px 14px;color:var(--t1);font-size:12px;vertical-align:middle;}
+td.m{color:var(--t0);}
+
+/* в”Ђв”Ђ PILLS в”Ђв”Ђ */
+.pill{display:inline-block;padding:2px 7px;border-radius:2px;font-size:10px;letter-spacing:.03em;}
+.pg{background:rgba(0,230,118,.1);color:var(--grn);}
+.pr{background:rgba(255,69,96,.1);color:var(--red);}
+.pa{background:rgba(245,166,35,.1);color:var(--amb);}
+.pb{background:rgba(77,166,255,.1);color:var(--blu);}
+.pp{background:rgba(167,139,250,.1);color:var(--pur);}
+.pq{background:rgba(138,168,192,.08);color:var(--t1);}
+
+/* в”Ђв”Ђ EVENT LOG в”Ђв”Ђ */
+.elog{background:var(--bg1);border:1px solid var(--bdr);border-radius:4px;height:200px;overflow-y:auto;padding:10px 12px;}
+.eline{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid rgba(0,200,180,.03);font-size:11px;}
+.et{color:var(--t2);flex-shrink:0;width:54px;}
+.ety{flex-shrink:0;width:150px;}
+.ety.sys{color:var(--acc);}
+.ety.job{color:var(--blu);}
+.ety.aud{color:var(--amb);}
+.ety.err{color:var(--red);}
+
+/* в”Ђв”Ђ SECTION TITLE в”Ђв”Ђ */
+.stitle{font-size:9px;color:var(--t2);letter-spacing:.14em;text-transform:uppercase;margin:18px 0 8px;}
+
+/* в”Ђв”Ђ TWO COL в”Ђв”Ђ */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+
+/* в”Ђв”Ђ CANVAS в”Ђв”Ђ */
+#tc{width:100%;height:440px;background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:crosshair;}
+
+/* в”Ђв”Ђ JOB LOG в”Ђв”Ђ */
+.jlog{background:var(--bg0);border:1px solid var(--bdr);border-radius:3px;padding:10px 12px;font-size:11px;color:var(--t1);margin-top:10px;max-height:200px;overflow-y:auto;line-height:1.9;}
+.jlog .ok{color:var(--grn);}
+.jlog .er{color:var(--red);}
+.jlog .inf{color:var(--blu);}
+
+/* в”Ђв”Ђ DETAIL PANEL в”Ђв”Ђ */
+.dp{position:fixed;right:0;top:0;bottom:0;width:380px;background:var(--bg2);border-left:1px solid var(--bdr2);padding:22px 20px;transform:translateX(100%);transition:transform .18s ease;z-index:50;overflow-y:auto;}
+.dp.open{transform:translateX(0);}
+.dp-close{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--t1);font-size:18px;cursor:pointer;line-height:1;transition:color .1s;}
+.dp-close:hover{color:var(--t0);}
+.dp-title{font-size:15px;font-weight:700;color:var(--t0);margin-bottom:18px;padding-right:24px;}
+.drow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bdr);font-size:12px;}
+.dk{color:var(--t2);}
+.dv{color:var(--t0);text-align:right;max-width:220px;word-break:break-all;}
+.dp-actions{display:flex;gap:8px;margin-top:16px;}
+
+/* в”Ђв”Ђ API DEBUG в”Ђв”Ђ */
+#page-apidebug select,
+#page-apidebug input,
+#page-apidebug textarea{font-family:var(--mono);}
+
+/* в”Ђв”Ђ GRID OVERLAY в”Ђв”Ђ */
+.topo-legend{display:flex;gap:16px;margin-top:10px;font-size:11px;color:var(--t2);}
+</style>
+</head>
+<body>
+
+<!-- в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ LOGIN в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ -->
+<div id="loginWrap">
+  <div class="lbox">
+    <div class="llogo">ONyX</div>
+    <div class="lsub">CONTROL PLANE // ADMIN ACCESS</div>
+    <label class="flbl">Username</label>
+    <input class="finp" id="iu" type="text" autocomplete="username" placeholder="operator">
+    <label class="flbl">Password</label>
+    <input class="finp" id="ip" type="password" autocomplete="current-password" placeholder="вЂўвЂўвЂўвЂўвЂўвЂўвЂўвЂў">
+    <div class="lerr" id="lerr"></div>
+    <button class="lbtn" id="lbtn">AUTHENTICATE</button>
+  </div>
+</div>
+
+<!-- в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ APP в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ -->
+<div id="appWrap">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="logo">ONyX</div>
+    <span class="logo-sep">CONTROL PLANE</span>
+    <div class="ws-row">
+      <div class="wsdot" id="wsd"></div>
+      <span class="wslbl" id="wsl">WS CONNECTED</span>
+    </div>
+    <button class="ubtn" id="ubtn">admin в–ѕ</button>
+  </div>
+
+  <div class="layout">
+
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="nav-grp">
+        <div class="nav-lbl">Core</div>
+        <div class="nav-item active" data-p="system"><span>в—€</span> System</div>
+        <div class="nav-item" data-p="nodes"><span>в¬Ў</span> Nodes <span class="nbadge ok" id="nbn">5</span></div>
+        <div class="nav-item" data-p="links"><span>вџ·</span> Links <span class="nbadge ok">3</span></div>
+      </div>
+      <div class="nav-grp">
+        <div class="nav-lbl">Policy</div>
+        <div class="nav-item" data-p="policies"><span>вЉћ</span> Policies</div>
+      </div>
+      <div class="nav-grp">
+        <div class="nav-lbl">Operations</div>
+        <div class="nav-item" data-p="jobs"><span>в—Ћ</span> Jobs <span class="nbadge err">2</span></div>
+        <div class="nav-item" data-p="audit"><span>в°</span> Audit / Access</div>
+      </div>
+      <div class="nav-grp">
+        <div class="nav-lbl">Visual</div>
+        <div class="nav-item" data-p="topology"><span>в—‰</span> Topology</div>
+        <div class="nav-item" data-p="apidebug"><span>вЊҐ</span> API Debug</div>
+      </div>
+      <div class="sidebar-footer">
+        ONX v0.2.0-alpha<br>
+        <span style="color:var(--acc);font-size:9px;">в—Џ same-origin</span>
+      </div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="main">
+
+      <!-- в”Ђв”Ђ SYSTEM в”Ђв”Ђ -->
+      <div class="page active" id="page-system">
+        <div class="ph">
+          <span class="ptitle">System <span class="tag">v0.2.0</span></span>
+          <button class="btn" onclick="healthCheck()">PROBE HEALTH</button>
+        </div>
+        <div class="sgrid">
+          <div class="scard"><div class="slbl">Backend</div><div class="sval" style="color:var(--grn)" id="sb">OK</div><div class="ssub">/api/v1/health</div></div>
+          <div class="scard"><div class="slbl">Worker</div><div class="sval" style="color:var(--grn)" id="sw">OK</div><div class="ssub">/api/v1/health/worker</div></div>
+          <div class="scard"><div class="slbl">Nodes Online</div><div class="sval">4/5</div><div class="ssub" style="color:var(--amb)">1 degraded</div></div>
+          <div class="scard"><div class="slbl">Active Links</div><div class="sval">3</div><div class="ssub" style="color:var(--grn)">all active</div></div>
+        </div>
+        <div class="stitle">Live Event Stream вЂ” WS /api/v1/ws/admin/events</div>
+        <div class="elog" id="elog"></div>
+      </div>
+
+      <!-- в”Ђв”Ђ NODES в”Ђв”Ђ -->
+      <div class="page" id="page-nodes">
+        <div class="ph">
+          <span class="ptitle">Nodes</span>
+          <button class="btn pri">+ ADD NODE</button>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Name</th><th>Role</th><th>Mgmt Address</th><th>Status</th><th>Capabilities</th><th></th></tr></thead>
+            <tbody id="ntb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- в”Ђв”Ђ LINKS в”Ђв”Ђ -->
+      <div class="page" id="page-links">
+        <div class="ph">
+          <span class="ptitle">Links</span>
+          <button class="btn pri">+ NEW LINK</button>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Name</th><th>Driver</th><th>Left Node</th><th>Right Node</th><th>Topology</th><th>State</th><th></th></tr></thead>
+            <tbody id="ltb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- в”Ђв”Ђ POLICIES в”Ђв”Ђ -->
+      <div class="page" id="page-policies">
+        <div class="ph">
+          <span class="ptitle">Policies</span>
+          <button class="btn pri">+ ADD POLICY</button>
+        </div>
+        <div class="two">
+          <div>
+            <div class="stitle">Route Policies</div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Node</th><th>Action</th><th>Priority</th><th>State</th></tr></thead>
+                <tbody id="ptb"></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div class="stitle">DNS Policies</div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Node</th><th>DNS Address</th><th>State</th></tr></thead>
+                <tbody id="dtb"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- в”Ђв”Ђ JOBS в”Ђв”Ђ -->
+      <div class="page" id="page-jobs">
+        <div class="ph">
+          <span class="ptitle">Jobs</span>
+          <select style="background:var(--bg2);border:1px solid var(--bdr);color:var(--t1);padding:6px 10px;border-radius:3px;font-family:var(--mono);font-size:11px;">
+            <option>All states</option><option>pending</option><option>running</option><option>success</option><option>failed</option>
+          </select>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>ID</th><th>Kind</th><th>Target</th><th>State</th><th>Created</th><th></th></tr></thead>
+            <tbody id="jtb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- в”Ђв”Ђ AUDIT в”Ђв”Ђ -->
+      <div class="page" id="page-audit">
+        <div class="ph"><span class="ptitle">Audit / Access</span></div>
+        <div class="elog" style="height:500px;" id="alog"></div>
+      </div>
+
+      <!-- в”Ђв”Ђ TOPOLOGY в”Ђв”Ђ -->
+      <div class="page" id="page-topology">
+        <div class="ph">
+          <span class="ptitle">Topology</span>
+          <button class="btn" onclick="drawTopo()">REFRESH</button>
+        </div>
+        <canvas id="tc"></canvas>
+        <div class="topo-legend">
+          <span><span style="color:var(--grn)">в—Џ</span> reachable</span>
+          <span><span style="color:var(--amb)">в—Џ</span> degraded</span>
+          <span><span style="color:var(--red)">в—Џ</span> unreachable</span>
+          <span><span style="color:var(--t2)">в—Џ</span> unknown</span>
+          <span style="margin-left:auto;color:var(--t2)">click node for detail</span>
+        </div>
+      </div>
+
+      <!-- в”Ђв”Ђ API DEBUG в”Ђв”Ђ -->
+      <div class="page" id="page-apidebug">
+        <div class="ph"><span class="ptitle">API Debug</span></div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+          <select id="am" style="background:var(--bg2);border:1px solid var(--bdr);color:var(--acc);padding:8px 10px;border-radius:3px;font-size:12px;width:90px;">
+            <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
+          </select>
+          <input id="ap" style="flex:1;background:var(--bg2);border:1px solid var(--bdr);border-radius:3px;padding:8px 12px;color:var(--t0);font-size:13px;outline:none;transition:border-color .12s;" value="/api/v1/health" onfocus="this.style.borderColor='var(--acc)'" onblur="this.style.borderColor='var(--bdr)'">
+          <button class="btn pri" onclick="apiCall()">SEND</button>
+        </div>
+        <textarea id="ab" style="width:100%;height:80px;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:10px 12px;color:var(--t1);font-size:12px;outline:none;resize:vertical;font-family:var(--mono);" placeholder="// JSON request body (for POST / PUT)"></textarea>
+        <div class="stitle">Response</div>
+        <pre id="ar" style="background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:14px;font-size:12px;color:var(--t1);overflow:auto;max-height:340px;white-space:pre-wrap;line-height:1.7;">// awaiting request...</pre>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /layout -->
+</div><!-- /appWrap -->
+
+<!-- DETAIL PANEL -->
+<div class="dp" id="dp">
+  <button class="dp-close" onclick="closeDP()">вњ•</button>
+  <div class="dp-title" id="dpt"></div>
+  <div id="dpb"></div>
+</div>
+
+<script>
+var API_PREFIX = '/api/v1';
+var WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + API_PREFIX + '/ws/admin/events';
+var ws = null;
+var wsReconnectTimer = null;
+var isAuthenticated = false;
+
+var NODES = [];
+var LINKS = [];
+var JOBS = [];
+var POLICIES = [];
+var DNS_P = [];
+var GEO_P = [];
+var AUDIT_EVTS = [];
+var JOB_EVENTS = {};
+
+function nById(id){ return NODES.find(function(n){return n.id===id;})||{name:id,role:'unknown'}; }
+function linkById(id){ return LINKS.find(function(l){ return l.id===id; }) || null; }
+function jobById(id){ return JOBS.find(function(j){ return j.id===id; }) || null; }
+function findNodeByName(name){
+  var needle = String(name || '').trim().toLowerCase();
+  return NODES.find(function(n){
+    return String(n.name || '').trim().toLowerCase() === needle;
+  }) || null;
+}
+function sp(s){
+  var m={reachable:'pg',degraded:'pa',offline:'pr',unreachable:'pr',unknown:'pq',active:'pg',failed:'pr',dead:'pr',deleted:'pq',planned:'pq',validating:'pb',applying:'pb',running:'pb',succeeded:'pg',success:'pg',pending:'pq',cancelled:'pa',rolled_back:'pa'};
+  return '<span class="pill '+(m[s]||'pq')+'">'+s+'</span>';
+}
+function rp(r){
+  var m={gateway:'pb',relay:'pp',egress:'pa',mixed:'pq'};
+  return '<span class="pill '+(m[r]||'pq')+'">'+r+'</span>';
+}
+function esc(v){
+  return String(v == null ? '' : v)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+function fmtTime(value){
+  if(!value) return '-';
+  var d = new Date(value);
+  if(isNaN(d.getTime())) return value;
+  return d.toLocaleTimeString();
+}
+function authRedirect(message){
+  isAuthenticated = false;
+  disconnectWS();
+  document.getElementById('appWrap').style.display = 'none';
+  document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('ip').value = '';
+  document.getElementById('lbtn').textContent = 'AUTHENTICATE';
+  document.getElementById('lerr').textContent = message || '';
+}
+async function apiFetch(path, options){
+  var opts = options || {};
+  var fetchOptions = {
+    method: opts.method || 'GET',
+    credentials: 'include',
+    headers: Object.assign({}, opts.headers || {})
+  };
+  if(opts.body !== undefined){
+    fetchOptions.body = typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body);
+    if(!fetchOptions.headers['Content-Type']){
+      fetchOptions.headers['Content-Type'] = 'application/json';
+    }
+  }
+  var response = await fetch(path, fetchOptions);
+  if(response.status === 204){
+    return null;
+  }
+  var text = await response.text();
+  var payload = null;
+  if(text){
+    try { payload = JSON.parse(text); }
+    catch(_){ payload = text; }
+  }
+  if(response.status === 401 && opts.redirectOn401 !== false){
+    authRedirect('Session expired. Please sign in again.');
+    throw new Error('Unauthorized');
+  }
+  if(!response.ok){
+    var detail = payload && payload.detail ? payload.detail : ('HTTP '+response.status);
+    if(typeof detail === 'object'){ detail = JSON.stringify(detail); }
+    throw new Error(detail);
+  }
+  return payload;
+}
+function updateShellCounters(){
+  var nodeBadge = document.getElementById('nbn');
+  if(nodeBadge){ nodeBadge.textContent = String(NODES.length); }
+}
+function renderNodes(){
+  document.getElementById('ntb').innerHTML = NODES.map(function(n){
+    return '<tr onclick="showNode(\''+esc(n.id)+'\')">'
+      +'<td class="m">'+esc(n.name)+'</td>'
+      +'<td>'+rp(n.role)+'</td>'
+      +'<td class="m">'+esc(n.management_address)+'</td>'
+      +'<td>'+sp(n.status)+'</td>'
+      +'<td style="color:var(--t2);font-size:11px;">'+esc((n.caps||[]).join(', ') || '-')+'</td>'
+      +'<td><button class="btn sm" onclick="event.stopPropagation();actionNodeDiscover(\''+esc(n.id)+'\')">PROBE</button></td>'
+      +'</tr>';
+  }).join('');
+}
+function renderLinks(){
+  document.getElementById('ltb').innerHTML = LINKS.map(function(l){
+    return '<tr onclick="showLink(\''+esc(l.id)+'\')">'
+      +'<td class="m">'+esc(l.name)+'</td>'
+      +'<td><span class="pill pb">'+esc(l.driver)+'</span></td>'
+      +'<td class="m">'+esc(nById(l.left).name)+'</td>'
+      +'<td class="m">'+esc(nById(l.right).name)+'</td>'
+      +'<td><span class="pill pp">'+esc(l.topo)+'</span></td>'
+      +'<td>'+sp(l.state)+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionLinkValidate(\''+esc(l.id)+'\')">VALIDATE</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionLinkApply(\''+esc(l.id)+'\')">APPLY</button>'
+      +'</td>'
+      +'</tr>';
+  }).join('');
+}
+function renderPolicies(){
+  document.getElementById('ptb').innerHTML = POLICIES.map(function(p){
+    return '<tr>'
+      +'<td class="m">'+esc(nById(p.nid).name)+'</td>'
+      +'<td><span class="pill pb">'+esc(p.action)+'</span></td>'
+      +'<td>'+esc(String(p.pri))+'</td>'
+      +'<td>'+(p.on?'<span class="pill pg">enabled</span>':'<span class="pill pq">disabled</span>')+'</td>'
+      +'</tr>';
+  }).join('');
+  document.getElementById('dtb').innerHTML = DNS_P.map(function(d){
+    return '<tr>'
+      +'<td class="m">'+esc(nById(d.nid).name)+'</td>'
+      +'<td class="m">'+esc(d.addr)+'</td>'
+      +'<td>'+(d.on?'<span class="pill pg">enabled</span>':'<span class="pill pq">disabled</span>')+'</td>'
+      +'</tr>';
+  }).join('');
+}
+function renderJobs(){
+  document.getElementById('jtb').innerHTML = JOBS.map(function(j){
+    var actions = '';
+    if(j.state === 'pending' || j.state === 'running'){
+      actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobCancel(\''+esc(j.id)+'\')">CANCEL</button>';
+    }
+    if(j.state === 'running'){
+      actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobForceCancel(\''+esc(j.id)+'\')">FORCE</button>';
+    }
+    if(j.state === 'failed' || j.state === 'dead' || j.state === 'cancelled'){
+      actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobRetry(\''+esc(j.id)+'\')">RETRY</button>';
+    }
+    return '<tr onclick="showJob(\''+esc(j.id)+'\')">'
+      +'<td style="color:var(--t2);font-size:11px;">'+esc(j.id)+'</td>'
+      +'<td class="m">'+esc(j.kind)+'</td>'
+      +'<td style="font-size:11px;color:var(--t1);">'+esc(j.tt+':'+j.ti)+'</td>'
+      +'<td>'+sp(j.state)+'</td>'
+      +'<td style="color:var(--t2);">'+esc(j.ts)+'</td>'
+      +'<td style="display:flex;gap:5px;">'+actions+'</td>'
+      +'</tr>';
+  }).join('');
+}
+function renderAudit(){
+  document.getElementById('alog').innerHTML = AUDIT_EVTS.map(function(e){
+    return '<div class="eline">'
+      +'<span class="et">'+esc(e.t)+'</span>'
+      +'<span class="ety '+esc(e.cls)+'">'+esc(e.type)+'</span>'
+      +'<span style="color:var(--t1);">'+esc(e.msg)+'</span>'
+      +'</div>';
+  }).join('');
+}
+function renderElog(){
+  var log = document.getElementById('elog');
+  log.innerHTML = AUDIT_EVTS.slice().reverse().map(function(e){
+    return '<div class="eline">'
+      +'<span class="et">'+esc(e.t)+'</span>'
+      +'<span class="ety '+esc(e.cls)+'">'+esc(e.type)+'</span>'
+      +'<span style="color:var(--t1);">'+esc(e.msg)+'</span>'
+      +'</div>';
+  }).join('');
+  log.scrollTop = log.scrollHeight;
+}
+function rows(arr){
+  return arr.map(function(r){
+    return '<div class="drow"><span class="dk">'+esc(r[0])+'</span><span class="dv">'+esc(r[1])+'</span></div>';
+  }).join('');
+}
+function openDP(title, html){
+  document.getElementById('dpt').textContent = title;
+  document.getElementById('dpb').innerHTML = html;
+  document.getElementById('dp').classList.add('open');
+}
+function closeDP(){ document.getElementById('dp').classList.remove('open'); }
+function showNode(id){
+  var n = NODES.find(function(x){return x.id===id;}); if(!n) return;
+  openDP(n.name,
+    rows([['ID',n.id],['Role',n.role],['Mgmt Address',n.management_address],['SSH Host',n.ssh_host],['SSH Port',n.ssh_port],['SSH User',n.ssh_user],['Auth Type',n.auth_type],['Status',n.status],['Capabilities',(n.caps||[]).join(', ') || '-']])
+    +'<div class="dp-actions">'
+      +'<button class="btn" onclick="actionNodeDiscover(\''+esc(n.id)+'\')">PROBE SSH</button>'
+      +'<button class="btn pri" onclick="actionNodeBootstrap(\''+esc(n.id)+'\')">BOOTSTRAP</button>'
+    +'</div>'
+  );
+}
+function showLink(id){
+  var l = linkById(id); if(!l) return;
+  openDP(l.name,
+    rows([
+      ['ID',l.id],
+      ['Driver',l.driver],
+      ['Left Node',nById(l.left).name],
+      ['Right Node',nById(l.right).name],
+      ['Topology',l.topo],
+      ['State',l.state],
+      ['Left Iface',l.leftInterface || '-'],
+      ['Right Iface',l.rightInterface || '-'],
+      ['Left Endpoint',l.leftEndpoint || '-'],
+      ['Right Endpoint',l.rightEndpoint || '-']
+    ])
+    +'<div class="dp-actions">'
+      +'<button class="btn" onclick="actionLinkValidate(\''+esc(l.id)+'\')">VALIDATE</button>'
+      +'<button class="btn pri" onclick="actionLinkApply(\''+esc(l.id)+'\')">APPLY</button>'
+    +'</div>'
+  );
+}
+function showJob(id){
+  var j = jobById(id); if(!j) return;
+  var events = JOB_EVENTS[j.id] || [];
+  var logHtml = events.length ? events.map(function(ev){
+    var msg = '['+String(ev.level || 'info').toUpperCase()+'] '+(ev.message || '');
+    var c = ev.level === 'error' ? 'er' : ev.level === 'warning' ? 'inf' : 'ok';
+    return '<div class="'+c+'">'+esc(msg)+'</div>';
+  }).join('') : '<div class="inf">No job events loaded.</div>';
+  var actions = '';
+  if(j.state === 'pending' || j.state === 'running'){
+    actions += '<button class="btn red" onclick="actionJobCancel(\''+esc(j.id)+'\')">CANCEL</button>';
+  }
+  if(j.state === 'running'){
+    actions += '<button class="btn red" onclick="actionJobForceCancel(\''+esc(j.id)+'\')">FORCE CANCEL</button>';
+  }
+  if(j.state === 'failed' || j.state === 'dead' || j.state === 'cancelled'){
+    actions += '<button class="btn" onclick="actionJobRetry(\''+esc(j.id)+'\')">RETRY NOW</button>';
+  }
+  openDP(j.kind,
+    rows([['ID',j.id],['Target',j.tt+':'+j.ti],['State',j.state],['Created',j.ts],['Step',j.step || '-'],['Error',j.errorText || '-']])
+    +(actions ? '<div class="dp-actions">'+actions+'</div>' : '')
+    +'<div class="stitle">Execution Log</div>'
+    +'<div class="jlog">'+logHtml+'</div>'
+  );
+}
+function pushEv(type, msg){
+  var now = new Date();
+  var t = now.toTimeString().slice(0,8);
+  var cls = (type.indexOf('fail') !== -1 || type.indexOf('error') !== -1 || type.indexOf('err') !== -1) ? 'err' : type.indexOf('system') === 0 ? 'sys' : type.indexOf('audit') === 0 ? 'aud' : 'job';
+  AUDIT_EVTS.push({t:t,type:type,cls:cls,msg:msg});
+  if(AUDIT_EVTS.length > 200){ AUDIT_EVTS.shift(); }
+  renderAudit();
+  renderElog();
+}
+function setWSState(connected, label){
+  var dot = document.getElementById('wsd');
+  var text = document.getElementById('wsl');
+  dot.classList.toggle('off', !connected);
+  text.textContent = label;
+}
+function disconnectWS(){
+  if(wsReconnectTimer){
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
+  }
+  if(ws){
+    try { ws.close(); } catch(_){ }
+    ws = null;
+  }
+  setWSState(false, 'WS DISCONNECTED');
+}
+function connectWS(){
+  disconnectWS();
+  if(!isAuthenticated){ return; }
+  setWSState(false, 'WS CONNECTING');
+  ws = new WebSocket(WS_URL);
+  ws.onopen = function(){ setWSState(true, 'WS CONNECTED'); };
+  ws.onmessage = function(event){
+    try{
+      var data = JSON.parse(event.data);
+      var type = data.type || 'system.event';
+      if(type === 'system.ping'){ return; }
+      var payload = data.payload || {};
+      var msg = payload.message || payload.detail || payload.id || JSON.stringify(payload);
+      pushEv(type, msg);
+      if(type.indexOf('job.') === 0){ refreshJobs().catch(function(){}); }
+      if(type.indexOf('link.') === 0){ refreshLinks().catch(function(){}); }
+      if(type.indexOf('node.') === 0){ refreshNodes().catch(function(){}); }
+      if(type === 'audit.event'){ refreshAudit().catch(function(){}); }
+    }catch(_){ }
+  };
+  ws.onclose = function(event){
+    setWSState(false, 'WS DISCONNECTED');
+    if(event && event.code === 1008){
+      authRedirect('Session expired. Please sign in again.');
+      return;
+    }
+    if(isAuthenticated){ wsReconnectTimer = setTimeout(connectWS, 3000); }
+  };
+  ws.onerror = function(){ setWSState(false, 'WS ERROR'); };
+}
+async function refreshNodes(){
+  var nodes = await apiFetch(API_PREFIX + '/nodes');
+  var withCaps = await Promise.all((nodes || []).map(async function(node){
+    try{
+      var caps = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(node.id) + '/capabilities');
+      node.caps = (caps || []).filter(function(c){ return c.supported; }).map(function(c){ return c.capability_name; });
+    }catch(_){
+      node.caps = [];
+    }
+    return node;
+  }));
+  NODES = withCaps;
+  renderNodes();
+  updateShellCounters();
+}
+async function refreshLinks(){
+  var links = await apiFetch(API_PREFIX + '/links');
+  LINKS = (links || []).map(function(link){
+    var spec = link.desired_spec_json || {};
+    return {
+      id: link.id,
+      name: link.name,
+      driver: link.driver_name,
+      left: link.left_node_id,
+      right: link.right_node_id,
+      topo: link.topology_type,
+      state: link.state,
+      leftInterface: spec.left && spec.left.interface_name,
+      rightInterface: spec.right && spec.right.interface_name,
+      leftEndpoint: spec.left && spec.left.endpoint_host ? (spec.left.endpoint_host + ':' + (spec.left.listen_port || '')) : '',
+      rightEndpoint: spec.right && spec.right.endpoint_host ? (spec.right.endpoint_host + ':' + (spec.right.listen_port || '')) : ''
+    };
+  });
+  renderLinks();
+}
+async function refreshPolicies(){
+  var routePolicies = await apiFetch(API_PREFIX + '/route-policies');
+  var dnsPolicies = await apiFetch(API_PREFIX + '/dns-policies');
+  var geoPolicies = await apiFetch(API_PREFIX + '/geo-policies');
+  POLICIES = (routePolicies || []).map(function(policy){
+    return {
+      id: policy.id,
+      nid: policy.node_id,
+      action: policy.action,
+      pri: policy.rule_priority,
+      on: !!policy.enabled
+    };
+  });
+  DNS_P = (dnsPolicies || []).map(function(policy){
+    var route = (routePolicies || []).find(function(r){ return r.id === policy.route_policy_id; });
+    return {
+      id: policy.id,
+      nid: route ? route.node_id : policy.route_policy_id,
+      addr: policy.dns_address,
+      on: !!policy.enabled
+    };
+  });
+  GEO_P = geoPolicies || [];
+  renderPolicies();
+}
+async function refreshJobs(){
+  var jobs = await apiFetch(API_PREFIX + '/jobs');
+  JOBS = (jobs || []).map(function(job){
+    return {
+      id: job.id,
+      kind: job.kind,
+      tt: job.target_type,
+      ti: job.target_id,
+      state: job.state,
+      ts: fmtTime(job.created_at),
+      step: job.current_step || '',
+      errorText: job.error_text || '',
+      created_at: job.created_at
+    };
+  });
+  await Promise.all(JOBS.slice(0, 20).map(async function(job){
+    try{
+      JOB_EVENTS[job.id] = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(job.id) + '/events');
+    }catch(_){
+      JOB_EVENTS[job.id] = [];
+    }
+  }));
+  renderJobs();
+}
+async function refreshAudit(){
+  var events = await apiFetch(API_PREFIX + '/audit-logs?limit=50');
+  AUDIT_EVTS = (events || []).map(function(evt){
+    return {
+      t: fmtTime(evt.created_at),
+      type: evt.entity_type === 'job' ? 'job.event' : 'audit.event',
+      cls: evt.level === 'error' ? 'err' : evt.entity_type === 'job' ? 'job' : 'aud',
+      msg: evt.message || evt.entity_type
+    };
+  });
+  renderAudit();
+  renderElog();
+}
+async function refreshHealth(){
+  var health = await apiFetch(API_PREFIX + '/health');
+  var worker = await apiFetch(API_PREFIX + '/health/worker');
+  document.getElementById('sb').textContent = String((health && health.status) || 'OK').toUpperCase();
+  document.getElementById('sb').style.color = (health && health.status) === 'ok' ? 'var(--grn)' : 'var(--amb)';
+  document.getElementById('sw').textContent = String((worker && worker.status) || 'OK').toUpperCase();
+  document.getElementById('sw').style.color = (worker && worker.status) === 'ok' ? 'var(--grn)' : 'var(--amb)';
+  pushEv('system.ping', 'GET /api/v1/health and /api/v1/health/worker completed');
+}
+async function loadData(){
+  await Promise.all([refreshNodes(), refreshLinks(), refreshPolicies(), refreshJobs(), refreshAudit(), refreshHealth()]);
+}
+async function healthCheck(){
+  try{ await refreshHealth(); }
+  catch(err){ pushEv('system.error', String(err && err.message ? err.message : err)); }
+}
+function buildNodePositions(width, height){
+  var positions = {};
+  var total = Math.max(NODES.length, 1);
+  var centerX = width / 2;
+  var centerY = height / 2;
+  var radius = Math.max(90, Math.min(width, height) * 0.32);
+  NODES.forEach(function(node, index){
+    var angle = (Math.PI * 2 * index / total) - Math.PI / 2;
+    positions[node.id] = { x: centerX + Math.cos(angle) * radius, y: centerY + Math.sin(angle) * radius };
+  });
+  return positions;
+}
+function drawTopo(){
+  var canvas = document.getElementById('tc');
+  if(!canvas){ return; }
+  var ctx = canvas.getContext('2d');
+  var W = canvas.offsetWidth || 800;
+  var H = 440;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0,0,W,H);
+  var pos = buildNodePositions(W, H);
+  var sc = {reachable:'#00e676',degraded:'#f5a623',offline:'#ff4560',unreachable:'#ff4560',unknown:'#4a6478'};
+  LINKS.forEach(function(l){
+    var a = pos[l.left], b = pos[l.right]; if(!a||!b) return;
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+    ctx.strokeStyle = l.state==='active' ? 'rgba(0,200,180,0.28)' : 'rgba(255,69,96,0.28)';
+    ctx.lineWidth = 1.5; ctx.setLineDash([5,5]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(0,200,180,0.7)';
+    ctx.font = '10px Courier New,monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(l.driver, (a.x+b.x)/2, (a.y+b.y)/2 - 7);
+    ctx.fillStyle = 'rgba(138,168,192,0.5)';
+    ctx.fillText(l.topo, (a.x+b.x)/2, (a.y+b.y)/2 + 8);
+  });
+  NODES.forEach(function(n){
+    var p = pos[n.id]; if(!p) return;
+    var col = sc[n.status]||'#4a6478';
+    ctx.beginPath(); ctx.arc(p.x,p.y,24,0,Math.PI*2);
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+    ctx.fillStyle = '#111820'; ctx.fill(); ctx.stroke();
+    var ri = {gateway:'G',relay:'R',egress:'E',mixed:'M'}[n.role]||'?';
+    ctx.fillStyle = col;
+    ctx.font = 'bold 13px Courier New,monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(ri, p.x, p.y);
+    ctx.font = '10px Courier New,monospace';
+    ctx.fillStyle = 'rgba(232,240,248,.72)';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(n.name, p.x, p.y+38);
+    ctx.beginPath(); ctx.arc(p.x+16,p.y-16,4,0,Math.PI*2);
+    ctx.fillStyle = col; ctx.fill();
+  });
+}
+async function apiCall(){
+  var path = document.getElementById('ap').value;
+  var method = document.getElementById('am').value;
+  var el = document.getElementById('ar');
+  el.style.color = 'var(--acc)';
+  el.textContent = '// '+method+' '+path+'\n// Connecting to backend...';
+  try{
+    var body = undefined;
+    if(method !== 'GET'){
+      var rawBody = document.getElementById('ab').value.trim();
+      body = rawBody ? rawBody : undefined;
+    }
+    var data = await apiFetch(path, {
+      method: method,
+      body: body,
+      headers: body ? {'Content-Type':'application/json'} : {}
+    });
+    el.style.color = 'var(--grn)';
+    el.textContent = JSON.stringify(data, null, 2);
+  }catch(err){
+    el.style.color = 'var(--red)';
+    el.textContent = '// Error: ' + (err && err.message ? err.message : err);
+  }
+}
+async function actionNodeDiscover(nodeId){
+  try{
+    var node = nById(nodeId);
+    var job = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/discover', { method:'POST', body:{} });
+    pushEv('job.created', 'discover queued for ' + (node.name || nodeId) + ' [' + job.id + ']');
+    await refreshJobs();
+    setTimeout(function(){ refreshNodes().catch(function(){}); refreshJobs().catch(function(){}); }, 800);
+    if(document.getElementById('dp').classList.contains('open') && nodeId === node.id){ showNode(nodeId); }
+  }catch(err){
+    pushEv('job.error', 'discover failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
+  }
+}
+async function actionNodeBootstrap(nodeId){
+  try{
+    var node = nById(nodeId);
+    var job = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/bootstrap-runtime', { method:'POST', body:{} });
+    pushEv('job.created', 'bootstrap queued for ' + (node.name || nodeId) + ' [' + job.id + ']');
+    await refreshJobs();
+    setTimeout(function(){ refreshNodes().catch(function(){}); refreshJobs().catch(function(){}); }, 800);
+    if(document.getElementById('dp').classList.contains('open') && nodeId === node.id){ showNode(nodeId); }
+  }catch(err){
+    pushEv('job.error', 'bootstrap failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
+  }
+}
+async function actionLinkValidate(linkId){
+  try{
+    var link = linkById(linkId);
+    var result = await apiFetch(API_PREFIX + '/links/' + encodeURIComponent(linkId) + '/validate', { method:'POST', body:{} });
+    var warnings = (result.warnings || []).length ? (' warnings: ' + result.warnings.join('; ')) : '';
+    pushEv(result.valid ? 'link.validate.ok' : 'link.validate.fail', 'validate ' + (link ? link.name : linkId) + ': ' + (result.valid ? 'valid' : 'invalid') + warnings);
+    await refreshLinks();
+    if(link){ showLink(linkId); }
+  }catch(err){
+    pushEv('link.validate.error', 'validate failed for ' + linkId + ': ' + (err && err.message ? err.message : err));
+  }
+}
+async function actionLinkApply(linkId){
+  try{
+    var link = linkById(linkId);
+    var job = await apiFetch(API_PREFIX + '/links/' + encodeURIComponent(linkId) + '/apply', { method:'POST', body:{} });
+    pushEv('job.created', 'apply queued for ' + (link ? link.name : linkId) + ' [' + job.id + ']');
+    await refreshJobs();
+    setTimeout(function(){ refreshLinks().catch(function(){}); refreshJobs().catch(function(){}); }, 800);
+    if(link){ showLink(linkId); }
+  }catch(err){
+    pushEv('link.apply.error', 'apply failed for ' + linkId + ': ' + (err && err.message ? err.message : err));
+  }
+}
+async function actionJobCancel(jobId){
+  try{
+    var job = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(jobId) + '/cancel', { method:'POST', body:{} });
+    pushEv('job.cancel.requested', 'cancel requested for ' + jobId);
+    await refreshJobs();
+    if(document.getElementById('dp').classList.contains('open')){ showJob(job.id); }
+  }catch(err){
+    pushEv('job.cancel.error', 'cancel failed for ' + jobId + ': ' + (err && err.message ? err.message : err));
+  }
+}
+async function actionJobRetry(jobId){
+  try{
+    var job = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(jobId) + '/retry-now', { method:'POST', body:{} });
+    pushEv('job.retry.requested', 'retry queued for ' + jobId);
+    await refreshJobs();
+    if(document.getElementById('dp').classList.contains('open')){ showJob(job.id); }
+  }catch(err){
+    pushEv('job.retry.error', 'retry failed for ' + jobId + ': ' + (err && err.message ? err.message : err));
+  }
+}
+async function actionJobForceCancel(jobId){
+  try{
+    var job = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(jobId) + '/force-cancel', { method:'POST', body:{} });
+    pushEv('job.force_cancel.requested', 'force-cancel requested for ' + jobId);
+    await refreshJobs();
+    if(document.getElementById('dp').classList.contains('open')){ showJob(job.id); }
+  }catch(err){
+    pushEv('job.force_cancel.error', 'force-cancel failed for ' + jobId + ': ' + (err && err.message ? err.message : err));
+  }
+}
+function promptRequired(label, fallback){
+  var suffix = fallback !== undefined && fallback !== null && fallback !== '' ? ' [' + fallback + ']' : '';
+  var value = prompt(label + suffix, fallback || '');
+  if(value === null){ return null; }
+  value = String(value).trim();
+  if(!value){
+    alert(label + ' is required.');
+    return null;
+  }
+  return value;
+}
+function splitCsv(value){
+  return String(value || '')
+    .split(',')
+    .map(function(x){ return x.trim(); })
+    .filter(Boolean);
+}
+async function createNodeFlow(){
+  try{
+    var name = promptRequired('Node name'); if(name === null) return;
+    var role = promptRequired('Role (gateway|relay|egress|mixed)', 'mixed'); if(role === null) return;
+    var managementAddress = promptRequired('Management address / IP'); if(managementAddress === null) return;
+    var sshHost = promptRequired('SSH host / IP', managementAddress); if(sshHost === null) return;
+    var sshPortRaw = promptRequired('SSH port', '22'); if(sshPortRaw === null) return;
+    var sshUser = promptRequired('SSH user', 'root'); if(sshUser === null) return;
+    var authType = promptRequired('Auth type (password|private_key)', 'password'); if(authType === null) return;
+    var secretLabel = authType === 'private_key' ? 'SSH private key' : 'SSH password';
+    var secretValue = promptRequired(secretLabel); if(secretValue === null) return;
+
+    var node = await apiFetch(API_PREFIX + '/nodes', {
+      method:'POST',
+      body:{
+        name:name,
+        role:role,
+        management_address:managementAddress,
+        ssh_host:sshHost,
+        ssh_port:Number(sshPortRaw),
+        ssh_user:sshUser,
+        auth_type:authType
+      }
+    });
+
+    await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(node.id) + '/secret', {
+      method:'PUT',
+      body:{
+        kind: authType === 'private_key' ? 'ssh_private_key' : 'ssh_password',
+        value: secretValue
+      }
+    });
+
+    pushEv('node.created', 'node ' + node.name + ' created');
+    await refreshNodes();
+    showNode(node.id);
+  }catch(err){
+    pushEv('node.create.error', 'create node failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function createLinkFlow(){
+  try{
+    if(NODES.length < 2){
+      alert('At least two nodes are required.');
+      return;
+    }
+    var available = NODES.map(function(n){ return n.name; }).join(', ');
+    var name = promptRequired('Link name'); if(name === null) return;
+    var leftName = promptRequired('Left node name\nAvailable: ' + available); if(leftName === null) return;
+    var rightName = promptRequired('Right node name\nAvailable: ' + available); if(rightName === null) return;
+    var leftNode = findNodeByName(leftName);
+    var rightNode = findNodeByName(rightName);
+    if(!leftNode || !rightNode){
+      alert('Node name not found.');
+      return;
+    }
+    if(leftNode.id === rightNode.id){
+      alert('Left and right nodes must be different.');
+      return;
+    }
+
+    var leftIface = promptRequired('Left interface name', 'awg10'); if(leftIface === null) return;
+    var rightIface = promptRequired('Right interface name', 'awg11'); if(rightIface === null) return;
+    var leftPort = promptRequired('Left listen port', '8443'); if(leftPort === null) return;
+    var rightPort = promptRequired('Right listen port', '8444'); if(rightPort === null) return;
+    var leftAddr = promptRequired('Left IPv4 address/CIDR', '10.77.77.1/30'); if(leftAddr === null) return;
+    var rightAddr = promptRequired('Right IPv4 address/CIDR', '10.77.77.2/30'); if(rightAddr === null) return;
+    var leftEndpoint = promptRequired('Left endpoint host', leftNode.management_address || leftNode.ssh_host); if(leftEndpoint === null) return;
+    var rightEndpoint = promptRequired('Right endpoint host', rightNode.management_address || rightNode.ssh_host); if(rightEndpoint === null) return;
+    var leftAllowed = promptRequired('Left peer allowed IPs (CSV)', '10.77.77.2/32'); if(leftAllowed === null) return;
+    var rightAllowed = promptRequired('Right peer allowed IPs (CSV)', '10.77.77.1/32'); if(rightAllowed === null) return;
+    var jc = promptRequired('AWG Jc', '4'); if(jc === null) return;
+    var jmin = promptRequired('AWG Jmin', '40'); if(jmin === null) return;
+    var jmax = promptRequired('AWG Jmax', '120'); if(jmax === null) return;
+    var s1 = promptRequired('AWG S1', '20'); if(s1 === null) return;
+    var s2 = promptRequired('AWG S2', '40'); if(s2 === null) return;
+    var s3 = promptRequired('AWG S3', '80'); if(s3 === null) return;
+    var s4 = promptRequired('AWG S4', '120'); if(s4 === null) return;
+    var h1 = promptRequired('AWG H1', '10101'); if(h1 === null) return;
+    var h2 = promptRequired('AWG H2', '20202'); if(h2 === null) return;
+    var h3 = promptRequired('AWG H3', '30303'); if(h3 === null) return;
+    var h4 = promptRequired('AWG H4', '40404'); if(h4 === null) return;
+
+    var link = await apiFetch(API_PREFIX + '/links', {
+      method:'POST',
+      body:{
+        name:name,
+        driver_name:'awg',
+        topology_type:'p2p',
+        left_node_id:leftNode.id,
+        right_node_id:rightNode.id,
+        spec:{
+          mode:'site_to_site',
+          left:{
+            interface_name:leftIface,
+            listen_port:Number(leftPort),
+            address_v4:leftAddr,
+            mtu:1420,
+            endpoint_host:leftEndpoint
+          },
+          right:{
+            interface_name:rightIface,
+            listen_port:Number(rightPort),
+            address_v4:rightAddr,
+            mtu:1420,
+            endpoint_host:rightEndpoint
+          },
+          peer:{
+            persistent_keepalive:21,
+            mtu:1420,
+            left_allowed_ips:splitCsv(leftAllowed),
+            right_allowed_ips:splitCsv(rightAllowed)
+          },
+          awg_obfuscation:{
+            jc:Number(jc),
+            jmin:Number(jmin),
+            jmax:Number(jmax),
+            s1:Number(s1),
+            s2:Number(s2),
+            s3:Number(s3),
+            s4:Number(s4),
+            h1:Number(h1),
+            h2:Number(h2),
+            h3:Number(h3),
+            h4:Number(h4)
+          }
+        }
+      }
+    });
+
+    pushEv('link.created', 'link ' + link.name + ' created');
+    await refreshLinks();
+    showLink(link.id);
+  }catch(err){
+    pushEv('link.create.error', 'create link failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function createPolicyFlow(){
+  try{
+    if(NODES.length < 1){
+      alert('At least one node is required.');
+      return;
+    }
+    var available = NODES.map(function(n){ return n.name; }).join(', ');
+    var nodeName = promptRequired('Node name for route policy\nAvailable: ' + available); if(nodeName === null) return;
+    var node = findNodeByName(nodeName);
+    if(!node){
+      alert('Node name not found.');
+      return;
+    }
+    var name = promptRequired('Policy name'); if(name === null) return;
+    var ingress = promptRequired('Ingress interface', 'awg0'); if(ingress === null) return;
+    var action = promptRequired('Action (direct|next_hop|balancer)', 'next_hop'); if(action === null) return;
+    var targetInterface = null;
+    var targetGateway = null;
+    var balancerId = null;
+    if(action === 'balancer'){
+      balancerId = promptRequired('Balancer ID'); if(balancerId === null) return;
+    } else {
+      targetInterface = promptRequired('Target interface', 'awg1'); if(targetInterface === null) return;
+      targetGateway = prompt('Target gateway (optional)', '') || null;
+    }
+    var routedNetworks = promptRequired('Routed networks (CSV)', '0.0.0.0/0'); if(routedNetworks === null) return;
+    var excludedNetworks = prompt('Excluded networks (CSV)', '') || '';
+
+    var policy = await apiFetch(API_PREFIX + '/route-policies', {
+      method:'POST',
+      body:{
+        node_id:node.id,
+        name:name,
+        ingress_interface:ingress,
+        action:action,
+        target_interface:targetInterface,
+        target_gateway:targetGateway,
+        balancer_id:balancerId,
+        routed_networks:splitCsv(routedNetworks),
+        excluded_networks:splitCsv(excludedNetworks),
+        table_id:51820,
+        rule_priority:10000,
+        firewall_mark:51820,
+        masquerade:true,
+        enabled:true
+      }
+    });
+
+    pushEv('policy.created', 'route policy ' + policy.name + ' created');
+    await refreshPolicies();
+  }catch(err){
+    pushEv('policy.create.error', 'create policy failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+function wireStaticButtons(){
+  var addNodeBtn = document.querySelector('#page-nodes .btn.pri');
+  var addLinkBtn = document.querySelector('#page-links .btn.pri');
+  var addPolicyBtn = document.querySelector('#page-policies .btn.pri');
+  if(addNodeBtn){ addNodeBtn.addEventListener('click', createNodeFlow); }
+  if(addLinkBtn){ addLinkBtn.addEventListener('click', createLinkFlow); }
+  if(addPolicyBtn){ addPolicyBtn.addEventListener('click', createPolicyFlow); }
+}
+document.querySelectorAll('.nav-item').forEach(function(el){
+  el.addEventListener('click', function(){
+    document.querySelectorAll('.nav-item').forEach(function(x){x.classList.remove('active');});
+    document.querySelectorAll('.page').forEach(function(x){x.classList.remove('active');});
+    el.classList.add('active');
+    var pg = document.getElementById('page-'+el.dataset.p);
+    if(pg) pg.classList.add('active');
+    closeDP();
+    if(el.dataset.p==='topology') setTimeout(drawTopo, 60);
+  });
+});
+document.getElementById('lbtn').addEventListener('click', doLogin);
+document.getElementById('ip').addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
+async function doLogin(){
+  var u = document.getElementById('iu').value.trim();
+  var p = document.getElementById('ip').value;
+  var err = document.getElementById('lerr');
+  if(!u||!p){ err.textContent='Enter username and password'; return; }
+  err.textContent = '';
+  document.getElementById('lbtn').textContent = 'AUTHENTICATING...';
+  try{
+    await apiFetch(API_PREFIX + '/auth/login', {
+      method:'POST',
+      body:{username:u,password:p},
+      redirectOn401:false
+    });
+    await bootApp();
+  }catch(e){
+    err.textContent = e && e.message ? e.message : 'Authentication failed';
+    document.getElementById('lbtn').textContent = 'AUTHENTICATE';
+  }
+}
+async function bootApp(){
+  var me = await apiFetch(API_PREFIX + '/auth/me');
+  isAuthenticated = true;
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('appWrap').style.display = 'flex';
+  document.getElementById('ubtn').textContent = me && me.user && me.user.username ? (me.user.username + ' ▾') : 'admin ▾';
+  document.getElementById('lbtn').textContent = 'AUTHENTICATE';
+  document.getElementById('lerr').textContent = '';
+  await loadData();
+  connectWS();
+  setTimeout(drawTopo, 60);
+}
+document.getElementById('ubtn').addEventListener('click', async function(){
+  if(confirm('Logout from ONyX Control Plane?')){
+    try{
+      await apiFetch(API_PREFIX + '/auth/logout', {method:'POST', redirectOn401:false});
+    }catch(_){ }
+    authRedirect('');
+  }
+});
+wireStaticButtons();
+(async function init(){
+  try{
+    await apiFetch(API_PREFIX + '/auth/me', { redirectOn401:false });
+    await bootApp();
+  }catch(_){
+    authRedirect('');
+  }
+})();
+</script>
+</body>
+</html>
+
+
+
