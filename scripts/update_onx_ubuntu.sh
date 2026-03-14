@@ -181,6 +181,26 @@ fi
 if ! grep -q '^ONX_WEB_UI_DIR=' "${ENV_FILE_PATH}"; then
   echo "ONX_WEB_UI_DIR=${INSTALL_DIR}/apps/web-admin/dist" >> "${ENV_FILE_PATH}"
 fi
+if ! grep -q '^ONX_PUBLIC_BASE_URL=' "${ENV_FILE_PATH}"; then
+  BASE_IP="${TLS_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+  if [[ -n "${TLS_DOMAIN}" ]]; then
+    if [[ "${TLS_HTTPS_PORT}" == "443" ]]; then
+      echo "ONX_PUBLIC_BASE_URL=https://${TLS_DOMAIN}" >> "${ENV_FILE_PATH}"
+    else
+      echo "ONX_PUBLIC_BASE_URL=https://${TLS_DOMAIN}:${TLS_HTTPS_PORT}" >> "${ENV_FILE_PATH}"
+    fi
+  elif [[ -n "${BASE_IP}" ]]; then
+    if [[ "${REFRESH_TLS_OPENSSL}" == "true" ]]; then
+      if [[ "${TLS_HTTPS_PORT}" == "443" ]]; then
+        echo "ONX_PUBLIC_BASE_URL=https://${BASE_IP}" >> "${ENV_FILE_PATH}"
+      else
+        echo "ONX_PUBLIC_BASE_URL=https://${BASE_IP}:${TLS_HTTPS_PORT}" >> "${ENV_FILE_PATH}"
+      fi
+    else
+      echo "ONX_PUBLIC_BASE_URL=http://${BASE_IP}:8081" >> "${ENV_FILE_PATH}"
+    fi
+  fi
+fi
 if ! grep -q '^ONX_ADMIN_WEB_AUTH_ENABLED=' "${ENV_FILE_PATH}"; then
   echo 'ONX_ADMIN_WEB_AUTH_ENABLED=true' >> "${ENV_FILE_PATH}"
 fi

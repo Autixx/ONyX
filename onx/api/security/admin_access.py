@@ -46,6 +46,7 @@ class AdminAccessControl:
         "geo_policies.write": {"roles": ["operator", "admin"], "description": "Modify geo policies"},
         "probes.read": {"roles": ["viewer", "operator", "admin"], "description": "Read probe results"},
         "probes.write": {"roles": ["operator", "admin"], "description": "Run probes"},
+        "peer_traffic.read": {"roles": ["viewer", "operator", "admin"], "description": "Read node agent peer traffic"},
         "topology.read": {"roles": ["viewer", "operator", "admin"], "description": "Read topology graph"},
         "topology.plan": {"roles": ["viewer", "operator", "admin"], "description": "Run path planner"},
     }
@@ -101,6 +102,7 @@ class AdminAccessControl:
             f"{prefix}/probe",
             f"{prefix}/best-ingress",
             f"{prefix}/session-rebind",
+            f"{prefix}/agent",
         )
 
         if path in public_exact:
@@ -120,6 +122,8 @@ class AdminAccessControl:
             return "topology.read"
         if path == f"{prefix}/paths/plan":
             return "topology.plan"
+        if path == f"{prefix}/peer-traffic/summary" or path.startswith(f"{prefix}/peer-traffic/nodes/"):
+            return "peer_traffic.read"
         if path == f"{prefix}/access-rules" or path == f"{prefix}/access-rules/matrix":
             return "access_rules.read"
         if path.startswith(f"{prefix}/access-rules/"):

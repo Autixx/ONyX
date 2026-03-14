@@ -67,6 +67,154 @@ UNIT_TEMPLATE = dedent(
     """
 )
 
+NODE_AGENT_SCRIPT = dedent(
+    """\
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    ENV_FILE="${ONX_NODE_AGENT_ENV_FILE:-__ONX_AGENT_ENV_PATH__}"
+    if [[ ! -f "${ENV_FILE}" ]]; then
+      echo "[onx-node-agent] missing env file: ${ENV_FILE}" >&2
+      exit 1
+    fi
+    # shellcheck disable=SC1090
+    source "${ENV_FILE}"
+
+    : "${ONX_NODE_ID:?missing ONX_NODE_ID}"
+    : "${ONX_NODE_AGENT_TOKEN:?missing ONX_NODE_AGENT_TOKEN}"
+    : "${ONX_NODE_AGENT_REPORT_URL:?missing ONX_NODE_AGENT_REPORT_URL}"
+
+    export PATH="/usr/local/bin:/usr/bin:/bin:${PATH}"
+
+    python3 - <<'PY'
+    import json
+    import os
+    import socket
+    import subprocess
+    import sys
+    import urllib.error
+    import urllib.request
+    from datetime import datetime, timezone
+
+    report_url = os.environ["ONX_NODE_AGENT_REPORT_URL"]
+    node_id = os.environ["ONX_NODE_ID"]
+    token = os.environ["ONX_NODE_AGENT_TOKEN"]
+    agent_version = os.environ.get("ONX_NODE_AGENT_VERSION", "")
+
+    try:
+        result = subprocess.run(
+            ["awg", "show", "all", "dump"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except FileNotFoundError:
+        print("[onx-node-agent] awg not found", file=sys.stderr)
+        sys.exit(1)
+
+    if result.returncode != 0:
+        print(result.stderr.strip() or "[onx-node-agent] awg show all dump failed", file=sys.stderr)
+        sys.exit(1)
+
+    peers = []
+    for raw in result.stdout.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        fields = line.split("\\t")
+        if len(fields) < 9:
+            continue
+        iface, peer_public_key, _psk, endpoint, allowed_ips, latest_handshake, rx_bytes, tx_bytes, _keepalive = fields[:9]
+        if not peer_public_key or peer_public_key == "(none)":
+            continue
+        try:
+            hs = int(latest_handshake)
+            handshake_at = datetime.fromtimestamp(hs, tz=timezone.utc).isoformat() if hs > 0 else None
+        except ValueError:
+            handshake_at = None
+        try:
+            rx_value = int(rx_bytes)
+        except ValueError:
+            rx_value = 0
+        try:
+            tx_value = int(tx_bytes)
+        except ValueError:
+            tx_value = 0
+
+        peers.append(
+            {
+                "interface_name": iface,
+                "peer_public_key": peer_public_key,
+                "endpoint": None if endpoint in {"", "(none)"} else endpoint,
+                "allowed_ips": [] if allowed_ips in {"", "(none)"} else [item for item in allowed_ips.split(",") if item],
+                "rx_bytes": max(rx_value, 0),
+                "tx_bytes": max(tx_value, 0),
+                "latest_handshake_at": handshake_at,
+                "metadata": {},
+            }
+        )
+
+    payload = {
+        "agent_version": agent_version or None,
+        "hostname": socket.gethostname(),
+        "collected_at": datetime.now(timezone.utc).isoformat(),
+        "peers": peers,
+    }
+    req = urllib.request.Request(
+        report_url,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-ONX-Node-Id": node_id,
+            "X-ONX-Node-Token": token,
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status >= 300:
+                raise RuntimeError(f"unexpected HTTP status {resp.status}")
+    except urllib.error.HTTPError as exc:
+        print(f"[onx-node-agent] report failed: HTTP {exc.code}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[onx-node-agent] report failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+    PY
+    """
+)
+
+NODE_AGENT_SERVICE_TEMPLATE = dedent(
+    """\
+    [Unit]
+    Description=ONX node agent peer traffic reporter
+    After=network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Type=oneshot
+    EnvironmentFile=-__ONX_AGENT_ENV_PATH__
+    ExecStart=__ONX_AGENT_PATH__
+    TimeoutStartSec=30
+    """
+)
+
+NODE_AGENT_TIMER_TEMPLATE = dedent(
+    """\
+    [Unit]
+    Description=Run ONX node agent periodically
+
+    [Timer]
+    OnBootSec=20s
+    OnUnitActiveSec=__ONX_AGENT_INTERVAL__s
+    Unit=onx-node-agent.service
+
+    [Install]
+    WantedBy=timers.target
+    """
+)
+
 AWG_INSTALL_SCRIPT = dedent(
     """\
     #!/usr/bin/env bash
@@ -164,6 +312,7 @@ AWG_INSTALL_SCRIPT = dedent(
         ca-certificates \
         curl \
         git \
+        python3 \
         build-essential \
         make \
         gcc \
@@ -236,6 +385,54 @@ class InterfaceRuntimeService:
         code, _, stderr = self._executor.run(node, management_secret, "sh -lc 'systemctl daemon-reload'")
         if code != 0:
             raise RuntimeError(stderr or f"Failed to reload systemd on node {node.name}")
+
+    def ensure_node_agent(
+        self,
+        node: Node,
+        management_secret: str,
+        *,
+        node_id: str,
+        token: str,
+        report_url: str,
+    ) -> dict:
+        agent_script = NODE_AGENT_SCRIPT.replace("__ONX_AGENT_ENV_PATH__", self._settings.onx_node_agent_env_path)
+        agent_service = (
+            NODE_AGENT_SERVICE_TEMPLATE
+            .replace("__ONX_AGENT_ENV_PATH__", self._settings.onx_node_agent_env_path)
+            .replace("__ONX_AGENT_PATH__", self._settings.onx_node_agent_path)
+        )
+        agent_timer = NODE_AGENT_TIMER_TEMPLATE.replace(
+            "__ONX_AGENT_INTERVAL__", str(max(15, int(self._settings.onx_node_agent_interval_seconds)))
+        )
+        env_content = dedent(
+            f"""\
+            ONX_NODE_ID={node_id}
+            ONX_NODE_AGENT_TOKEN={token}
+            ONX_NODE_AGENT_REPORT_URL={report_url}
+            ONX_NODE_AGENT_VERSION={self._settings.onx_node_agent_version}
+            """
+        )
+        self._executor.write_file(node, management_secret, self._settings.onx_node_agent_path, agent_script)
+        self._executor.run(node, management_secret, f"sh -lc 'chmod 755 \"{self._settings.onx_node_agent_path}\"'")
+        self._executor.write_file(node, management_secret, self._settings.onx_node_agent_env_path, env_content)
+        self._executor.run(node, management_secret, f"sh -lc 'chmod 600 \"{self._settings.onx_node_agent_env_path}\"'")
+        self._executor.write_file(node, management_secret, self._settings.onx_node_agent_service_path, agent_service)
+        self._executor.write_file(node, management_secret, self._settings.onx_node_agent_timer_path, agent_timer)
+        code, _, stderr = self._executor.run(
+            node,
+            management_secret,
+            "sh -lc 'systemctl daemon-reload && systemctl enable --now onx-node-agent.timer'",
+        )
+        if code != 0:
+            raise RuntimeError(stderr or f"Failed to enable node agent on node {node.name}")
+        return {
+            "installed": True,
+            "report_url": report_url,
+            "interval_seconds": max(15, int(self._settings.onx_node_agent_interval_seconds)),
+            "service_path": self._settings.onx_node_agent_service_path,
+            "timer_path": self._settings.onx_node_agent_timer_path,
+            "agent_path": self._settings.onx_node_agent_path,
+        }
 
     def ensure_awg_stack(self, node: Node, management_secret: str) -> dict:
         script_content = (

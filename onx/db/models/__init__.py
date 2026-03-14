@@ -16,6 +16,8 @@ from onx.db.models.link_endpoint import LinkEndpoint
 from onx.db.models.node import Node
 from onx.db.models.node_capability import NodeCapability
 from onx.db.models.node_secret import NodeSecret
+from onx.db.models.peer_registry import PeerRegistry
+from onx.db.models.peer_traffic_state import PeerTrafficState
 from onx.db.models.probe_result import ProbeResult
 from onx.db.models.route_policy import RoutePolicy
 
@@ -26,6 +28,8 @@ __all__ = [
     "Node",
     "NodeSecret",
     "NodeCapability",
+    "PeerRegistry",
+    "PeerTrafficState",
     "Link",
     "LinkEndpoint",
     "RoutePolicy",

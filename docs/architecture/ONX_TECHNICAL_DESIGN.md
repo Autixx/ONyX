@@ -6,6 +6,8 @@ Draft v0.1
 
 Implemented backend delta: alpha control-plane skeleton is live in `onx/` with native Ubuntu install, auth/ACL, audit logs, retention runtime, topology/path APIs, and control-plane state backup/import.
 
+Implemented execution delta: managed Ubuntu nodes now receive a lightweight ONX node agent during runtime bootstrap. The current agent is intentionally narrow: it reports AWG peer counters and does not act as an autonomous decision engine.
+
 ## Purpose
 
 This document defines the technical shape of `ONX` (`ONyX` as the product name), the core terms, the architectural boundaries, and the implementation sequence.
@@ -282,8 +284,21 @@ Responsibilities:
 - applies configs locally
 - reports capabilities and health
 - performs rollback when apply fails
+- reports AWG peer counters to control-plane through a lightweight node agent
 
-This layer may start as SSH-based remote execution and later evolve into a lightweight ONX agent.
+Current implementation:
+
+- SSH-based remote execution remains the primary deployment path
+- `bootstrap-runtime` installs:
+  - AWG stack prerequisites
+  - `onx-link-runner`
+  - `onx-link@.service`
+  - `onx-node-agent.service`
+  - `onx-node-agent.timer`
+- the node agent periodically reads `awg show all dump`
+- the node agent reports peer traffic snapshots to control-plane
+
+This layer may later evolve into a broader ONX agent, but the current agent is deliberately limited to runtime telemetry.
 
 ## Why ONX Is Not Just Nebula
 
@@ -599,6 +614,15 @@ ONX must expose:
 - drift between desired and applied state
 - audit events for sensitive control-plane changes
 - retention policy status and cleanup results
+- peer traffic summaries aggregated across managed nodes
+
+Current peer traffic accounting model:
+
+- each managed node reports AWG peer counters as snapshots
+- control-plane stores per-node/interface/public-key traffic state
+- control-plane maintains a peer registry keyed by peer public key
+- ownership is attributed to the node where the peer public key first appeared
+- summary views aggregate traffic from all reporting nodes while preserving first-seen ownership
 
 ## Visual Topology Model
 

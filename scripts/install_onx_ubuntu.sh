@@ -38,6 +38,7 @@ ADMIN_WEB_BOOTSTRAP_USERNAME="${ADMIN_WEB_BOOTSTRAP_USERNAME:-admin}"
 ADMIN_WEB_BOOTSTRAP_PASSWORD="${ADMIN_WEB_BOOTSTRAP_PASSWORD:-}"
 WEB_UI_ENABLED="${WEB_UI_ENABLED:-true}"
 WEB_UI_DIR="${WEB_UI_DIR:-}"
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-}"
 
 INSTALL_POSTGRES="${INSTALL_POSTGRES:-true}"
 CONFIGURE_LOCAL_POSTGRES="${CONFIGURE_LOCAL_POSTGRES:-true}"
@@ -93,6 +94,7 @@ Options:
                                 Initial admin web-auth password (auto-generated if empty)
   --web-ui-enabled              Enable same-origin static UI hosting scaffold (default: true)
   --web-ui-dir <path>           Static UI build directory (default: /opt/onyx/apps/web-admin/dist)
+  --public-base-url <url>       Public ONyX base URL for node agents and future clients
   --no-install-postgres         Skip postgresql package install
   --no-configure-local-postgres Do not create local db/user via postgres superuser
   --postgres-host <host>        Postgres host (default: 127.0.0.1)
@@ -298,6 +300,10 @@ while [[ $# -gt 0 ]]; do
       WEB_UI_DIR="$2"
       shift 2
       ;;
+    --public-base-url)
+      PUBLIC_BASE_URL="$2"
+      shift 2
+      ;;
     --no-install-postgres)
       INSTALL_POSTGRES="false"
       shift 1
@@ -379,6 +385,26 @@ case "${ADMIN_API_AUTH_MODE}" in
 esac
 if [[ -z "${WEB_UI_DIR}" ]]; then
   WEB_UI_DIR="${INSTALL_DIR}/apps/web-admin/dist"
+fi
+if [[ -z "${PUBLIC_BASE_URL}" ]]; then
+  if [[ "${ENABLE_TLS_OPENSSL}" == "true" ]]; then
+    PUBLIC_HOST="${TLS_DOMAIN:-${TLS_IP:-}}"
+    if [[ -n "${PUBLIC_HOST}" ]]; then
+      if [[ "${TLS_HTTPS_PORT}" == "443" ]]; then
+        PUBLIC_BASE_URL="https://${PUBLIC_HOST}"
+      else
+        PUBLIC_BASE_URL="https://${PUBLIC_HOST}:${TLS_HTTPS_PORT}"
+      fi
+    fi
+  fi
+  if [[ -z "${PUBLIC_BASE_URL}" ]]; then
+    LOCAL_PRIMARY_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    if [[ -n "${LOCAL_PRIMARY_IP}" ]]; then
+      PUBLIC_BASE_URL="http://${LOCAL_PRIMARY_IP}:${BIND_PORT}"
+    else
+      PUBLIC_BASE_URL="http://127.0.0.1:${BIND_PORT}"
+    fi
+  fi
 fi
 
 if [[ -z "${POSTGRES_PASSWORD}" ]]; then
@@ -522,6 +548,7 @@ ONX_DATABASE_URL=${DB_URL}
 ONX_MASTER_KEY=${ONX_MASTER_KEY}
 ONX_WEB_UI_ENABLED=${WEB_UI_ENABLED}
 ONX_WEB_UI_DIR=${WEB_UI_DIR}
+ONX_PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
 
 # Client routing auth: disabled | token | jwt | token_or_jwt
 ONX_CLIENT_API_AUTH_MODE=${CLIENT_API_AUTH_MODE}

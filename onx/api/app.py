@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi import Request
 
 from onx.api.routers.admin_web_auth import router as admin_web_auth_router
+from onx.api.routers.agent_metrics import router as agent_metrics_router
 from onx.api.routers.access_rules import router as access_rules_router
 from onx.api.routers.audit_logs import router as audit_logs_router
 from onx.api.routers.balancers import router as balancers_router
@@ -16,6 +17,7 @@ from onx.api.routers.jobs import router as jobs_router
 from onx.api.routers.links import router as links_router
 from onx.api.routers.maintenance import router as maintenance_router
 from onx.api.routers.nodes import router as nodes_router
+from onx.api.routers.peer_traffic import router as peer_traffic_router
 from onx.api.routers.probes import router as probes_router
 from onx.api.routers.realtime import router as realtime_router
 from onx.api.routers.route_policies import router as route_policies_router
@@ -81,11 +83,13 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router, prefix=settings.api_prefix)
     app.include_router(admin_web_auth_router, prefix=settings.api_prefix)
+    app.include_router(agent_metrics_router, prefix=settings.api_prefix)
     app.include_router(client_routing_router, prefix=settings.api_prefix)
     app.include_router(access_rules_router, prefix=settings.api_prefix)
     app.include_router(audit_logs_router, prefix=settings.api_prefix)
     app.include_router(jobs_router, prefix=settings.api_prefix)
     app.include_router(nodes_router, prefix=settings.api_prefix)
+    app.include_router(peer_traffic_router, prefix=settings.api_prefix)
     app.include_router(links_router, prefix=settings.api_prefix)
     app.include_router(balancers_router, prefix=settings.api_prefix)
     app.include_router(route_policies_router, prefix=settings.api_prefix)

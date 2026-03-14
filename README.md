@@ -6,6 +6,7 @@ Current alpha surface:
 
 - node registry
 - SSH-based node onboarding
+- lightweight node agent for peer traffic reporting
 - remote AWG prerequisite installation
 - AWG site-to-site link model
 - jobs / retries / locks
@@ -50,6 +51,7 @@ Current state:
 - admin/control-plane API is usable
 - install/update/smoke path is usable on Ubuntu 22.04/24.04
 - managed Ubuntu nodes can be onboarded and prepared for AWG s2s from control-plane
+- managed Ubuntu nodes can report AWG peer counters back to control-plane
 
 ## Native Install
 
@@ -175,11 +177,24 @@ Node actions include:
 - `ipset`
 - `resolvconf`
 - Go toolchain if needed for `amneziawg-go`
+- `onx-node-agent` systemd timer and reporter script
 
 Remote SSH user for that step must be:
 
 - `root`, or
 - a user with passwordless `sudo`
+
+Peer traffic reporting model:
+
+- a lightweight node agent is installed during `bootstrap-runtime`
+- the agent runs from `systemd` timer on each managed node
+- it reads `awg show all dump`
+- it reports peer counters to `POST /api/v1/agent/peer-traffic/report`
+- control-plane stores per-node peer traffic snapshots
+- peer ownership is attributed to the node where the peer public key was first seen
+- admin summary endpoints:
+  - `GET /api/v1/peer-traffic/summary`
+  - `GET /api/v1/peer-traffic/nodes/{node_id}`
 
 ## Update
 
