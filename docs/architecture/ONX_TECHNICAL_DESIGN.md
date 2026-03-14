@@ -19,6 +19,7 @@ Device-bound client delivery is further specified in:
 - `ONX_CLIENT_DELIVERY_ARCHITECTURE.md`
 - `ONX_DEVICE_IDENTITY_AND_PROFILE_DELIVERY.md`
 - `ONX_CLIENT_MVP_DESIGN.md`
+- `ONX_CLIENT_BACKEND_CONTRACT_BLUEPRINT.md`
 
 Subscription and billing architecture is further specified in:
 
