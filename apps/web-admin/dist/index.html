@@ -154,6 +154,26 @@ td.m{color:var(--t0);}
 
 /* в”Ђв”Ђ GRID OVERLAY в”Ђв”Ђ */
 .topo-legend{display:flex;gap:16px;margin-top:10px;font-size:11px;color:var(--t2);}
+
+/* в”Ђв”Ђ MODAL FORM в”Ђв”Ђ */
+.modal{position:fixed;inset:0;background:rgba(3,8,12,.72);display:none;align-items:center;justify-content:center;z-index:120;}
+.modal.open{display:flex;}
+.modal-box{width:min(760px,92vw);max-height:86vh;overflow-y:auto;background:var(--bg2);border:1px solid var(--bdr2);border-radius:4px;box-shadow:0 20px 60px rgba(0,0,0,.45);}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--bdr);}
+.modal-title{font-size:14px;font-weight:700;color:var(--t0);letter-spacing:.05em;}
+.modal-close{background:none;border:none;color:var(--t1);font-size:18px;cursor:pointer;line-height:1;}
+.modal-body{padding:16px;}
+.modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.modal-grid.one{grid-template-columns:1fr;}
+.mf-row{display:flex;flex-direction:column;gap:6px;}
+.mf-row.full{grid-column:1 / -1;}
+.mf-label{font-size:10px;color:var(--t2);letter-spacing:.1em;text-transform:uppercase;}
+.mf-input,.mf-select,.mf-textarea{width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:9px 11px;color:var(--t0);font-family:var(--mono);font-size:12px;outline:none;}
+.mf-textarea{min-height:84px;resize:vertical;}
+.mf-input:focus,.mf-select:focus,.mf-textarea:focus{border-color:var(--acc);}
+.mf-help{font-size:10px;color:var(--t2);line-height:1.5;}
+.mf-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 16px 16px;}
+.empty-state{padding:12px 14px;color:var(--t2);font-size:12px;}
 </style>
 </head>
 <body>
@@ -239,11 +259,11 @@ td.m{color:var(--t0);}
       <div class="page" id="page-nodes">
         <div class="ph">
           <span class="ptitle">Nodes</span>
-          <button class="btn pri">+ ADD NODE</button>
+          <button class="btn pri" id="btnAddNode">+ ADD NODE</button>
         </div>
         <div class="tw">
           <table>
-            <thead><tr><th>Name</th><th>Role</th><th>Mgmt Address</th><th>Status</th><th>Capabilities</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Role</th><th>Mgmt Address</th><th>Status</th><th>Capabilities</th><th>Actions</th></tr></thead>
             <tbody id="ntb"></tbody>
           </table>
         </div>
@@ -253,11 +273,11 @@ td.m{color:var(--t0);}
       <div class="page" id="page-links">
         <div class="ph">
           <span class="ptitle">Links</span>
-          <button class="btn pri">+ NEW LINK</button>
+          <button class="btn pri" id="btnAddLink">+ NEW LINK</button>
         </div>
         <div class="tw">
           <table>
-            <thead><tr><th>Name</th><th>Driver</th><th>Left Node</th><th>Right Node</th><th>Topology</th><th>State</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Driver</th><th>Left Node</th><th>Right Node</th><th>Topology</th><th>State</th><th>Actions</th></tr></thead>
             <tbody id="ltb"></tbody>
           </table>
         </div>
@@ -267,14 +287,19 @@ td.m{color:var(--t0);}
       <div class="page" id="page-policies">
         <div class="ph">
           <span class="ptitle">Policies</span>
-          <button class="btn pri">+ ADD POLICY</button>
+          <div class="pbtn-row">
+            <button class="btn pri" id="btnAddRoutePolicy">+ ROUTE POLICY</button>
+            <button class="btn" id="btnAddDNSPolicy">+ DNS POLICY</button>
+            <button class="btn" id="btnAddGeoPolicy">+ GEO POLICY</button>
+            <button class="btn" id="btnAddBalancer">+ BALANCER</button>
+          </div>
         </div>
         <div class="two">
           <div>
             <div class="stitle">Route Policies</div>
             <div class="tw">
               <table>
-                <thead><tr><th>Node</th><th>Action</th><th>Priority</th><th>State</th></tr></thead>
+                <thead><tr><th>Name</th><th>Node</th><th>Action</th><th>Priority</th><th>State</th><th>Actions</th></tr></thead>
                 <tbody id="ptb"></tbody>
               </table>
             </div>
@@ -283,8 +308,28 @@ td.m{color:var(--t0);}
             <div class="stitle">DNS Policies</div>
             <div class="tw">
               <table>
-                <thead><tr><th>Node</th><th>DNS Address</th><th>State</th></tr></thead>
+                <thead><tr><th>Route Policy</th><th>DNS Address</th><th>State</th><th>Actions</th></tr></thead>
                 <tbody id="dtb"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="two">
+          <div>
+            <div class="stitle">Geo Policies</div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Route Policy</th><th>Country</th><th>Mode</th><th>State</th><th>Actions</th></tr></thead>
+                <tbody id="gtb"></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div class="stitle">Balancers</div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Name</th><th>Node</th><th>Method</th><th>Members</th><th>State</th><th>Actions</th></tr></thead>
+                <tbody id="btb"></tbody>
               </table>
             </div>
           </div>
@@ -355,6 +400,17 @@ td.m{color:var(--t0);}
   <div id="dpb"></div>
 </div>
 
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title" id="modalTitle"></div>
+      <button class="modal-close" id="modalClose">×</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="mf-actions" id="modalActions"></div>
+  </div>
+</div>
+
 <script>
 var API_PREFIX = '/api/v1';
 var WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + API_PREFIX + '/ws/admin/events';
@@ -368,17 +424,26 @@ var JOBS = [];
 var POLICIES = [];
 var DNS_P = [];
 var GEO_P = [];
+var BALANCERS = [];
 var AUDIT_EVTS = [];
 var JOB_EVENTS = {};
 
 function nById(id){ return NODES.find(function(n){return n.id===id;})||{name:id,role:'unknown'}; }
 function linkById(id){ return LINKS.find(function(l){ return l.id===id; }) || null; }
 function jobById(id){ return JOBS.find(function(j){ return j.id===id; }) || null; }
+function policyById(id){ return POLICIES.find(function(p){ return p.id===id; }) || null; }
+function dnsPolicyById(id){ return DNS_P.find(function(p){ return p.id===id; }) || null; }
+function geoPolicyById(id){ return GEO_P.find(function(p){ return p.id===id; }) || null; }
+function balancerById(id){ return BALANCERS.find(function(b){ return b.id===id; }) || null; }
 function findNodeByName(name){
   var needle = String(name || '').trim().toLowerCase();
   return NODES.find(function(n){
     return String(n.name || '').trim().toLowerCase() === needle;
   }) || null;
+}
+function policyNameById(id){
+  var policy = policyById(id);
+  return policy ? policy.name : id;
 }
 function sp(s){
   var m={reachable:'pg',degraded:'pa',offline:'pr',unreachable:'pr',unknown:'pq',active:'pg',failed:'pr',dead:'pr',deleted:'pq',planned:'pq',validating:'pb',applying:'pb',running:'pb',succeeded:'pg',success:'pg',pending:'pq',cancelled:'pa',rolled_back:'pa'};
@@ -457,7 +522,11 @@ function renderNodes(){
       +'<td class="m">'+esc(n.management_address)+'</td>'
       +'<td>'+sp(n.status)+'</td>'
       +'<td style="color:var(--t2);font-size:11px;">'+esc((n.caps||[]).join(', ') || '-')+'</td>'
-      +'<td><button class="btn sm" onclick="event.stopPropagation();actionNodeDiscover(\''+esc(n.id)+'\')">PROBE</button></td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionNodeDiscover(\''+esc(n.id)+'\')">PROBE</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openNodeModal(\''+esc(n.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();deleteNodeFlow(\''+esc(n.id)+'\')">DEL</button>'
+      +'</td>'
       +'</tr>';
   }).join('');
 }
@@ -473,6 +542,8 @@ function renderLinks(){
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="event.stopPropagation();actionLinkValidate(\''+esc(l.id)+'\')">VALIDATE</button>'
         +'<button class="btn sm" onclick="event.stopPropagation();actionLinkApply(\''+esc(l.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openLinkModal(\''+esc(l.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();deleteLinkFlow(\''+esc(l.id)+'\')">DEL</button>'
       +'</td>'
       +'</tr>';
   }).join('');
@@ -480,19 +551,57 @@ function renderLinks(){
 function renderPolicies(){
   document.getElementById('ptb').innerHTML = POLICIES.map(function(p){
     return '<tr>'
+      +'<td class="m">'+esc(p.name)+'</td>'
       +'<td class="m">'+esc(nById(p.nid).name)+'</td>'
       +'<td><span class="pill pb">'+esc(p.action)+'</span></td>'
       +'<td>'+esc(String(p.pri))+'</td>'
       +'<td>'+(p.on?'<span class="pill pg">enabled</span>':'<span class="pill pq">disabled</span>')+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="actionRoutePolicyApply(\''+esc(p.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="openRoutePolicyModal(\''+esc(p.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="deleteRoutePolicyFlow(\''+esc(p.id)+'\')">DEL</button>'
+      +'</td>'
       +'</tr>';
   }).join('');
   document.getElementById('dtb').innerHTML = DNS_P.map(function(d){
     return '<tr>'
-      +'<td class="m">'+esc(nById(d.nid).name)+'</td>'
+      +'<td class="m">'+esc(policyNameById(d.route_policy_id))+'</td>'
       +'<td class="m">'+esc(d.addr)+'</td>'
       +'<td>'+(d.on?'<span class="pill pg">enabled</span>':'<span class="pill pq">disabled</span>')+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="actionDNSPolicyApply(\''+esc(d.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="openDNSPolicyModal(\''+esc(d.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="deleteDNSPolicyFlow(\''+esc(d.id)+'\')">DEL</button>'
+      +'</td>'
       +'</tr>';
   }).join('');
+  document.getElementById('gtb').innerHTML = (GEO_P.length ? GEO_P.map(function(g){
+    return '<tr>'
+      +'<td class="m">'+esc(policyNameById(g.route_policy_id))+'</td>'
+      +'<td class="m">'+esc(g.country_code)+'</td>'
+      +'<td><span class="pill pp">'+esc(g.mode)+'</span></td>'
+      +'<td>'+(g.enabled?'<span class="pill pg">enabled</span>':'<span class="pill pq">disabled</span>')+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="actionGeoPolicyApply(\''+esc(g.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="openGeoPolicyModal(\''+esc(g.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="deleteGeoPolicyFlow(\''+esc(g.id)+'\')">DEL</button>'
+      +'</td>'
+      +'</tr>';
+  }).join('') : '<tr><td class="empty-state" colspan="5">No geo policies.</td></tr>');
+  document.getElementById('btb').innerHTML = (BALANCERS.length ? BALANCERS.map(function(b){
+    return '<tr>'
+      +'<td class="m">'+esc(b.name)+'</td>'
+      +'<td class="m">'+esc(nById(b.node_id).name)+'</td>'
+      +'<td><span class="pill pb">'+esc(b.method)+'</span></td>'
+      +'<td>'+esc(String((b.members || []).length))+'</td>'
+      +'<td>'+(b.enabled?'<span class="pill pg">enabled</span>':'<span class="pill pq">disabled</span>')+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="actionBalancerPick(\''+esc(b.id)+'\')">PICK</button>'
+        +'<button class="btn sm" onclick="openBalancerModal(\''+esc(b.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="deleteBalancerFlow(\''+esc(b.id)+'\')">DEL</button>'
+      +'</td>'
+      +'</tr>';
+  }).join('') : '<tr><td class="empty-state" colspan="6">No balancers.</td></tr>');
 }
 function renderJobs(){
   document.getElementById('jtb').innerHTML = JOBS.map(function(j){
@@ -547,6 +656,96 @@ function openDP(title, html){
   document.getElementById('dp').classList.add('open');
 }
 function closeDP(){ document.getElementById('dp').classList.remove('open'); }
+function closeModal(){
+  document.getElementById('modal').classList.remove('open');
+  document.getElementById('modalTitle').textContent = '';
+  document.getElementById('modalBody').innerHTML = '';
+  document.getElementById('modalActions').innerHTML = '';
+}
+function openModal(title, bodyHtml, options){
+  var opts = options || {};
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = bodyHtml;
+  var actions = document.getElementById('modalActions');
+  actions.innerHTML = '';
+  var buttons = opts.buttons || [];
+  buttons.forEach(function(btn){
+    var el = document.createElement('button');
+    el.className = btn.className || 'btn';
+    el.textContent = btn.label;
+    el.type = 'button';
+    el.addEventListener('click', btn.onClick);
+    actions.appendChild(el);
+  });
+  document.getElementById('modal').classList.add('open');
+  var focusSelector = opts.focusSelector || 'input, select, textarea';
+  var target = document.querySelector('#modalBody ' + focusSelector);
+  if(target){ target.focus(); }
+}
+function bindModalForm(formId, onSubmit){
+  var form = document.getElementById(formId);
+  if(!form){ return; }
+  form.addEventListener('submit', function(event){
+    event.preventDefault();
+    onSubmit(new FormData(form));
+  });
+}
+function formInput(label, name, value, extra){
+  return '<div class=\"mf-row '+((extra && extra.full) ? 'full' : '')+'\">'
+    +'<label class=\"mf-label\" for=\"'+esc(name)+'\">'+esc(label)+'</label>'
+    +'<input class=\"mf-input\" id=\"'+esc(name)+'\" name=\"'+esc(name)+'\" value=\"'+esc(value || '')+'\" '+(extra && extra.type ? 'type=\"'+esc(extra.type)+'\"' : 'type=\"text\"')+' '+(extra && extra.placeholder ? 'placeholder=\"'+esc(extra.placeholder)+'\"' : '')+' '+(extra && extra.required ? 'required' : '')+'>'
+    +(extra && extra.help ? '<div class=\"mf-help\">'+esc(extra.help)+'</div>' : '')
+    +'</div>';
+}
+function formSelect(label, name, value, options, extra){
+  return '<div class=\"mf-row '+((extra && extra.full) ? 'full' : '')+'\">'
+    +'<label class=\"mf-label\" for=\"'+esc(name)+'\">'+esc(label)+'</label>'
+    +'<select class=\"mf-select\" id=\"'+esc(name)+'\" name=\"'+esc(name)+'\">'
+    +options.map(function(opt){
+      var optionValue = typeof opt === 'string' ? opt : opt.value;
+      var optionLabel = typeof opt === 'string' ? opt : opt.label;
+      return '<option value=\"'+esc(optionValue)+'\" '+(String(optionValue)===String(value) ? 'selected' : '')+'>'+esc(optionLabel)+'</option>';
+    }).join('')
+    +'</select>'
+    +(extra && extra.help ? '<div class=\"mf-help\">'+esc(extra.help)+'</div>' : '')
+    +'</div>';
+}
+function formTextarea(label, name, value, extra){
+  return '<div class=\"mf-row '+((extra && extra.full !== false) ? 'full' : '')+'\">'
+    +'<label class=\"mf-label\" for=\"'+esc(name)+'\">'+esc(label)+'</label>'
+    +'<textarea class=\"mf-textarea\" id=\"'+esc(name)+'\" name=\"'+esc(name)+'\" '+(extra && extra.placeholder ? 'placeholder=\"'+esc(extra.placeholder)+'\"' : '')+'>'+esc(value || '')+'</textarea>'
+    +(extra && extra.help ? '<div class=\"mf-help\">'+esc(extra.help)+'</div>' : '')
+    +'</div>';
+}
+function formCheckbox(label, name, checked, extra){
+  return '<div class=\"mf-row '+((extra && extra.full) ? 'full' : '')+'\">'
+    +'<label class=\"mf-label\">'+esc(label)+'</label>'
+    +'<label style=\"display:flex;align-items:center;gap:8px;color:var(--t0);\"><input type=\"checkbox\" name=\"'+esc(name)+'\" '+(checked ? 'checked' : '')+'> '+esc(extra && extra.caption ? extra.caption : 'Enabled')+'</label>'
+    +(extra && extra.help ? '<div class=\"mf-help\">'+esc(extra.help)+'</div>' : '')
+    +'</div>';
+}
+function splitLines(value){
+  return String(value || '').split(/\r?\n/).map(function(x){ return x.trim(); }).filter(Boolean);
+}
+function membersToText(members){
+  return (members || []).map(function(member){
+    return [member.interface_name || '', member.gateway || '', member.ping_target || '', member.weight || 1].join(',');
+  }).join('\n');
+}
+function parseMembers(text){
+  return splitLines(text).map(function(line){
+    var parts = line.split(',').map(function(p){ return p.trim(); });
+    return {
+      interface_name: parts[0] || '',
+      gateway: parts[1] || null,
+      ping_target: parts[2] || null,
+      weight: parts[3] ? Number(parts[3]) : 1
+    };
+  }).filter(function(member){ return member.interface_name; });
+}
+function checked(fd, name){
+  return fd.get(name) === 'on';
+}
 function showNode(id){
   var n = NODES.find(function(x){return x.id===id;}); if(!n) return;
   openDP(n.name,
@@ -554,6 +753,8 @@ function showNode(id){
     +'<div class="dp-actions">'
       +'<button class="btn" onclick="actionNodeDiscover(\''+esc(n.id)+'\')">PROBE SSH</button>'
       +'<button class="btn pri" onclick="actionNodeBootstrap(\''+esc(n.id)+'\')">BOOTSTRAP</button>'
+      +'<button class="btn" onclick="openNodeModal(\''+esc(n.id)+'\')">EDIT</button>'
+      +'<button class="btn red" onclick="deleteNodeFlow(\''+esc(n.id)+'\')">DELETE</button>'
     +'</div>'
   );
 }
@@ -575,6 +776,8 @@ function showLink(id){
     +'<div class="dp-actions">'
       +'<button class="btn" onclick="actionLinkValidate(\''+esc(l.id)+'\')">VALIDATE</button>'
       +'<button class="btn pri" onclick="actionLinkApply(\''+esc(l.id)+'\')">APPLY</button>'
+      +'<button class="btn" onclick="openLinkModal(\''+esc(l.id)+'\')">EDIT</button>'
+      +'<button class="btn red" onclick="deleteLinkFlow(\''+esc(l.id)+'\')">DELETE</button>'
     +'</div>'
   );
 }
@@ -686,6 +889,7 @@ async function refreshLinks(){
       right: link.right_node_id,
       topo: link.topology_type,
       state: link.state,
+      spec: spec,
       leftInterface: spec.left && spec.left.interface_name,
       rightInterface: spec.right && spec.right.interface_name,
       leftEndpoint: spec.left && spec.left.endpoint_host ? (spec.left.endpoint_host + ':' + (spec.left.listen_port || '')) : '',
@@ -698,25 +902,48 @@ async function refreshPolicies(){
   var routePolicies = await apiFetch(API_PREFIX + '/route-policies');
   var dnsPolicies = await apiFetch(API_PREFIX + '/dns-policies');
   var geoPolicies = await apiFetch(API_PREFIX + '/geo-policies');
+  var balancers = await apiFetch(API_PREFIX + '/balancers');
   POLICIES = (routePolicies || []).map(function(policy){
     return {
       id: policy.id,
       nid: policy.node_id,
+      name: policy.name,
       action: policy.action,
+      ingress_interface: policy.ingress_interface,
+      target_interface: policy.target_interface,
+      target_gateway: policy.target_gateway,
+      balancer_id: policy.balancer_id,
+      routed_networks: policy.routed_networks || [],
+      excluded_networks: policy.excluded_networks || [],
+      table_id: policy.table_id,
       pri: policy.rule_priority,
+      fwmark: policy.firewall_mark,
+      masquerade: !!policy.masquerade,
       on: !!policy.enabled
     };
   });
   DNS_P = (dnsPolicies || []).map(function(policy){
-    var route = (routePolicies || []).find(function(r){ return r.id === policy.route_policy_id; });
     return {
       id: policy.id,
-      nid: route ? route.node_id : policy.route_policy_id,
+      route_policy_id: policy.route_policy_id,
       addr: policy.dns_address,
+      capture_protocols: policy.capture_protocols || [],
+      capture_ports: policy.capture_ports || [],
+      exceptions_networks: policy.exceptions_networks || [],
       on: !!policy.enabled
     };
   });
-  GEO_P = geoPolicies || [];
+  GEO_P = (geoPolicies || []).map(function(policy){
+    return {
+      id: policy.id,
+      route_policy_id: policy.route_policy_id,
+      country_code: policy.country_code,
+      mode: policy.mode,
+      source_url_template: policy.source_url_template,
+      enabled: !!policy.enabled
+    };
+  });
+  BALANCERS = balancers || [];
   renderPolicies();
 }
 async function refreshJobs(){
@@ -1138,13 +1365,469 @@ async function createPolicyFlow(){
     alert(err && err.message ? err.message : err);
   }
 }
+function openNodeModal(nodeId){
+  var node = nodeId ? nById(nodeId) : null;
+  var authType = node ? node.auth_type : 'password';
+  var body = '<form id="nodeForm"><div class="modal-grid">'
+    +formInput('Name', 'name', node ? node.name : '', {required:true})
+    +formSelect('Role', 'role', node ? node.role : 'mixed', ['gateway','relay','egress','mixed'])
+    +formInput('Management address', 'management_address', node ? node.management_address : '', {required:true})
+    +formInput('SSH host', 'ssh_host', node ? node.ssh_host : '', {required:true})
+    +formInput('SSH port', 'ssh_port', node ? node.ssh_port : '22', {required:true, type:'number'})
+    +formInput('SSH user', 'ssh_user', node ? node.ssh_user : 'root', {required:true})
+    +formSelect('Auth type', 'auth_type', authType, ['password','private_key'])
+    +formSelect('Status', 'status', node ? node.status : 'unknown', ['unknown','reachable','degraded','offline'])
+    +formTextarea(node ? 'New secret (optional)' : 'Secret', 'secret_value', '', {help: node ? 'Leave empty to keep current secret.' : 'Password or private key depending on auth type.'})
+    +'</div></form>';
+  openModal(node ? 'Edit Node' : 'Create Node', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label: node ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('nodeForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('nodeForm', function(fd){ saveNodeForm(fd, nodeId); });
+}
+async function saveNodeForm(fd, nodeId){
+  try{
+    var payload = {
+      name: String(fd.get('name') || '').trim(),
+      role: String(fd.get('role') || 'mixed').trim(),
+      management_address: String(fd.get('management_address') || '').trim(),
+      ssh_host: String(fd.get('ssh_host') || '').trim(),
+      ssh_port: Number(fd.get('ssh_port') || 22),
+      ssh_user: String(fd.get('ssh_user') || '').trim(),
+      auth_type: String(fd.get('auth_type') || 'password').trim()
+    };
+    if(nodeId){ payload.status = String(fd.get('status') || 'unknown').trim(); }
+    var node = await apiFetch(nodeId ? (API_PREFIX + '/nodes/' + encodeURIComponent(nodeId)) : (API_PREFIX + '/nodes'), {
+      method: nodeId ? 'PATCH' : 'POST',
+      body: payload
+    });
+    var secretValue = String(fd.get('secret_value') || '').trim();
+    if(secretValue){
+      await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(node.id) + '/secret', {
+        method:'PUT',
+        body:{
+          kind: payload.auth_type === 'private_key' ? 'ssh_private_key' : 'ssh_password',
+          value: secretValue
+        }
+      });
+    }
+    pushEv(nodeId ? 'node.updated' : 'node.created', 'node ' + node.name + (nodeId ? ' updated' : ' created'));
+    closeModal();
+    await refreshNodes();
+    showNode(node.id);
+  }catch(err){
+    pushEv('node.save.error', 'node save failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function deleteNodeFlow(nodeId){
+  var node = nById(nodeId);
+  if(!confirm('Delete node ' + (node.name || nodeId) + '?')){ return; }
+  try{
+    await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId), { method:'DELETE' });
+    pushEv('node.deleted', 'node ' + (node.name || nodeId) + ' deleted');
+    closeDP();
+    await refreshNodes();
+  }catch(err){
+    pushEv('node.delete.error', 'delete failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+function openLinkModal(linkId){
+  var link = linkId ? linkById(linkId) : null;
+  var spec = link && link.spec ? link.spec : {};
+  var left = spec.left || {};
+  var right = spec.right || {};
+  var peer = spec.peer || {};
+  var obf = spec.awg_obfuscation || {};
+  var nodeOptions = NODES.map(function(n){ return {value:n.id, label:n.name}; });
+  var body = '<form id="linkForm"><div class="modal-grid">'
+    +formInput('Link name', 'name', link ? link.name : '', {required:true})
+    +formSelect('Topology', 'topology_type', link ? link.topo : 'p2p', ['p2p','upstream','relay','balancer_member','service_edge'])
+    +formSelect('Left node', 'left_node_id', link ? link.left : '', nodeOptions)
+    +formSelect('Right node', 'right_node_id', link ? link.right : '', nodeOptions)
+    +formInput('Left interface', 'left_interface_name', left.interface_name || 'awg10', {required:true})
+    +formInput('Right interface', 'right_interface_name', right.interface_name || 'awg11', {required:true})
+    +formInput('Left port', 'left_listen_port', left.listen_port || '8443', {required:true, type:'number'})
+    +formInput('Right port', 'right_listen_port', right.listen_port || '8444', {required:true, type:'number'})
+    +formInput('Left IPv4/CIDR', 'left_address_v4', left.address_v4 || '10.77.77.1/30', {required:true})
+    +formInput('Right IPv4/CIDR', 'right_address_v4', right.address_v4 || '10.77.77.2/30', {required:true})
+    +formInput('Left endpoint host', 'left_endpoint_host', left.endpoint_host || '', {required:true})
+    +formInput('Right endpoint host', 'right_endpoint_host', right.endpoint_host || '', {required:true})
+    +formInput('Left MTU', 'left_mtu', left.mtu || '1420', {required:true, type:'number'})
+    +formInput('Right MTU', 'right_mtu', right.mtu || '1420', {required:true, type:'number'})
+    +formInput('Peer keepalive', 'persistent_keepalive', peer.persistent_keepalive || '21', {required:true, type:'number'})
+    +formInput('Peer MTU', 'peer_mtu', peer.mtu || '1420', {required:true, type:'number'})
+    +formTextarea('Left allowed IPs (CSV)', 'left_allowed_ips', (peer.left_allowed_ips || ['10.77.77.2/32']).join(','), {full:false})
+    +formTextarea('Right allowed IPs (CSV)', 'right_allowed_ips', (peer.right_allowed_ips || ['10.77.77.1/32']).join(','), {full:false})
+    +formInput('Jc', 'jc', obf.jc || '4', {type:'number'})
+    +formInput('Jmin', 'jmin', obf.jmin || '40', {type:'number'})
+    +formInput('Jmax', 'jmax', obf.jmax || '120', {type:'number'})
+    +formInput('S1', 's1', obf.s1 || '20', {type:'number'})
+    +formInput('S2', 's2', obf.s2 || '40', {type:'number'})
+    +formInput('S3', 's3', obf.s3 || '80', {type:'number'})
+    +formInput('S4', 's4', obf.s4 || '120', {type:'number'})
+    +formInput('H1', 'h1', obf.h1 || '10101', {type:'number'})
+    +formInput('H2', 'h2', obf.h2 || '20202', {type:'number'})
+    +formInput('H3', 'h3', obf.h3 || '30303', {type:'number'})
+    +formInput('H4', 'h4', obf.h4 || '40404', {type:'number'})
+    +'</div></form>';
+  openModal(link ? 'Edit Link' : 'Create Link', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label: link ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('linkForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('linkForm', function(fd){ saveLinkForm(fd, linkId); });
+}
+async function saveLinkForm(fd, linkId){
+  try{
+    var body = {
+      name: String(fd.get('name') || '').trim(),
+      topology_type: String(fd.get('topology_type') || 'p2p').trim(),
+      left_node_id: String(fd.get('left_node_id') || '').trim(),
+      right_node_id: String(fd.get('right_node_id') || '').trim(),
+      spec:{
+        mode:'site_to_site',
+        left:{
+          interface_name:String(fd.get('left_interface_name') || '').trim(),
+          listen_port:Number(fd.get('left_listen_port') || 0),
+          address_v4:String(fd.get('left_address_v4') || '').trim(),
+          mtu:Number(fd.get('left_mtu') || 1420),
+          endpoint_host:String(fd.get('left_endpoint_host') || '').trim()
+        },
+        right:{
+          interface_name:String(fd.get('right_interface_name') || '').trim(),
+          listen_port:Number(fd.get('right_listen_port') || 0),
+          address_v4:String(fd.get('right_address_v4') || '').trim(),
+          mtu:Number(fd.get('right_mtu') || 1420),
+          endpoint_host:String(fd.get('right_endpoint_host') || '').trim()
+        },
+        peer:{
+          persistent_keepalive:Number(fd.get('persistent_keepalive') || 21),
+          mtu:Number(fd.get('peer_mtu') || 1420),
+          left_allowed_ips:splitCsv(fd.get('left_allowed_ips')),
+          right_allowed_ips:splitCsv(fd.get('right_allowed_ips'))
+        },
+        awg_obfuscation:{
+          jc:Number(fd.get('jc') || 0),
+          jmin:Number(fd.get('jmin') || 0),
+          jmax:Number(fd.get('jmax') || 0),
+          s1:Number(fd.get('s1') || 0),
+          s2:Number(fd.get('s2') || 0),
+          s3:Number(fd.get('s3') || 0),
+          s4:Number(fd.get('s4') || 0),
+          h1:Number(fd.get('h1') || 0),
+          h2:Number(fd.get('h2') || 0),
+          h3:Number(fd.get('h3') || 0),
+          h4:Number(fd.get('h4') || 0)
+        }
+      }
+    };
+    var link = await apiFetch(linkId ? (API_PREFIX + '/links/' + encodeURIComponent(linkId)) : (API_PREFIX + '/links'), {
+      method: linkId ? 'PATCH' : 'POST',
+      body: linkId ? body : Object.assign({driver_name:'awg'}, body)
+    });
+    pushEv(linkId ? 'link.updated' : 'link.created', 'link ' + link.name + (linkId ? ' updated' : ' created'));
+    closeModal();
+    await refreshLinks();
+    showLink(link.id);
+  }catch(err){
+    pushEv('link.save.error', 'link save failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function deleteLinkFlow(linkId){
+  var link = linkById(linkId);
+  if(!confirm('Delete link ' + (link ? link.name : linkId) + '?')){ return; }
+  try{
+    await apiFetch(API_PREFIX + '/links/' + encodeURIComponent(linkId), { method:'DELETE' });
+    pushEv('link.deleted', 'link ' + (link ? link.name : linkId) + ' deleted');
+    closeDP();
+    await refreshLinks();
+  }catch(err){
+    pushEv('link.delete.error', 'delete failed for ' + linkId + ': ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+function openRoutePolicyModal(policyId){
+  var policy = policyId ? policyById(policyId) : null;
+  var nodeOptions = NODES.map(function(n){ return {value:n.id, label:n.name}; });
+  var balancerOptions = [{value:'', label:'-'}].concat(BALANCERS.map(function(b){ return {value:b.id, label:b.name}; }));
+  var body = '<form id="routePolicyForm"><div class="modal-grid">'
+    +formSelect('Node', 'node_id', policy ? policy.nid : (NODES[0] ? NODES[0].id : ''), nodeOptions)
+    +formInput('Policy name', 'name', policy ? policy.name : '', {required:true})
+    +formInput('Ingress interface', 'ingress_interface', policy ? policy.ingress_interface : 'awg0', {required:true})
+    +formSelect('Action', 'action', policy ? policy.action : 'next_hop', ['direct','next_hop','balancer'])
+    +formInput('Target interface', 'target_interface', policy ? (policy.target_interface || '') : 'awg1', {})
+    +formInput('Target gateway', 'target_gateway', policy ? (policy.target_gateway || '') : '', {})
+    +formSelect('Balancer', 'balancer_id', policy ? (policy.balancer_id || '') : '', balancerOptions)
+    +formInput('Table ID', 'table_id', policy ? policy.table_id : '51820', {type:'number'})
+    +formInput('Rule priority', 'rule_priority', policy ? policy.pri : '10000', {type:'number'})
+    +formInput('Firewall mark', 'firewall_mark', policy ? policy.fwmark : '51820', {type:'number'})
+    +formCheckbox('Masquerade', 'masquerade', policy ? policy.masquerade : true, {caption:'Enable masquerade'})
+    +formCheckbox('Enabled', 'enabled', policy ? policy.on : true, {caption:'Policy enabled'})
+    +formTextarea('Routed networks (CSV)', 'routed_networks', policy ? (policy.routed_networks || []).join(',') : '0.0.0.0/0', {full:true})
+    +formTextarea('Excluded networks (CSV)', 'excluded_networks', policy ? (policy.excluded_networks || []).join(',') : '', {full:true})
+    +'</div></form>';
+  openModal(policy ? 'Edit Route Policy' : 'Create Route Policy', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label: policy ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('routePolicyForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('routePolicyForm', function(fd){ saveRoutePolicyForm(fd, policyId); });
+}
+async function saveRoutePolicyForm(fd, policyId){
+  try{
+    var body = {
+      node_id: String(fd.get('node_id') || '').trim(),
+      name: String(fd.get('name') || '').trim(),
+      ingress_interface: String(fd.get('ingress_interface') || '').trim(),
+      action: String(fd.get('action') || '').trim(),
+      target_interface: String(fd.get('target_interface') || '').trim() || null,
+      target_gateway: String(fd.get('target_gateway') || '').trim() || null,
+      balancer_id: String(fd.get('balancer_id') || '').trim() || null,
+      routed_networks: splitCsv(fd.get('routed_networks')),
+      excluded_networks: splitCsv(fd.get('excluded_networks')),
+      table_id: Number(fd.get('table_id') || 51820),
+      rule_priority: Number(fd.get('rule_priority') || 10000),
+      firewall_mark: Number(fd.get('firewall_mark') || 51820),
+      masquerade: checked(fd, 'masquerade'),
+      enabled: checked(fd, 'enabled')
+    };
+    var policy = await apiFetch(policyId ? (API_PREFIX + '/route-policies/' + encodeURIComponent(policyId)) : (API_PREFIX + '/route-policies'), {
+      method: policyId ? 'PATCH' : 'POST',
+      body: body
+    });
+    pushEv(policyId ? 'policy.updated' : 'policy.created', 'route policy ' + policy.name + (policyId ? ' updated' : ' created'));
+    closeModal();
+    await refreshPolicies();
+  }catch(err){
+    pushEv('policy.save.error', 'route policy save failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function deleteRoutePolicyFlow(policyId){
+  var policy = policyById(policyId);
+  if(!confirm('Delete route policy ' + (policy ? policy.name : policyId) + '?')){ return; }
+  try{
+    await apiFetch(API_PREFIX + '/route-policies/' + encodeURIComponent(policyId), { method:'DELETE' });
+    pushEv('policy.deleted', 'route policy deleted');
+    await refreshPolicies();
+  }catch(err){
+    pushEv('policy.delete.error', 'route policy delete failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function actionRoutePolicyApply(policyId){
+  try{
+    var policy = policyById(policyId);
+    var job = await apiFetch(API_PREFIX + '/route-policies/' + encodeURIComponent(policyId) + '/apply', { method:'POST', body:{} });
+    pushEv('job.created', 'route policy apply queued for ' + (policy ? policy.name : policyId) + ' [' + job.id + ']');
+    await refreshJobs();
+  }catch(err){
+    pushEv('policy.apply.error', 'route policy apply failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+function openDNSPolicyModal(policyId){
+  var policy = policyId ? dnsPolicyById(policyId) : null;
+  var routeOptions = POLICIES.map(function(p){ return {value:p.id, label:p.name}; });
+  var body = '<form id="dnsPolicyForm"><div class="modal-grid">'
+    +formSelect('Route policy', 'route_policy_id', policy ? policy.route_policy_id : (POLICIES[0] ? POLICIES[0].id : ''), routeOptions)
+    +formInput('DNS address', 'dns_address', policy ? policy.addr : '', {required:true})
+    +formCheckbox('Enabled', 'enabled', policy ? policy.on : false, {caption:'DNS interception enabled'})
+    +formTextarea('Capture protocols (CSV)', 'capture_protocols', policy ? (policy.capture_protocols || []).join(',') : 'udp', {full:false})
+    +formTextarea('Capture ports (CSV)', 'capture_ports', policy ? (policy.capture_ports || []).join(',') : '53', {full:false})
+    +formTextarea('Exceptions networks (CSV)', 'exceptions_networks', policy ? (policy.exceptions_networks || []).join(',') : '', {full:true})
+    +'</div></form>';
+  openModal(policy ? 'Edit DNS Policy' : 'Create DNS Policy', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label: policy ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('dnsPolicyForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('dnsPolicyForm', function(fd){ saveDNSPolicyForm(fd, policyId); });
+}
+async function saveDNSPolicyForm(fd, policyId){
+  try{
+    var body = {
+      route_policy_id: String(fd.get('route_policy_id') || '').trim(),
+      enabled: checked(fd, 'enabled'),
+      dns_address: String(fd.get('dns_address') || '').trim(),
+      capture_protocols: splitCsv(fd.get('capture_protocols')).map(function(x){ return x.toLowerCase(); }),
+      capture_ports: splitCsv(fd.get('capture_ports')).map(function(x){ return Number(x); }),
+      exceptions_networks: splitCsv(fd.get('exceptions_networks'))
+    };
+    var policy = await apiFetch(policyId ? (API_PREFIX + '/dns-policies/' + encodeURIComponent(policyId)) : (API_PREFIX + '/dns-policies'), {
+      method: policyId ? 'PATCH' : 'POST',
+      body: body
+    });
+    pushEv(policyId ? 'dns.updated' : 'dns.created', 'dns policy ' + policy.id + (policyId ? ' updated' : ' created'));
+    closeModal();
+    await refreshPolicies();
+  }catch(err){
+    pushEv('dns.save.error', 'dns policy save failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function actionDNSPolicyApply(policyId){
+  try{
+    var job = await apiFetch(API_PREFIX + '/dns-policies/' + encodeURIComponent(policyId) + '/apply', { method:'POST', body:{} });
+    pushEv('job.created', 'dns policy apply queued [' + job.id + ']');
+    await refreshJobs();
+  }catch(err){
+    pushEv('dns.apply.error', 'dns policy apply failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function deleteDNSPolicyFlow(policyId){
+  if(!confirm('Delete DNS policy?')){ return; }
+  try{
+    await apiFetch(API_PREFIX + '/dns-policies/' + encodeURIComponent(policyId), { method:'DELETE' });
+    pushEv('dns.deleted', 'dns policy deleted');
+    await refreshPolicies();
+  }catch(err){
+    pushEv('dns.delete.error', 'dns policy delete failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+function openGeoPolicyModal(policyId){
+  var policy = policyId ? geoPolicyById(policyId) : null;
+  var routeOptions = POLICIES.map(function(p){ return {value:p.id, label:p.name}; });
+  var body = '<form id="geoPolicyForm"><div class="modal-grid">'
+    +formSelect('Route policy', 'route_policy_id', policy ? policy.route_policy_id : (POLICIES[0] ? POLICIES[0].id : ''), routeOptions)
+    +formInput('Country code', 'country_code', policy ? policy.country_code : '', {required:true, placeholder:'RU'})
+    +formSelect('Mode', 'mode', policy ? policy.mode : 'direct', ['direct','multihop'])
+    +formCheckbox('Enabled', 'enabled', policy ? policy.enabled : true, {caption:'Geo rule enabled'})
+    +formTextarea('Source URL template', 'source_url_template', policy ? policy.source_url_template : 'https://www.ipdeny.com/ipblocks/data/aggregated/{country}-aggregated.zone', {full:true})
+    +'</div></form>';
+  openModal(policy ? 'Edit Geo Policy' : 'Create Geo Policy', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label: policy ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('geoPolicyForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('geoPolicyForm', function(fd){ saveGeoPolicyForm(fd, policyId); });
+}
+async function saveGeoPolicyForm(fd, policyId){
+  try{
+    var body = {
+      route_policy_id: String(fd.get('route_policy_id') || '').trim(),
+      country_code: String(fd.get('country_code') || '').trim().toUpperCase(),
+      mode: String(fd.get('mode') || 'direct').trim(),
+      source_url_template: String(fd.get('source_url_template') || '').trim(),
+      enabled: checked(fd, 'enabled')
+    };
+    var policy = await apiFetch(policyId ? (API_PREFIX + '/geo-policies/' + encodeURIComponent(policyId)) : (API_PREFIX + '/geo-policies'), {
+      method: policyId ? 'PATCH' : 'POST',
+      body: body
+    });
+    pushEv(policyId ? 'geo.updated' : 'geo.created', 'geo policy ' + policy.id + (policyId ? ' updated' : ' created'));
+    closeModal();
+    await refreshPolicies();
+  }catch(err){
+    pushEv('geo.save.error', 'geo policy save failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function actionGeoPolicyApply(policyId){
+  try{
+    var job = await apiFetch(API_PREFIX + '/geo-policies/' + encodeURIComponent(policyId) + '/apply', { method:'POST', body:{} });
+    pushEv('job.created', 'geo policy apply queued [' + job.id + ']');
+    await refreshJobs();
+  }catch(err){
+    pushEv('geo.apply.error', 'geo policy apply failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function deleteGeoPolicyFlow(policyId){
+  if(!confirm('Delete geo policy?')){ return; }
+  try{
+    await apiFetch(API_PREFIX + '/geo-policies/' + encodeURIComponent(policyId), { method:'DELETE' });
+    pushEv('geo.deleted', 'geo policy deleted');
+    await refreshPolicies();
+  }catch(err){
+    pushEv('geo.delete.error', 'geo policy delete failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+function openBalancerModal(balancerId){
+  var balancer = balancerId ? balancerById(balancerId) : null;
+  var nodeOptions = NODES.map(function(n){ return {value:n.id, label:n.name}; });
+  var body = '<form id="balancerForm"><div class="modal-grid">'
+    +formSelect('Node', 'node_id', balancer ? balancer.node_id : (NODES[0] ? NODES[0].id : ''), nodeOptions)
+    +formInput('Name', 'name', balancer ? balancer.name : '', {required:true})
+    +formSelect('Method', 'method', balancer ? balancer.method : 'random', ['random','leastload','leastping'])
+    +formCheckbox('Enabled', 'enabled', balancer ? balancer.enabled : true, {caption:'Balancer enabled'})
+    +formTextarea('Members', 'members', balancer ? membersToText(balancer.members) : '', {full:true, help:'One member per line: interface_name,gateway,ping_target,weight'})
+    +'</div></form>';
+  openModal(balancer ? 'Edit Balancer' : 'Create Balancer', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label: balancer ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('balancerForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('balancerForm', function(fd){ saveBalancerForm(fd, balancerId); });
+}
+async function saveBalancerForm(fd, balancerId){
+  try{
+    var body = {
+      node_id: String(fd.get('node_id') || '').trim(),
+      name: String(fd.get('name') || '').trim(),
+      method: String(fd.get('method') || 'random').trim(),
+      members: parseMembers(fd.get('members')),
+      enabled: checked(fd, 'enabled')
+    };
+    var balancer = await apiFetch(balancerId ? (API_PREFIX + '/balancers/' + encodeURIComponent(balancerId)) : (API_PREFIX + '/balancers'), {
+      method: balancerId ? 'PATCH' : 'POST',
+      body: body
+    });
+    pushEv(balancerId ? 'balancer.updated' : 'balancer.created', 'balancer ' + balancer.name + (balancerId ? ' updated' : ' created'));
+    closeModal();
+    await refreshPolicies();
+  }catch(err){
+    pushEv('balancer.save.error', 'balancer save failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function actionBalancerPick(balancerId){
+  try{
+    var result = await apiFetch(API_PREFIX + '/balancers/' + encodeURIComponent(balancerId) + '/pick', { method:'POST', body:{} });
+    pushEv('balancer.pick', 'pick -> ' + result.interface_name + (result.gateway ? (' via ' + result.gateway) : ''));
+  }catch(err){
+    pushEv('balancer.pick.error', 'balancer pick failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function deleteBalancerFlow(balancerId){
+  var balancer = balancerById(balancerId);
+  if(!confirm('Delete balancer ' + (balancer ? balancer.name : balancerId) + '?')){ return; }
+  try{
+    await apiFetch(API_PREFIX + '/balancers/' + encodeURIComponent(balancerId), { method:'DELETE' });
+    pushEv('balancer.deleted', 'balancer deleted');
+    await refreshPolicies();
+  }catch(err){
+    pushEv('balancer.delete.error', 'balancer delete failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
 function wireStaticButtons(){
-  var addNodeBtn = document.querySelector('#page-nodes .btn.pri');
-  var addLinkBtn = document.querySelector('#page-links .btn.pri');
-  var addPolicyBtn = document.querySelector('#page-policies .btn.pri');
-  if(addNodeBtn){ addNodeBtn.addEventListener('click', createNodeFlow); }
-  if(addLinkBtn){ addLinkBtn.addEventListener('click', createLinkFlow); }
-  if(addPolicyBtn){ addPolicyBtn.addEventListener('click', createPolicyFlow); }
+  var addNodeBtn = document.getElementById('btnAddNode');
+  var addLinkBtn = document.getElementById('btnAddLink');
+  var addRouteBtn = document.getElementById('btnAddRoutePolicy');
+  var addDNSBtn = document.getElementById('btnAddDNSPolicy');
+  var addGeoBtn = document.getElementById('btnAddGeoPolicy');
+  var addBalancerBtn = document.getElementById('btnAddBalancer');
+  if(addNodeBtn){ addNodeBtn.addEventListener('click', function(){ openNodeModal(); }); }
+  if(addLinkBtn){ addLinkBtn.addEventListener('click', function(){ openLinkModal(); }); }
+  if(addRouteBtn){ addRouteBtn.addEventListener('click', function(){ openRoutePolicyModal(); }); }
+  if(addDNSBtn){ addDNSBtn.addEventListener('click', function(){ openDNSPolicyModal(); }); }
+  if(addGeoBtn){ addGeoBtn.addEventListener('click', function(){ openGeoPolicyModal(); }); }
+  if(addBalancerBtn){ addBalancerBtn.addEventListener('click', function(){ openBalancerModal(); }); }
 }
 document.querySelectorAll('.nav-item').forEach(function(el){
   el.addEventListener('click', function(){
@@ -1197,6 +1880,10 @@ document.getElementById('ubtn').addEventListener('click', async function(){
     }catch(_){ }
     authRedirect('');
   }
+});
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('modal').addEventListener('click', function(event){
+  if(event.target && event.target.id === 'modal'){ closeModal(); }
 });
 wireStaticButtons();
 (async function init(){

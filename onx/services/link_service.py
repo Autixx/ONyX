@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from onx.core.config import get_settings
 from onx.core.keys import generate_wireguard_keypair
+from onx.db.models.job import Job, JobState, JobTargetType
 from onx.db.models.link import Link, LinkState
 from onx.db.models.link_endpoint import LinkEndpoint, LinkSide
 from onx.db.models.node import Node
@@ -12,7 +13,7 @@ from onx.db.models.node_capability import NodeCapability
 from onx.db.models.node_secret import NodeSecretKind
 from onx.deploy.ssh_executor import SSHExecutor
 from onx.drivers.registry import get_driver
-from onx.schemas.links import LinkCreate
+from onx.schemas.links import LinkCreate, LinkUpdate
 from onx.services.interface_runtime_service import InterfaceRuntimeService
 from onx.services.node_runtime_bootstrap_service import RUNTIME_CAPABILITY_NAME
 from onx.services.secret_service import SecretService
@@ -76,6 +77,103 @@ class LinkService:
         db.commit()
         db.refresh(link)
         return link
+
+    def update_link(self, db: Session, link: Link, payload: LinkUpdate) -> Link:
+        if payload.name and payload.name != link.name:
+            existing = db.scalar(select(Link).where(Link.name == payload.name))
+            if existing is not None:
+                raise ValueError(f"Link with name '{payload.name}' already exists.")
+
+        left_node_id = payload.left_node_id or link.left_node_id
+        right_node_id = payload.right_node_id or link.right_node_id
+        if left_node_id == right_node_id:
+            raise ValueError("left_node_id and right_node_id must be different")
+
+        left_node = db.get(Node, left_node_id)
+        right_node = db.get(Node, right_node_id)
+        if left_node is None or right_node is None:
+            raise ValueError("Both left and right nodes must exist.")
+
+        left_endpoint = db.scalar(
+            select(LinkEndpoint).where(
+                LinkEndpoint.link_id == link.id,
+                LinkEndpoint.side == LinkSide.LEFT,
+            )
+        )
+        right_endpoint = db.scalar(
+            select(LinkEndpoint).where(
+                LinkEndpoint.link_id == link.id,
+                LinkEndpoint.side == LinkSide.RIGHT,
+            )
+        )
+        if left_endpoint is None or right_endpoint is None:
+            raise ValueError("Link endpoints are missing.")
+
+        changed = False
+        if payload.name is not None and payload.name != link.name:
+            link.name = payload.name
+            changed = True
+        if payload.topology_type is not None and payload.topology_type.value != link.topology_type:
+            link.topology_type = payload.topology_type.value
+            changed = True
+        if left_node_id != link.left_node_id:
+            link.left_node_id = left_node_id
+            left_endpoint.node_id = left_node_id
+            changed = True
+        if right_node_id != link.right_node_id:
+            link.right_node_id = right_node_id
+            right_endpoint.node_id = right_node_id
+            changed = True
+        if payload.spec is not None:
+            spec = payload.spec.model_dump()
+            link.desired_spec_json = spec
+
+            left_endpoint.interface_name = payload.spec.left.interface_name
+            left_endpoint.listen_port = payload.spec.left.listen_port
+            left_endpoint.address_v4 = payload.spec.left.address_v4
+            left_endpoint.address_v6 = payload.spec.left.address_v6
+            left_endpoint.mtu = payload.spec.left.mtu
+            left_endpoint.endpoint = f"{payload.spec.left.endpoint_host}:{payload.spec.left.listen_port}"
+
+            right_endpoint.interface_name = payload.spec.right.interface_name
+            right_endpoint.listen_port = payload.spec.right.listen_port
+            right_endpoint.address_v4 = payload.spec.right.address_v4
+            right_endpoint.address_v6 = payload.spec.right.address_v6
+            right_endpoint.mtu = payload.spec.right.mtu
+            right_endpoint.endpoint = f"{payload.spec.right.endpoint_host}:{payload.spec.right.listen_port}"
+            changed = True
+
+        if changed:
+            link.state = LinkState.PLANNED
+            link.applied_spec_json = None
+            link.health_summary_json = None
+            for endpoint in (left_endpoint, right_endpoint):
+                endpoint.public_key = None
+                endpoint.private_key_secret_ref = None
+                endpoint.rendered_config = None
+                endpoint.applied_state_json = None
+                db.add(endpoint)
+
+        db.add(link)
+        db.commit()
+        db.refresh(link)
+        return link
+
+    def delete_link(self, db: Session, link: Link) -> None:
+        active_job = db.scalar(
+            select(Job).where(
+                Job.target_type == JobTargetType.LINK,
+                Job.target_id == link.id,
+                Job.state.in_([JobState.PENDING, JobState.RUNNING]),
+            )
+        )
+        if active_job is not None:
+            raise ValueError(
+                f"Link '{link.name}' has active job '{active_job.id}' "
+                f"in state '{active_job.state.value}'."
+            )
+        db.delete(link)
+        db.commit()
 
     def validate_link(self, db: Session, link: Link) -> dict:
         left_capabilities = list(

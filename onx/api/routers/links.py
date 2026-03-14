@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -6,7 +6,7 @@ from onx.api.deps import get_database_session
 from onx.db.models.job import JobKind, JobTargetType
 from onx.db.models.link import Link
 from onx.schemas.jobs import JobEnqueueOptions, JobRead
-from onx.schemas.links import LinkCreate, LinkRead, LinkValidateResponse
+from onx.schemas.links import LinkCreate, LinkRead, LinkUpdate, LinkValidateResponse
 from onx.services.job_service import JobConflictError, JobService
 from onx.services.link_service import LinkService
 
@@ -35,6 +35,33 @@ def get_link(link_id: str, db: Session = Depends(get_database_session)) -> Link:
     if link is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found.")
     return link
+
+
+@router.patch("/{link_id}", response_model=LinkRead)
+def update_link(
+    link_id: str,
+    payload: LinkUpdate,
+    db: Session = Depends(get_database_session),
+) -> Link:
+    link = db.get(Link, link_id)
+    if link is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found.")
+    try:
+        return link_service.update_link(db, link, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.delete("/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_link(link_id: str, db: Session = Depends(get_database_session)) -> Response:
+    link = db.get(Link, link_id)
+    if link is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found.")
+    try:
+        link_service.delete_link(db, link)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{link_id}/validate", response_model=LinkValidateResponse)

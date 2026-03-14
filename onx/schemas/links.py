@@ -82,6 +82,16 @@ class LinkCreate(BaseModel):
     spec: AWGLinkSpec
 
 
+class LinkUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    topology_type: LinkTopologyTypeValue | None = None
+    left_node_id: str | None = None
+    right_node_id: str | None = None
+    spec: AWGLinkSpec | None = None
+
+
 class LinkEndpointRead(ONXBaseModel):
     id: str
     link_id: str
