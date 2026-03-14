@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.orm import Session
 
 from onx.db.models.node import Node, NodeStatus
@@ -238,3 +238,22 @@ class NodeAgentService:
             item["last_seen_at"] = registry.last_seen_at
 
         return sorted(summary.values(), key=lambda item: (-item["total_bytes"], item["peer_public_key"]))
+
+    def build_node_traffic_usage_gb_map(self, db: Session) -> dict[str, float]:
+        usage_bytes: dict[str, int] = {}
+        for item in self.list_peer_traffic_summary(db):
+            owner_node_id = item.get("owner_node_id")
+            if not owner_node_id:
+                continue
+            usage_bytes[owner_node_id] = usage_bytes.get(owner_node_id, 0) + int(item.get("total_bytes", 0) or 0)
+        gib = 1024 * 1024 * 1024
+        return {node_id: round(total / gib, 3) for node_id, total in usage_bytes.items()}
+
+    def build_node_peer_count_map(self, db: Session) -> dict[str, int]:
+        rows = db.execute(
+            select(
+                PeerTrafficState.node_id,
+                func.count(distinct(PeerTrafficState.peer_public_key)),
+            ).group_by(PeerTrafficState.node_id)
+        ).all()
+        return {str(node_id): int(count) for node_id, count in rows}

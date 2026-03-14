@@ -40,6 +40,8 @@ class NodeCreate(BaseModel):
     ssh_port: int = Field(default=22, ge=1, le=65535)
     ssh_user: str = Field(min_length=1, max_length=64)
     auth_type: NodeAuthTypeValue
+    registered_at: datetime | None = None
+    traffic_limit_gb: float | None = Field(default=None, ge=0.0)
 
 
 class NodeUpdate(BaseModel):
@@ -53,6 +55,8 @@ class NodeUpdate(BaseModel):
     ssh_user: str | None = Field(default=None, min_length=1, max_length=64)
     auth_type: NodeAuthTypeValue | None = None
     status: NodeStatusValue | None = None
+    registered_at: datetime | None = None
+    traffic_limit_gb: float | None = Field(default=None, ge=0.0)
 
 
 class NodeRead(ONXBaseModel):
@@ -68,6 +72,9 @@ class NodeRead(ONXBaseModel):
     os_family: str | None
     os_version: str | None
     kernel_version: str | None
+    registered_at: datetime
+    traffic_limit_gb: float | None
+    traffic_used_gb: float | None
     last_seen_at: datetime | None
     created_at: datetime
     updated_at: datetime

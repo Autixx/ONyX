@@ -2,7 +2,7 @@ from datetime import datetime
 from onx.compat import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Enum, Integer, String, func
+from sqlalchemy import DateTime, Enum, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from onx.db.base import Base
@@ -53,6 +53,12 @@ class Node(Base):
     os_family: Mapped[str | None] = mapped_column(String(64), nullable=True)
     os_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     kernel_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    registered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    traffic_limit_gb: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

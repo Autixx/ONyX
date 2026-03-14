@@ -4,12 +4,13 @@ import heapq
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.orm import Session
 
 from onx.db.models.link import Link, LinkState
 from onx.db.models.link_endpoint import LinkEndpoint, LinkSide
 from onx.db.models.node import Node, NodeStatus
+from onx.db.models.peer_traffic_state import PeerTrafficState
 from onx.db.models.probe_result import ProbeResult, ProbeType
 from onx.schemas.topology import PathPlanRequest
 
@@ -21,6 +22,13 @@ class TopologyService:
         endpoint_map = self._load_endpoint_map(db, [link.id for link in links])
 
         graph_nodes = []
+        peer_count_rows = db.execute(
+            select(
+                PeerTrafficState.node_id,
+                func.count(distinct(PeerTrafficState.peer_public_key)),
+            ).group_by(PeerTrafficState.node_id)
+        ).all()
+        peer_count_map = {str(node_id): int(count) for node_id, count in peer_count_rows}
         for node in nodes:
             ping_probe = self._latest_probe(db, node_id=node.id, interface_name=None, probe_type=ProbeType.PING)
             load_probe = self._latest_probe(db, node_id=node.id, interface_name=None, probe_type=ProbeType.INTERFACE_LOAD)
@@ -34,6 +42,7 @@ class TopologyService:
                     "last_seen_at": node.last_seen_at,
                     "metrics": {
                         "load_ratio": self._extract_load_ratio(load_probe),
+                        "peer_count": peer_count_map.get(node.id, 0),
                         "ping_ms": self._extract_latency_ms(ping_probe),
                         "last_probe_at": self._probe_timestamp(ping_probe, load_probe),
                     },

@@ -7,6 +7,7 @@ from onx.schemas.common import ONXBaseModel
 
 class GraphNodeMetricsRead(ONXBaseModel):
     load_ratio: float | None
+    peer_count: int
     ping_ms: float | None
     last_probe_at: datetime | None
 
