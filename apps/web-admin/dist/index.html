@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ONyX вЂ” Control Plane</title>
+<title>ONyX ” Control Plane</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 :root{
@@ -11,10 +11,10 @@
   --acc:#00c8b4;--acc2:#00e5cc;--adim:rgba(0,200,180,0.07);
   --bdr:rgba(0,200,180,0.14);--bdr2:rgba(0,200,180,0.28);
   --red:#ff4560;--amb:#f5a623;--grn:#00e676;--blu:#4da6ff;--pur:#a78bfa;
-  --t0:#e8f0f8;--t1:#8fa8c0;--t2:#4a6478;
+  --t0:#f0f6fc;--t1:#b8d0e8;--t2:#6e8fa8;
   --mono:'Courier New',Courier,monospace;
 }
-html,body{height:100%;background:var(--bg0);color:var(--t0);font-family:var(--mono);font-size:13px;}
+html,body{height:100%;background:var(--bg0);color:var(--t0);font-family:var(--mono);font-size:17px;}
 body{display:flex;flex-direction:column;}
 
 /* в”Ђв”Ђ SCROLLBARS в”Ђв”Ђ */
@@ -25,44 +25,55 @@ body{display:flex;flex-direction:column;}
 /* в”Ђв”Ђ LOGIN в”Ђв”Ђ */
 #loginWrap{position:fixed;inset:0;background:var(--bg0);display:flex;align-items:center;justify-content:center;z-index:100;}
 .lbox{width:320px;background:var(--bg2);border:1px solid var(--bdr2);border-radius:4px;padding:36px 32px;}
-.llogo{font-size:22px;font-weight:700;color:var(--acc2);letter-spacing:.12em;margin-bottom:2px;}
-.lsub{font-size:10px;color:var(--t2);margin-bottom:28px;letter-spacing:.1em;}
-.flbl{display:block;font-size:10px;color:var(--t2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px;}
-.finp{width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:9px 11px;color:var(--t0);font-family:var(--mono);font-size:13px;outline:none;margin-bottom:12px;transition:border-color .12s;}
+.llogo{font-size:25px;font-weight:700;color:var(--acc2);letter-spacing:.12em;margin-bottom:2px;}
+.lsub{font-size:13px;color:var(--t1);margin-bottom:28px;letter-spacing:.1em;text-shadow:0 0 12px rgba(0,200,180,0.18);}
+.flbl{display:block;font-size:12px;color:var(--t1);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px;}
+.finp{width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:9px 11px;color:var(--t0);font-family:var(--mono);font-size:15px;outline:none;margin-bottom:12px;transition:border-color .12s;}
 .finp:focus{border-color:var(--acc);}
-.lerr{font-size:11px;color:var(--red);min-height:16px;margin-bottom:8px;}
-.lbtn{width:100%;padding:10px;background:var(--acc);color:#080c10;border:none;border-radius:3px;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.06em;transition:background .12s;}
+.lerr{font-size:13px;color:var(--red);min-height:16px;margin-bottom:8px;}
+.lbtn{width:100%;padding:10px;background:var(--acc);color:#080c10;border:none;border-radius:3px;font-family:var(--mono);font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.06em;transition:background .12s;}
 .lbtn:hover{background:var(--acc2);}
 
 /* в”Ђв”Ђ APP SHELL в”Ђв”Ђ */
 #appWrap{display:none;flex-direction:column;height:100vh;overflow:hidden;}
 
 /* в”Ђв”Ђ TOPBAR в”Ђв”Ђ */
-.topbar{height:46px;background:var(--bg1);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 20px;gap:14px;flex-shrink:0;}
-.logo{font-size:16px;font-weight:700;color:var(--acc2);letter-spacing:.12em;}
-.logo-sep{color:var(--t2);font-size:11px;letter-spacing:.1em;}
+.topbar{height:44px;background:var(--bg1);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 16px;gap:0;flex-shrink:0;}
+.logo{font-size:17px;font-weight:700;color:var(--acc2);letter-spacing:.12em;white-space:nowrap;}
+.logo-sep{color:var(--t2);font-size:13px;letter-spacing:.1em;}
 .ws-row{display:flex;align-items:center;gap:6px;margin-left:auto;}
 .wsdot{width:7px;height:7px;border-radius:50%;background:var(--grn);animation:blink 2.2s ease-in-out infinite;}
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:.25;}}
 .wsdot.off{background:var(--red);animation:none;}
-.wslbl{font-size:11px;color:var(--t1);}
-.ubtn{font-size:11px;color:var(--t1);padding:4px 11px;border:1px solid var(--bdr);border-radius:3px;cursor:pointer;background:none;font-family:var(--mono);margin-left:12px;transition:all .12s;}
+.wslbl{font-size:13px;color:var(--t1);}
+.ubtn{font-size:13px;color:var(--t1);padding:4px 11px;border:1px solid var(--bdr);border-radius:3px;cursor:pointer;background:none;font-family:var(--mono);margin-left:12px;transition:all .12s;}
 .ubtn:hover{color:var(--t0);border-color:var(--bdr2);}
 
 /* в”Ђв”Ђ LAYOUT в”Ђв”Ђ */
 .layout{display:flex;flex:1;overflow:hidden;}
 
 /* в”Ђв”Ђ SIDEBAR в”Ђв”Ђ */
-.sidebar{width:196px;background:var(--bg1);border-right:1px solid var(--bdr);flex-shrink:0;overflow-y:auto;display:flex;flex-direction:column;}
+.sidebar{display:none;}
 .nav-grp{padding:14px 0 6px;}
-.nav-lbl{font-size:9px;letter-spacing:.16em;color:var(--t2);padding:0 16px;margin-bottom:3px;text-transform:uppercase;}
-.nav-item{display:flex;align-items:center;gap:9px;padding:8px 16px;cursor:pointer;color:var(--t1);font-size:12px;border-left:2px solid transparent;transition:all .12s;user-select:none;white-space:nowrap;}
+.nav-lbl{font-size:11px;letter-spacing:.16em;color:var(--t1);padding:0 16px;margin-bottom:3px;text-transform:uppercase;}
+.nav-item{display:flex;align-items:center;gap:7px;padding:10px 20px;cursor:pointer;color:var(--t0);font-size:14px;border-bottom:2px solid transparent;border-top:2px solid transparent;transition:all .12s;user-select:none;white-space:nowrap;letter-spacing:.02em;}
 .nav-item:hover{color:var(--t0);background:var(--adim);}
-.nav-item.active{color:var(--acc2);border-left-color:var(--acc);background:var(--adim);}
-.nbadge{margin-left:auto;font-size:10px;padding:1px 6px;border-radius:2px;}
+.nav-item.active{color:var(--acc2);border-bottom-color:var(--acc);background:var(--adim);}
+.nbadge{margin-left:auto;font-size:12px;padding:1px 6px;border-radius:2px;}
 .nbadge.ok{background:rgba(0,230,118,.12);color:var(--grn);}
 .nbadge.err{background:rgba(255,69,96,.15);color:var(--red);}
-.sidebar-footer{margin-top:auto;padding:12px 16px;border-top:1px solid var(--bdr);font-size:10px;color:var(--t2);}
+.sidebar-footer{margin-top:auto;padding:12px 16px;border-top:1px solid var(--bdr);font-size:12px;color:var(--t1);}
+
+/* ── LANG SWITCHER ── */
+.lang-switcher{display:flex;align-items:center;gap:4px;margin-left:8px;}
+.lang-btn{font-size:12px;padding:3px 7px;border:1px solid var(--bdr);border-radius:2px;background:none;color:var(--t1);cursor:pointer;font-family:var(--mono);transition:all .12s;letter-spacing:.05em;}
+.lang-btn:hover{color:var(--t0);border-color:var(--bdr2);}
+.lang-btn.active{color:var(--acc2);border-color:var(--acc);background:var(--adim);}
+
+/* ── REGISTRATIONS ── */
+.reg-row-pending td{border-left:2px solid var(--acc);}
+.reg-row-rejected td{opacity:.5;}
+.reg-actions{display:flex;gap:5px;}
 
 /* в”Ђв”Ђ MAIN в”Ђв”Ђ */
 .main{flex:1;overflow-y:auto;overflow-x:hidden;background:var(--bg0);}
@@ -71,39 +82,39 @@ body{display:flex;flex-direction:column;}
 
 /* в”Ђв”Ђ PAGE HEADER в”Ђв”Ђ */
 .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
-.ptitle{font-size:16px;font-weight:700;color:var(--t0);letter-spacing:.05em;display:flex;align-items:center;gap:10px;}
-.tag{font-size:10px;color:var(--acc);border:1px solid var(--bdr2);padding:2px 7px;border-radius:2px;letter-spacing:.08em;}
+.ptitle{font-size:18px;font-weight:700;color:var(--t0);letter-spacing:.05em;display:flex;align-items:center;gap:10px;}
+.tag{font-size:12px;color:var(--acc);border:1px solid var(--bdr2);padding:2px 7px;border-radius:2px;letter-spacing:.08em;}
 .pbtn-row{display:flex;gap:8px;}
 
 /* в”Ђв”Ђ BUTTONS в”Ђв”Ђ */
-.btn{padding:7px 14px;font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:3px;border:1px solid var(--bdr2);background:transparent;color:var(--acc);transition:all .12s;}
+.btn{padding:7px 14px;font-family:var(--mono);font-size:13px;cursor:pointer;border-radius:3px;border:1px solid var(--bdr2);background:transparent;color:var(--acc);transition:all .12s;}
 .btn:hover{background:var(--adim);border-color:var(--acc);}
 .btn.pri{background:var(--acc);color:#080c10;border-color:var(--acc);}
 .btn.pri:hover{background:var(--acc2);}
 .btn.red{color:var(--red);border-color:rgba(255,69,96,.3);}
 .btn.red:hover{background:rgba(255,69,96,.08);}
-.btn.sm{padding:3px 9px;font-size:10px;}
+.btn.sm{padding:3px 9px;font-size:12px;}
 
 /* в”Ђв”Ђ STAT GRID в”Ђв”Ђ */
 .sgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px;}
 .scard{background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;padding:14px 16px;}
-.slbl{font-size:9px;color:var(--t2);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;}
-.sval{font-size:24px;font-weight:700;color:var(--t0);line-height:1;}
-.ssub{font-size:10px;color:var(--t2);margin-top:5px;}
+.slbl{font-size:11px;color:var(--t1);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;}
+.sval{font-size:27px;font-weight:700;color:var(--t0);line-height:1;}
+.ssub{font-size:12px;color:var(--t1);margin-top:5px;}
 
 /* в”Ђв”Ђ TABLE в”Ђв”Ђ */
 .tw{background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;overflow:hidden;margin-bottom:18px;}
-.th-row{padding:9px 14px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;font-size:10px;color:var(--t2);letter-spacing:.08em;text-transform:uppercase;}
+.th-row{padding:9px 14px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--t2);letter-spacing:.08em;text-transform:uppercase;}
 table{width:100%;border-collapse:collapse;}
-thead th{text-align:left;padding:9px 14px;font-size:9px;color:var(--t2);letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid var(--bdr);font-weight:400;}
+thead th{text-align:left;padding:9px 14px;font-size:11px;color:var(--t1);letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid var(--bdr);font-weight:400;}
 tbody tr{border-bottom:1px solid rgba(0,200,180,.04);cursor:pointer;transition:background .1s;}
 tbody tr:last-child{border-bottom:none;}
 tbody tr:hover{background:var(--adim);}
-td{padding:9px 14px;color:var(--t1);font-size:12px;vertical-align:middle;}
+td{padding:9px 14px;color:var(--t0);font-size:14px;vertical-align:middle;}
 td.m{color:var(--t0);}
 
 /* в”Ђв”Ђ PILLS в”Ђв”Ђ */
-.pill{display:inline-block;padding:2px 7px;border-radius:2px;font-size:10px;letter-spacing:.03em;}
+.pill{display:inline-block;padding:2px 7px;border-radius:2px;font-size:12px;letter-spacing:.03em;}
 .pg{background:rgba(0,230,118,.1);color:var(--grn);}
 .pr{background:rgba(255,69,96,.1);color:var(--red);}
 .pa{background:rgba(245,166,35,.1);color:var(--amb);}
@@ -113,8 +124,8 @@ td.m{color:var(--t0);}
 
 /* в”Ђв”Ђ EVENT LOG в”Ђв”Ђ */
 .elog{background:var(--bg1);border:1px solid var(--bdr);border-radius:4px;height:200px;overflow-y:auto;padding:10px 12px;}
-.eline{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid rgba(0,200,180,.03);font-size:11px;}
-.et{color:var(--t2);flex-shrink:0;width:54px;}
+.eline{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid rgba(0,200,180,.03);font-size:13px;}
+.et{color:var(--t1);flex-shrink:0;width:60px;}
 .ety{flex-shrink:0;width:150px;}
 .ety.sys{color:var(--acc);}
 .ety.job{color:var(--blu);}
@@ -122,16 +133,16 @@ td.m{color:var(--t0);}
 .ety.err{color:var(--red);}
 
 /* в”Ђв”Ђ SECTION TITLE в”Ђв”Ђ */
-.stitle{font-size:9px;color:var(--t2);letter-spacing:.14em;text-transform:uppercase;margin:18px 0 8px;}
+.stitle{font-size:11px;color:var(--t1);letter-spacing:.14em;text-transform:uppercase;margin:18px 0 8px;}
 
 /* в”Ђв”Ђ TWO COL в”Ђв”Ђ */
 .two{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 
 /* в”Ђв”Ђ CANVAS в”Ђв”Ђ */
-#tc{width:100%;height:440px;background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:crosshair;}
+#tc{width:100%;background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:crosshair;}
 
 /* в”Ђв”Ђ JOB LOG в”Ђв”Ђ */
-.jlog{background:var(--bg0);border:1px solid var(--bdr);border-radius:3px;padding:10px 12px;font-size:11px;color:var(--t1);margin-top:10px;max-height:200px;overflow-y:auto;line-height:1.9;}
+.jlog{background:var(--bg0);border:1px solid var(--bdr);border-radius:3px;padding:10px 12px;font-size:13px;color:var(--t1);margin-top:10px;max-height:200px;overflow-y:auto;line-height:1.9;}
 .jlog .ok{color:var(--grn);}
 .jlog .er{color:var(--red);}
 .jlog .inf{color:var(--blu);}
@@ -139,11 +150,11 @@ td.m{color:var(--t0);}
 /* в”Ђв”Ђ DETAIL PANEL в”Ђв”Ђ */
 .dp{position:fixed;right:0;top:0;bottom:0;width:380px;background:var(--bg2);border-left:1px solid var(--bdr2);padding:22px 20px;transform:translateX(100%);transition:transform .18s ease;z-index:50;overflow-y:auto;}
 .dp.open{transform:translateX(0);}
-.dp-close{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--t1);font-size:18px;cursor:pointer;line-height:1;transition:color .1s;}
+.dp-close{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--t1);font-size:20px;cursor:pointer;line-height:1;transition:color .1s;}
 .dp-close:hover{color:var(--t0);}
-.dp-title{font-size:15px;font-weight:700;color:var(--t0);margin-bottom:18px;padding-right:24px;}
-.drow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bdr);font-size:12px;}
-.dk{color:var(--t2);}
+.dp-title{font-size:17px;font-weight:700;color:var(--t0);margin-bottom:18px;padding-right:24px;}
+.drow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bdr);font-size:14px;}
+.dk{color:var(--t1);}
 .dv{color:var(--t0);text-align:right;max-width:220px;word-break:break-all;}
 .dp-actions{display:flex;gap:8px;margin-top:16px;}
 
@@ -153,7 +164,7 @@ td.m{color:var(--t0);}
 #page-apidebug textarea{font-family:var(--mono);}
 
 /* в”Ђв”Ђ GRID OVERLAY в”Ђв”Ђ */
-.topo-legend{display:flex;gap:16px;margin-top:10px;font-size:11px;color:var(--t2);}
+.topo-legend{display:flex;gap:16px;margin-top:10px;font-size:13px;color:var(--t1);}
 .topo-meta{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;}
 
 /* в”Ђв”Ђ MODAL FORM в”Ђв”Ђ */
@@ -161,25 +172,48 @@ td.m{color:var(--t0);}
 .modal.open{display:flex;}
 .modal-box{width:min(760px,92vw);max-height:86vh;overflow-y:auto;background:var(--bg2);border:1px solid var(--bdr2);border-radius:4px;box-shadow:0 20px 60px rgba(0,0,0,.45);}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--bdr);}
-.modal-title{font-size:14px;font-weight:700;color:var(--t0);letter-spacing:.05em;}
-.modal-close{background:none;border:none;color:var(--t1);font-size:18px;cursor:pointer;line-height:1;}
+.modal-title{font-size:16px;font-weight:700;color:var(--t0);letter-spacing:.05em;}
+.modal-close{background:none;border:none;color:var(--t1);font-size:20px;cursor:pointer;line-height:1;}
 .modal-body{padding:16px;}
 .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 .modal-grid.one{grid-template-columns:1fr;}
 .mf-row{display:flex;flex-direction:column;gap:6px;}
 .mf-row.full{grid-column:1 / -1;}
-.mf-label{font-size:10px;color:var(--t2);letter-spacing:.1em;text-transform:uppercase;}
-.mf-input,.mf-select,.mf-textarea{width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:9px 11px;color:var(--t0);font-family:var(--mono);font-size:12px;outline:none;}
+.mf-label{font-size:12px;color:var(--t1);letter-spacing:.1em;text-transform:uppercase;}
+.mf-input,.mf-select,.mf-textarea{width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:9px 11px;color:var(--t0);font-family:var(--mono);font-size:14px;outline:none;}
 .mf-textarea{min-height:84px;resize:vertical;}
 .mf-input:focus,.mf-select:focus,.mf-textarea:focus{border-color:var(--acc);}
-.mf-help{font-size:10px;color:var(--t2);line-height:1.5;}
+.mf-help{font-size:12px;color:var(--t2);line-height:1.5;}
 .mf-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 16px 16px;}
-.empty-state{padding:12px 14px;color:var(--t2);font-size:12px;}
+.empty-state{padding:12px 14px;color:var(--t1);font-size:14px;}
+
+/* ── TOPBAR ADDITIONS ── */
+.topbar-center{flex:1;display:flex;align-items:center;justify-content:center;}
+.sys-stats{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--grn);border:1px solid rgba(0,200,180,0.3);border-radius:3px;padding:3px 12px;letter-spacing:.04em;}
+.sys-stats-dot{width:6px;height:6px;border-radius:50%;background:var(--grn);animation:blink 2.2s ease-in-out infinite;flex-shrink:0;}
+.topbar-right{display:flex;align-items:center;gap:6px;}
+.logout-btn{font-size:13px;color:var(--red);padding:4px 11px;border:1px solid rgba(255,69,96,0.35);border-radius:3px;cursor:pointer;background:rgba(255,69,96,0.06);font-family:var(--mono);transition:all .12s;}
+.logout-btn:hover{background:rgba(255,69,96,0.12);border-color:var(--red);}
+.ubtn{font-size:13px;color:var(--t1);padding:4px 11px;border:1px solid rgba(167,139,250,0.35);border-radius:3px;cursor:pointer;background:rgba(167,139,250,0.06);font-family:var(--mono);transition:all .12s;}
+.ubtn:hover{color:var(--pur);border-color:var(--pur);}
+/* ── NAV TABS BAR ── */
+.navtabs{background:var(--bg1);border-bottom:1px solid var(--bdr);display:flex;overflow-x:auto;padding:0;flex-shrink:0;}
+.navtabs::-webkit-scrollbar{height:0;}
+.nav-grp{display:contents;}
+.nav-lbl{display:none;}
+.sidebar-footer{display:none;}
+
+/* ── PEER CONFIG EDITOR ── */
+.config-editor{width:100%;min-height:320px;background:var(--bg0);border:1px solid var(--bdr);border-radius:3px;padding:12px;color:var(--acc2);font-family:var(--mono);font-size:13px;outline:none;resize:vertical;line-height:1.7;tab-size:2;}
+.config-editor:focus{border-color:var(--acc);}
+/* ── TRAFFIC WARN ── */
+.traffic-warn{color:var(--amb);}
+.traffic-crit{color:var(--red);}
 </style>
 </head>
 <body>
 
-<!-- в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ LOGIN в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ -->
+<!-- ════════════════ LOGIN ════════════════ -->
 <div id="loginWrap">
   <div class="lbox">
     <div class="llogo">ONyX</div>
@@ -187,56 +221,52 @@ td.m{color:var(--t0);}
     <label class="flbl">Username</label>
     <input class="finp" id="iu" type="text" autocomplete="username" placeholder="operator">
     <label class="flbl">Password</label>
-    <input class="finp" id="ip" type="password" autocomplete="current-password" placeholder="вЂўвЂўвЂўвЂўвЂўвЂўвЂўвЂў">
+    <input class="finp" id="ip" type="password" autocomplete="current-password" placeholder="••••••••">
     <div class="lerr" id="lerr"></div>
     <button class="lbtn" id="lbtn">AUTHENTICATE</button>
   </div>
 </div>
 
-<!-- в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ APP в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ -->
+<!-- ════════════════ APP ════════════════ -->
 <div id="appWrap">
 
   <!-- TOPBAR -->
   <div class="topbar">
-    <div class="logo">ONyX</div>
-    <span class="logo-sep">CONTROL PLANE</span>
-    <div class="ws-row">
-      <div class="wsdot" id="wsd"></div>
-      <span class="wslbl" id="wsl">WS CONNECTED</span>
+    <div class="logo">ONyX&nbsp;<span style="font-size:12px;font-weight:400;color:var(--t1);letter-spacing:.08em;">control plane</span></div>
+    <div class="topbar-center">
+      <div class="sys-stats">
+        <div class="sys-stats-dot"></div>
+        <span id="sysCpu">CPU --%</span>&nbsp;/&nbsp;<span id="sysRam">RAM -- GB</span>
+      </div>
     </div>
-    <button class="ubtn" id="ubtn">admin в–ѕ</button>
+    <div class="topbar-right">
+      <div class="wsdot" id="wsd"></div>
+      <span class="wslbl" id="wsl" style="display:none"></span>
+      <div class="lang-switcher">
+        <button class="lang-btn active" onclick="setLang('en')">EN</button>
+        <button class="lang-btn" onclick="setLang('ru')">RU</button>
+      </div>
+      <button class="ubtn" id="ubtn">user &#9662;</button>
+      <button class="logout-btn" id="logoutBtn">Logout</button>
+    </div>
   </div>
 
+  <!-- NAV TABS -->
+  <div class="navtabs" id="navtabs">
+    <div class="nav-item active" data-p="system"><span data-i18n="nav.system">System</span></div>
+    <div class="nav-item" data-p="nodes"><span data-i18n="nav.nodes">Nodes</span> <span class="nbadge ok" id="nbn">0</span></div>
+    <div class="nav-item" data-p="links"><span data-i18n="nav.links">Links</span> <span class="nbadge ok" id="lbn">0</span></div>
+    <div class="nav-item" data-p="peers"><span data-i18n="nav.peers">Peers</span> <span class="nbadge ok" id="peersBadge" style="display:none">0</span></div>
+    <div class="nav-item" data-p="policies"><span data-i18n="nav.policies">Policies</span></div>
+    <div class="nav-item" data-p="jobs"><span data-i18n="nav.jobs">Jobs</span> <span class="nbadge err" id="jbn" style="display:none">0</span></div>
+    <div class="nav-item" data-p="registrations"><span data-i18n="nav.registrations">Registrations</span> <span class="nbadge ok" id="regBadge" style="display:none">0</span></div>
+    <div class="nav-item" data-p="audit"><span data-i18n="nav.audit">Audit / Access</span></div>
+    <div class="nav-item" data-p="topology"><span data-i18n="nav.topology">Topology</span></div>
+    <div class="nav-item" data-p="apidebug"><span data-i18n="nav.apidebug">API Debug</span></div>
+  </div><!-- /navtabs -->
+  <div class="sidebar" style="display:none"></div>
+
   <div class="layout">
-
-    <!-- SIDEBAR -->
-    <div class="sidebar">
-      <div class="nav-grp">
-        <div class="nav-lbl">Core</div>
-        <div class="nav-item active" data-p="system"><span>в—€</span> System</div>
-        <div class="nav-item" data-p="nodes"><span>в¬Ў</span> Nodes <span class="nbadge ok" id="nbn">5</span></div>
-        <div class="nav-item" data-p="links"><span>вџ·</span> Links <span class="nbadge ok">3</span></div>
-      </div>
-      <div class="nav-grp">
-        <div class="nav-lbl">Policy</div>
-        <div class="nav-item" data-p="policies"><span>вЉћ</span> Policies</div>
-      </div>
-      <div class="nav-grp">
-        <div class="nav-lbl">Operations</div>
-        <div class="nav-item" data-p="jobs"><span>в—Ћ</span> Jobs <span class="nbadge err">2</span></div>
-        <div class="nav-item" data-p="audit"><span>в°</span> Audit / Access</div>
-      </div>
-      <div class="nav-grp">
-        <div class="nav-lbl">Visual</div>
-        <div class="nav-item" data-p="topology"><span>в—‰</span> Topology</div>
-        <div class="nav-item" data-p="apidebug"><span>вЊҐ</span> API Debug</div>
-      </div>
-      <div class="sidebar-footer">
-        ONX v0.2.0-alpha<br>
-        <span style="color:var(--acc);font-size:9px;">в—Џ same-origin</span>
-      </div>
-    </div>
-
     <!-- MAIN -->
     <div class="main">
 
@@ -252,7 +282,7 @@ td.m{color:var(--t0);}
           <div class="scard"><div class="slbl">Nodes Online</div><div class="sval">4/5</div><div class="ssub" style="color:var(--amb)">1 degraded</div></div>
           <div class="scard"><div class="slbl">Active Links</div><div class="sval">3</div><div class="ssub" style="color:var(--grn)">all active</div></div>
         </div>
-        <div class="stitle">Live Event Stream вЂ” WS /api/v1/ws/admin/events</div>
+        <div class="stitle">Live Event Stream ” WS /api/v1/ws/admin/events</div>
         <div class="elog" id="elog"></div>
       </div>
 
@@ -261,8 +291,8 @@ td.m{color:var(--t0);}
         <div class="ph">
           <span class="ptitle">Nodes</span>
           <div class="pbtn-row">
-            <input class="mf-input" id="nodeSearch" placeholder="search nodes" style="width:180px;padding:7px 10px;font-size:11px;">
-            <select class="mf-select" id="nodeStatusFilter" style="width:140px;padding:7px 10px;font-size:11px;">
+            <input class="mf-input" id="nodeSearch" placeholder="search nodes" style="width:180px;padding:7px 10px;font-size:13px;">
+            <select class="mf-select" id="nodeStatusFilter" style="width:140px;padding:7px 10px;font-size:13px;">
               <option value="">all statuses</option>
               <option value="reachable">reachable</option>
               <option value="degraded">degraded</option>
@@ -274,7 +304,7 @@ td.m{color:var(--t0);}
         </div>
         <div class="tw">
           <table>
-            <thead><tr><th>Name</th><th>Role</th><th>Mgmt Address</th><th>Status</th><th>Capabilities</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Role</th><th>Mgmt Address</th><th>Status</th><th>Traffic Used</th><th>Limit</th><th>Capabilities</th><th>Actions</th></tr></thead>
             <tbody id="ntb"></tbody>
           </table>
         </div>
@@ -285,8 +315,8 @@ td.m{color:var(--t0);}
         <div class="ph">
           <span class="ptitle">Links</span>
           <div class="pbtn-row">
-            <input class="mf-input" id="linkSearch" placeholder="search links" style="width:180px;padding:7px 10px;font-size:11px;">
-            <select class="mf-select" id="linkStateFilter" style="width:140px;padding:7px 10px;font-size:11px;">
+            <input class="mf-input" id="linkSearch" placeholder="search links" style="width:180px;padding:7px 10px;font-size:13px;">
+            <select class="mf-select" id="linkStateFilter" style="width:140px;padding:7px 10px;font-size:13px;">
               <option value="">all states</option>
               <option value="planned">planned</option>
               <option value="active">active</option>
@@ -362,7 +392,7 @@ td.m{color:var(--t0);}
       <div class="page" id="page-jobs">
         <div class="ph">
           <span class="ptitle">Jobs</span>
-          <select style="background:var(--bg2);border:1px solid var(--bdr);color:var(--t1);padding:6px 10px;border-radius:3px;font-family:var(--mono);font-size:11px;">
+          <select style="background:var(--bg2);border:1px solid var(--bdr);color:var(--t1);padding:6px 10px;border-radius:3px;font-family:var(--mono);font-size:13px;">
             <option>All states</option><option>pending</option><option>running</option><option>success</option><option>failed</option>
           </select>
         </div>
@@ -385,26 +415,26 @@ td.m{color:var(--t0);}
         <div class="ph">
           <span class="ptitle">Topology</span>
           <div class="pbtn-row">
-            <button class="btn" id="btnPlanPath">PLAN PATH</button>
-            <button class="btn" onclick="refreshTopology().then(drawTopo)">REFRESH</button>
+            <button class="btn" id="btnPlanPath" data-i18n="topo.planpath">PLAN PATH</button>
+            <button class="btn" onclick="refreshTopology().then(drawTopo)" data-i18n="topo.refresh">REFRESH</button>
           </div>
         </div>
-        <canvas id="tc"></canvas>
+        <svg id="tc" width="100%" height="480" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:default;"></svg>
         <div class="topo-legend">
-          <span><span style="color:var(--grn)">в—Џ</span> reachable</span>
-          <span><span style="color:var(--amb)">в—Џ</span> degraded</span>
-          <span><span style="color:var(--red)">в—Џ</span> unreachable</span>
-          <span><span style="color:var(--t2)">в—Џ</span> unknown</span>
-          <span style="margin-left:auto;color:var(--t2)">click node for detail</span>
+          <span><span style="color:var(--grn)">●</span> <span data-i18n="topo.reachable">reachable</span></span>
+          <span><span style="color:var(--amb)">●</span> <span data-i18n="topo.degraded">degraded</span></span>
+          <span><span style="color:var(--red)">●</span> <span data-i18n="topo.unreachable">unreachable</span></span>
+          <span><span style="color:var(--t1)">●</span> <span data-i18n="topo.unknown">unknown</span></span>
+          <span style="margin-left:auto;color:var(--t1)" data-i18n="topo.hint">click node for detail</span>
         </div>
         <div class="topo-meta">
           <div class="tw">
-            <div class="th-row"><span>Graph Snapshot</span></div>
-            <div style="padding:12px 14px;" id="topoSummary">// awaiting graph...</div>
+            <div class="th-row"><span data-i18n="topo.snapshot">Graph Snapshot</span></div>
+            <div style="padding:12px 14px;font-size:14px;color:var(--t1);line-height:1.7;" id="topoSummary">// awaiting graph...</div>
           </div>
           <div class="tw">
-            <div class="th-row"><span>Path Overlay</span></div>
-            <div style="padding:12px 14px;" id="topoPathSummary">// no path planned</div>
+            <div class="th-row"><span data-i18n="topo.pathoverlay">Path Overlay</span></div>
+            <div style="padding:12px 14px;font-size:14px;color:var(--t1);line-height:1.7;" id="topoPathSummary">// no path planned</div>
           </div>
         </div>
       </div>
@@ -413,15 +443,81 @@ td.m{color:var(--t0);}
       <div class="page" id="page-apidebug">
         <div class="ph"><span class="ptitle">API Debug</span></div>
         <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
-          <select id="am" style="background:var(--bg2);border:1px solid var(--bdr);color:var(--acc);padding:8px 10px;border-radius:3px;font-size:12px;width:90px;">
+          <select id="am" style="background:var(--bg2);border:1px solid var(--bdr);color:var(--acc);padding:8px 10px;border-radius:3px;font-size:14px;width:90px;">
             <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
           </select>
-          <input id="ap" style="flex:1;background:var(--bg2);border:1px solid var(--bdr);border-radius:3px;padding:8px 12px;color:var(--t0);font-size:13px;outline:none;transition:border-color .12s;" value="/api/v1/health" onfocus="this.style.borderColor='var(--acc)'" onblur="this.style.borderColor='var(--bdr)'">
+          <input id="ap" style="flex:1;background:var(--bg2);border:1px solid var(--bdr);border-radius:3px;padding:8px 12px;color:var(--t0);font-size:15px;outline:none;transition:border-color .12s;" value="/api/v1/health" onfocus="this.style.borderColor='var(--acc)'" onblur="this.style.borderColor='var(--bdr)'">
           <button class="btn pri" onclick="apiCall()">SEND</button>
         </div>
-        <textarea id="ab" style="width:100%;height:80px;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:10px 12px;color:var(--t1);font-size:12px;outline:none;resize:vertical;font-family:var(--mono);" placeholder="// JSON request body (for POST / PUT)"></textarea>
+        <textarea id="ab" style="width:100%;height:80px;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:10px 12px;color:var(--t1);font-size:14px;outline:none;resize:vertical;font-family:var(--mono);" placeholder="// JSON request body (for POST / PUT)"></textarea>
         <div class="stitle">Response</div>
-        <pre id="ar" style="background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:14px;font-size:12px;color:var(--t1);overflow:auto;max-height:340px;white-space:pre-wrap;line-height:1.7;">// awaiting request...</pre>
+        <pre id="ar" style="background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:14px;font-size:14px;color:var(--t1);overflow:auto;max-height:340px;white-space:pre-wrap;line-height:1.7;">// awaiting request...</pre>
+      </div>
+
+
+      <!-- REGISTRATIONS -->
+      <div class="page" id="page-registrations">
+        <div class="ph">
+          <span class="ptitle" data-i18n="page.registrations">Registrations</span>
+          <div class="pbtn-row">
+            <select id="regStatusFilter" class="mf-select" style="width:160px;padding:7px 10px;font-size:13px;">
+              <option value="" data-i18n="reg.filter.all">all statuses</option>
+              <option value="pending" data-i18n="reg.filter.pending">pending</option>
+              <option value="approved" data-i18n="reg.filter.approved">approved</option>
+              <option value="rejected" data-i18n="reg.filter.rejected">rejected</option>
+            </select>
+            <button class="btn" onclick="loadRegistrations()" data-i18n="reg.refresh">REFRESH</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th data-i18n="reg.col.login">Login</th>
+                <th data-i18n="reg.col.email">E-mail</th>
+                <th data-i18n="reg.col.date">Date</th>
+                <th data-i18n="reg.col.refcode">Referral Code</th>
+                <th data-i18n="reg.col.devices">Devices</th>
+                <th data-i18n="reg.col.status">Status</th>
+                <th data-i18n="reg.col.actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="regtb"></tbody>
+          </table>
+        </div>
+      </div>
+
+
+      <!-- PEERS -->
+      <div class="page" id="page-peers">
+        <div class="ph">
+          <span class="ptitle">Peers</span>
+          <div class="pbtn-row">
+            <input class="mf-input" id="peerSearch" placeholder="search peers..." style="width:200px;padding:7px 10px;font-size:13px;">
+            <select class="mf-select" id="peerNodeFilter" style="width:160px;padding:7px 10px;font-size:13px;">
+              <option value="">all nodes</option>
+            </select>
+            <button class="btn" onclick="loadPeers()">REFRESH</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Login</th>
+                <th>E-mail</th>
+                <th>Node</th>
+                <th>Registered</th>
+                <th>Config Expires</th>
+                <th>Last IP</th>
+                <th>Traffic 24h</th>
+                <th>Traffic Month</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="peerstb"></tbody>
+          </table>
+        </div>
       </div>
 
     </div><!-- /main -->
@@ -430,7 +526,7 @@ td.m{color:var(--t0);}
 
 <!-- DETAIL PANEL -->
 <div class="dp" id="dp">
-  <button class="dp-close" onclick="closeDP()">вњ•</button>
+  <button class="dp-close" onclick="closeDP()">&#10005;</button>
   <div class="dp-title" id="dpt"></div>
   <div id="dpb"></div>
 </div>
@@ -461,6 +557,7 @@ var DNS_P = [];
 var GEO_P = [];
 var BALANCERS = [];
 var AUDIT_EVTS = [];
+var PEERS = [];
 var JOB_EVENTS = {};
 var GRAPH_DATA = {nodes:[], edges:[], generated_at:null};
 var TOPO_HITBOXES = {nodes:[], edges:[]};
@@ -583,12 +680,14 @@ function renderNodes(){
     return true;
   });
   document.getElementById('ntb').innerHTML = rowsData.length ? rowsData.map(function(n){
+    var trafficPct = (n.traffic_limit_gb && n.traffic_used_gb != null) ? n.traffic_used_gb/n.traffic_limit_gb : null;
+    var trafficCls = trafficPct >= 1.0 ? 'traffic-crit' : trafficPct >= 0.8 ? 'traffic-warn' : '';
     return '<tr onclick="showNode(\''+esc(n.id)+'\')">'
       +'<td class="m">'+esc(n.name)+'</td>'
       +'<td>'+rp(n.role)+'</td>'
       +'<td class="m">'+esc(n.management_address)+'</td>'
       +'<td>'+sp(n.status)+'</td>'
-      +'<td style="color:var(--t2);font-size:11px;">'+esc((n.caps||[]).join(', ') || '-')+'</td>'
+      +'<td class="'+trafficCls+'">'+(n.traffic_used_gb != null ? n.traffic_used_gb+' GB' : '-')+'</td>'+'<td style="color:var(--t1)">'+(n.traffic_limit_gb ? n.traffic_limit_gb+' GB' : '—')+'</td>'+'<td style="color:var(--t2);font-size:13px;">'+esc((n.caps||[]).join(', ') || '-')+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="event.stopPropagation();actionNodeDiscover(\''+esc(n.id)+'\')">PROBE</button>'
         +'<button class="btn sm" onclick="event.stopPropagation();openNodeModal(\''+esc(n.id)+'\')">EDIT</button>'
@@ -701,9 +800,9 @@ function renderJobs(){
       actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobRetry(\''+esc(j.id)+'\')">RETRY</button>';
     }
     return '<tr onclick="showJob(\''+esc(j.id)+'\')">'
-      +'<td style="color:var(--t2);font-size:11px;">'+esc(j.id)+'</td>'
+      +'<td style="color:var(--t2);font-size:13px;">'+esc(j.id)+'</td>'
       +'<td class="m">'+esc(j.kind)+'</td>'
-      +'<td style="font-size:11px;color:var(--t1);">'+esc(j.tt+':'+j.ti)+'</td>'
+      +'<td style="font-size:13px;color:var(--t1);">'+esc(j.tt+':'+j.ti)+'</td>'
       +'<td>'+sp(j.state)+'</td>'
       +'<td style="color:var(--t2);">'+esc(j.ts)+'</td>'
       +'<td style="display:flex;gap:5px;">'+actions+'</td>'
@@ -1024,6 +1123,8 @@ function connectWS(){
       if(type.indexOf('job.') === 0){ refreshJobs().catch(function(){}); }
       if(type.indexOf('link.') === 0){ refreshLinks().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type.indexOf('node.') === 0){ refreshNodes().catch(function(){}); refreshTopology().catch(function(){}); }
+      if(type.indexOf('registration.') === 0){ loadRegistrations().catch(function(){}); }
+      if(type.indexOf('peer.') === 0){ loadPeers().catch(function(){}); }
       if(type === 'audit.event'){ refreshAudit().catch(function(){}); }
     }catch(_){ }
   };
@@ -1168,7 +1269,17 @@ async function refreshHealth(){
   pushEv('system.ping', 'GET /api/v1/health and /api/v1/health/worker completed');
 }
 async function loadData(){
-  await Promise.all([refreshNodes(), refreshLinks(), refreshPolicies(), refreshJobs(), refreshAudit(), refreshHealth(), refreshTopology()]);
+  await Promise.all([
+    refreshNodes(),
+    refreshLinks(),
+    refreshPolicies(),
+    refreshJobs(),
+    refreshAudit(),
+    refreshHealth(),
+    refreshTopology(),
+    loadPeers(),
+    loadRegistrations()
+  ]);
 }
 async function healthCheck(){
   try{ await refreshHealth(); }
@@ -1289,99 +1400,315 @@ function showGraphEdge(id){
   );
 }
 function drawTopo(){
-  var canvas = document.getElementById('tc');
-  if(!canvas){ return; }
-  var ctx = canvas.getContext('2d');
-  var W = canvas.offsetWidth || 800;
-  var H = 440;
-  canvas.width = W; canvas.height = H;
-  ctx.clearRect(0,0,W,H);
-  TOPO_HITBOXES = {nodes:[], edges:[]};
+  var svg = document.getElementById('tc');
+  if(!svg){ return; }
+  var W = svg.getBoundingClientRect().width || 900;
+  var H = 480;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.setAttribute('height', H);
+
   var graphNodes = GRAPH_DATA.nodes || [];
   var graphEdges = GRAPH_DATA.edges || [];
-  var pos = buildNodePositions(W, H, graphNodes);
-  var sc = {reachable:'#00e676',degraded:'#f5a623',offline:'#ff4560',unreachable:'#ff4560',unknown:'#4a6478'};
-  graphEdges.forEach(function(l){
-    var a = pos[l.left_node_id], b = pos[l.right_node_id]; if(!a||!b) return;
-    var mid = edgeMidpoint(a, b);
-    var inPath = !!(TOPO_PATH && (TOPO_PATH.linkIds || []).indexOf(l.id) !== -1);
-    var metrics = l.metrics || {};
-    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
-    ctx.strokeStyle = inPath ? 'rgba(77,166,255,0.92)' : (l.state==='active' ? 'rgba(0,200,180,0.28)' : 'rgba(255,69,96,0.28)');
-    ctx.lineWidth = inPath ? 3 : 1.5;
-    ctx.setLineDash(inPath ? [] : [5,5]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    TOPO_HITBOXES.edges.push({id:l.id, x1:a.x, y1:a.y, x2:b.x, y2:b.y});
-    ctx.fillStyle = inPath ? 'rgba(77,166,255,0.95)' : 'rgba(0,200,180,0.7)';
-    ctx.font = '10px Courier New,monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(l.driver_name || '-', mid.x, mid.y - 7);
-    ctx.fillStyle = 'rgba(138,168,192,0.5)';
-    ctx.fillText((l.left_interface || '?') + '→' + (l.right_interface || '?'), mid.x, mid.y + 8);
-    ctx.fillStyle = 'rgba(232,240,248,.52)';
-    ctx.fillText(
-      (metrics.latency_ms != null ? Number(metrics.latency_ms).toFixed(1) + 'ms' : '-') +
-      ' / ' +
-      (metrics.load_ratio != null ? Number(metrics.load_ratio).toFixed(2) : '-') +
-      ' / ' +
-      (metrics.loss_pct != null ? Number(metrics.loss_pct).toFixed(1) + '%' : '-'),
-      mid.x,
-      mid.y + 23
-    );
-  });
-  graphNodes.forEach(function(n){
-    var p = pos[n.id]; if(!p) return;
-    var col = sc[n.status]||'#4a6478';
-    ctx.beginPath(); ctx.arc(p.x,p.y,24,0,Math.PI*2);
-    ctx.strokeStyle = col; ctx.lineWidth = 1.5;
-    ctx.fillStyle = '#111820'; ctx.fill(); ctx.stroke();
-    var ri = {gateway:'G',relay:'R',egress:'E',mixed:'M'}[n.role]||'?';
-    ctx.fillStyle = col;
-    ctx.font = 'bold 13px Courier New,monospace';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(ri, p.x, p.y);
-    ctx.font = '10px Courier New,monospace';
-    ctx.fillStyle = 'rgba(232,240,248,.72)';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(n.name, p.x, p.y+38);
-    ctx.beginPath(); ctx.arc(p.x+16,p.y-16,4,0,Math.PI*2);
-    ctx.fillStyle = col; ctx.fill();
-    TOPO_HITBOXES.nodes.push({id:n.id, x:p.x, y:p.y, r:24});
-  });
-  if(TOPO_PATH){
-    ctx.fillStyle = 'rgba(77,166,255,.9)';
-    ctx.font = '11px Courier New,monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('PATH SCORE: ' + Number(TOPO_PATH.total_score || 0).toFixed(3), 16, 26);
-  }
-  renderTopologyMeta();
-}
-function bindTopologyCanvas(){
-  var canvas = document.getElementById('tc');
-  if(!canvas || canvas.dataset.bound === '1'){ return; }
-  canvas.dataset.bound = '1';
-  canvas.addEventListener('click', function(event){
-    var rect = canvas.getBoundingClientRect();
-    var x = event.clientX - rect.left;
-    var y = event.clientY - rect.top;
-    for(var i = 0; i < TOPO_HITBOXES.nodes.length; i++){
-      var node = TOPO_HITBOXES.nodes[i];
-      if(Math.hypot(x - node.x, y - node.y) <= node.r){
-        showGraphNode(node.id);
-        return;
-      }
-    }
-    var nearest = null;
-    TOPO_HITBOXES.edges.forEach(function(edge){
-      var dist = pointSegmentDistance(x, y, edge.x1, edge.y1, edge.x2, edge.y2);
-      if(dist <= 10 && (!nearest || dist < nearest.dist)){
-        nearest = {id:edge.id, dist:dist};
+
+  // Keep existing user-dragged positions, only init new nodes
+  if(!svg._nodePos) svg._nodePos = {};
+  var pos = svg._nodePos;
+  var existing = Object.keys(pos);
+  var allIds = graphNodes.map(function(n){ return n.id; });
+  // Remove stale
+  existing.forEach(function(id){ if(allIds.indexOf(id) === -1) delete pos[id]; });
+  // Init missing via circular layout
+  var missing = graphNodes.filter(function(n){ return !pos[n.id]; });
+  if(missing.length){
+    var total = graphNodes.length;
+    var cx = W/2, cy = H/2;
+    var r = Math.max(100, Math.min(W, H) * 0.32);
+    graphNodes.forEach(function(n, i){
+      if(!pos[n.id]){
+        var angle = (Math.PI * 2 * i / total) - Math.PI/2;
+        pos[n.id] = { x: cx + Math.cos(angle)*r, y: cy + Math.sin(angle)*r };
       }
     });
-    if(nearest){ showGraphEdge(nearest.id); }
+  }
+
+  var sc = {reachable:'#00e676',degraded:'#f5a623',offline:'#ff4560',unreachable:'#ff4560',unknown:'#6e8fa8'};
+  var ns = 'http://www.w3.org/2000/svg';
+
+  function mk(tag, attrs){
+    var el = document.createElementNS(ns, tag);
+    Object.keys(attrs).forEach(function(k){ el.setAttribute(k, attrs[k]); });
+    return el;
+  }
+
+  // Clear and rebuild
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+
+  // Defs for arrowhead
+  var defs = mk('defs',{});
+  var marker = mk('marker',{id:'arr',markerWidth:'8',markerHeight:'8',refX:'6',refY:'3',orient:'auto'});
+  var markerPath = mk('path',{d:'M0,0 L0,6 L8,3 z',fill:'rgba(0,200,180,0.5)'});
+  marker.appendChild(markerPath);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  // Edge layer group
+  var edgeG = mk('g',{id:'topo-edges'});
+  svg.appendChild(edgeG);
+  // Node layer group (on top)
+  var nodeG = mk('g',{id:'topo-nodes'});
+  svg.appendChild(nodeG);
+
+  // Draw edges
+  graphEdges.forEach(function(l){
+    var a = pos[l.left_node_id], b = pos[l.right_node_id];
+    if(!a||!b) return;
+    var inPath = !!(TOPO_PATH && (TOPO_PATH.linkIds||[]).indexOf(l.id) !== -1);
+    var mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+    var metrics = l.metrics || {};
+
+    var line = mk('line',{
+      x1:a.x, y1:a.y, x2:b.x, y2:b.y,
+      stroke: inPath ? 'rgba(77,166,255,0.9)' : (l.state==='active' ? 'rgba(0,200,180,0.35)' : 'rgba(255,69,96,0.35)'),
+      'stroke-width': inPath ? 3 : 1.5,
+      'stroke-dasharray': inPath ? 'none' : '6,5',
+      style:'cursor:pointer'
+    });
+    line.addEventListener('click', function(){ showGraphEdge(l.id); });
+    edgeG.appendChild(line);
+
+    // Driver label
+    var tdrv = mk('text',{
+      x:mx, y:my-10,
+      'text-anchor':'middle',
+      fill: inPath ? '#4da6ff' : '#00dcc8',
+      'font-size':'12',
+      'font-weight':'bold',
+      'font-family':'Courier New,monospace',
+      style:'pointer-events:none'
+    });
+    tdrv.textContent = l.driver_name || l.driver || '-';
+    edgeG.appendChild(tdrv);
+
+    // Interface label
+    var tiface = mk('text',{
+      x:mx, y:my+8,
+      'text-anchor':'middle',
+      fill:'#b8d0e8',
+      'font-size':'11',
+      'font-family':'Courier New,monospace',
+      style:'pointer-events:none'
+    });
+    tiface.textContent = (l.left_interface||'?') + '→' + (l.right_interface||'?');
+    edgeG.appendChild(tiface);
+
+    // Metrics
+    var lat = metrics.latency_ms != null ? Number(metrics.latency_ms).toFixed(1)+'ms' : null;
+    if(lat){
+      var tmet = mk('text',{
+        x:mx, y:my+22,
+        'text-anchor':'middle',
+        fill:'rgba(184,208,232,0.65)',
+        'font-size':'10',
+        'font-family':'Courier New,monospace',
+        style:'pointer-events:none'
+      });
+      tmet.textContent = lat + (metrics.loss_pct != null ? ' / '+Number(metrics.loss_pct).toFixed(1)+'%' : '');
+      edgeG.appendChild(tmet);
+    }
+  });
+
+  // Draw nodes
+  graphNodes.forEach(function(n){
+    var p = pos[n.id];
+    var col = sc[n.status] || '#6e8fa8';
+    var ri = {gateway:'G',relay:'R',egress:'E',mixed:'M'}[n.role] || '?';
+    var R = 26;
+
+    var g = mk('g',{
+      id:'topo-node-'+n.id,
+      transform:'translate('+p.x+','+p.y+')',
+      style:'cursor:grab'
+    });
+
+    // Traffic warning badge
+    var nodeData = NODES.find(function(nd){ return nd.id === n.id; }) || {};
+    var trafficState = getNodeTrafficState(nodeData);
+    if(trafficState){
+      var badgeColor = trafficState === 'crit' ? '#ff4560' : '#f5a623';
+      // Triangle
+      var tri = mk('polygon',{
+        points:'0,-'+( R+22)+' -10,-'+(R+6)+' 10,-'+(R+6),
+        fill:badgeColor, opacity:'0.92'
+      });
+      g.appendChild(tri);
+      // Exclamation
+      var exc = mk('text',{
+        x:0, y:-(R+8),
+        'text-anchor':'middle','dominant-baseline':'central',
+        fill:'#080c10','font-size':'11','font-weight':'bold',
+        'font-family':'Courier New,monospace',style:'pointer-events:none'
+      });
+      exc.textContent = '!';
+      g.appendChild(exc);
+      // Label
+      var warnLbl = mk('text',{
+        x:0, y:-(R+26),
+        'text-anchor':'middle',
+        fill:badgeColor,'font-size':'10','font-weight':'bold',
+        'font-family':'Courier New,monospace',style:'pointer-events:none'
+      });
+      warnLbl.textContent = 'Traffic';
+      g.appendChild(warnLbl);
+    }
+
+    // Outer ring glow
+    var glow = mk('circle',{r:R+4, fill:'none', stroke:col, 'stroke-width':'1', opacity:'0.2'});
+    g.appendChild(glow);
+
+    // Main circle
+    var circle = mk('circle',{r:R, fill:'#111820', stroke:col, 'stroke-width':'1.5'});
+    g.appendChild(circle);
+
+    // Role letter
+    var letter = mk('text',{
+      x:0, y:0,
+      'text-anchor':'middle',
+      'dominant-baseline':'central',
+      fill:col,
+      'font-size':'16',
+      'font-weight':'bold',
+      'font-family':'Courier New,monospace',
+      style:'pointer-events:none'
+    });
+    letter.textContent = ri;
+    g.appendChild(letter);
+
+    // Status dot
+    var dot = mk('circle',{cx:R-2, cy:-(R-2), r:4.5, fill:col});
+    g.appendChild(dot);
+
+    // Name label
+    var label = mk('text',{
+      x:0, y:R+16,
+      'text-anchor':'middle',
+      fill:'#f0f6fc',
+      'font-size':'12',
+      'font-weight':'600',
+      'font-family':'Courier New,monospace',
+      style:'pointer-events:none'
+    });
+    label.textContent = n.name;
+    g.appendChild(label);
+
+    // Load label
+    var metrics = n.metrics || {};
+    var loadPct = Math.round((metrics.load_ratio||0)*100);
+    var loadColor = loadPct > 80 ? '#ff4560' : loadPct > 50 ? '#f5a623' : '#00e676';
+    var loadLbl = mk('text',{
+      id:'topo-load-'+n.id,
+      x:0, y:R+30,
+      'text-anchor':'middle',
+      fill:loadColor,
+      'font-size':'11',
+      'font-family':'Courier New,monospace',
+      style:'pointer-events:none'
+    });
+    loadLbl.textContent = 'CPU ' + loadPct + '%';
+    g.appendChild(loadLbl);
+
+    // Peers label
+    var peersLbl = mk('text',{
+      id:'topo-peers-'+n.id,
+      x:0, y:R+44,
+      'text-anchor':'middle',
+      fill:'#b8d0e8',
+      'font-size':'11',
+      'font-family':'Courier New,monospace',
+      style:'pointer-events:none'
+    });
+    peersLbl.textContent = (metrics.peer_count||0) + ' peers';
+    g.appendChild(peersLbl);
+
+    // Click
+    g.addEventListener('click', function(e){
+      if(g._dragged){ g._dragged = false; return; }
+      showGraphNode(n.id);
+    });
+
+    // Drag
+    var dragging = false;
+    var dragStart = null;
+    g.addEventListener('mousedown', function(e){
+      if(e.button !== 0) return;
+      e.stopPropagation();
+      dragging = true;
+      g._dragged = false;
+      dragStart = {mx: e.clientX, my: e.clientY, px: pos[n.id].x, py: pos[n.id].y};
+      g.style.cursor = 'grabbing';
+      svg.style.cursor = 'grabbing';
+    });
+    svg.addEventListener('mousemove', function(e){
+      if(!dragging) return;
+      var dx = e.clientX - dragStart.mx;
+      var dy = e.clientY - dragStart.my;
+      if(Math.abs(dx) > 3 || Math.abs(dy) > 3) g._dragged = true;
+      pos[n.id].x = Math.max(R+4, Math.min(W-R-4, dragStart.px + dx));
+      pos[n.id].y = Math.max(R+4, Math.min(H-R-20, dragStart.py + dy));
+      // Update this node position
+      g.setAttribute('transform','translate('+pos[n.id].x+','+pos[n.id].y+')');
+      // Redraw edges only
+      _redrawEdges(pos, graphEdges, edgeG, ns, mk);
+    });
+    svg.addEventListener('mouseup', function(){
+      if(dragging){ dragging = false; g.style.cursor='grab'; svg.style.cursor='default'; }
+    });
+
+    nodeG.appendChild(g);
+  });
+
+  // Path score overlay
+  if(TOPO_PATH){
+    var scoreT = mk('text',{
+      x:14, y:24,
+      fill:'rgba(77,166,255,1)',
+      'font-size':'13',
+      'font-weight':'bold',
+      'font-family':'Courier New,monospace'
+    });
+    scoreT.textContent = 'PATH SCORE: ' + Number(TOPO_PATH.total_score||0).toFixed(3);
+    svg.appendChild(scoreT);
+  }
+
+  renderTopologyMeta();
+}
+
+function _redrawEdges(pos, graphEdges, edgeG, ns, mk){
+  // Update only line positions (fast, no full redraw)
+  var lines = edgeG.querySelectorAll('line');
+  var li = 0;
+  graphEdges.forEach(function(l){
+    var a = pos[l.left_node_id], b = pos[l.right_node_id];
+    if(!a||!b) return;
+    var mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+    if(lines[li]){
+      lines[li].setAttribute('x1',a.x); lines[li].setAttribute('y1',a.y);
+      lines[li].setAttribute('x2',b.x); lines[li].setAttribute('y2',b.y);
+    }
+    li++;
+    // Update text positions
+    var texts = edgeG.querySelectorAll('text');
+    // texts index = li*3-3, li*3-2, li*3-1 (driver, iface, metrics)
+    var base = (li-1)*3;
+    if(texts[base])  { texts[base].setAttribute('x',mx);   texts[base].setAttribute('y',my-10); }
+    if(texts[base+1]){ texts[base+1].setAttribute('x',mx); texts[base+1].setAttribute('y',my+8); }
+    if(texts[base+2]){ texts[base+2].setAttribute('x',mx); texts[base+2].setAttribute('y',my+22); }
   });
 }
+
+function bindTopologyCanvas(){
+  // SVG handles events per-element; nothing to bind globally
+}
+
 function openPathPlanner(defaultSourceId){
   if((GRAPH_DATA.nodes || []).length < 2){
     alert('At least two topology nodes are required.');
@@ -2248,6 +2575,102 @@ document.querySelectorAll('.nav-item').forEach(function(el){
 });
 document.getElementById('lbtn').addEventListener('click', doLogin);
 document.getElementById('ip').addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
+// ── DEMO MODE ──────────────────────────────────────────────────────────────
+// Set to false when deploying against a real ONyX backend.
+var DEMO_MODE = false;
+var DEMO_USER = 'admin';
+var DEMO_NODES = [
+  {id:'n1',name:'gw-ams-01',role:'gateway',management_address:'10.0.0.1',ssh_host:'185.12.44.1',ssh_port:22,ssh_user:'root',auth_type:'key',status:'reachable',caps:['awg','wg'],registered_at:'2024-01-15T00:00:00Z',traffic_limit_gb:500,traffic_used_gb:412},
+  {id:'n2',name:'relay-fra-01',role:'relay',management_address:'10.0.0.2',ssh_host:'195.22.11.4',ssh_port:22,ssh_user:'root',auth_type:'key',status:'reachable',caps:['awg'],registered_at:'2024-02-01T00:00:00Z',traffic_limit_gb:300,traffic_used_gb:88},
+  {id:'n3',name:'egress-lon-01',role:'egress',management_address:'10.0.0.3',ssh_host:'91.108.4.5',ssh_port:22,ssh_user:'root',auth_type:'key',status:'degraded',caps:['wg','xray'],registered_at:'2024-03-10T00:00:00Z',traffic_limit_gb:200,traffic_used_gb:201},
+  {id:'n4',name:'gw-sin-01',role:'gateway',management_address:'10.0.0.4',ssh_host:'103.21.55.8',ssh_port:22,ssh_user:'root',auth_type:'key',status:'reachable',caps:['awg','openvpn'],registered_at:'2024-01-20T00:00:00Z',traffic_limit_gb:400,traffic_used_gb:120},
+  {id:'n5',name:'relay-nyc-01',role:'relay',management_address:'10.0.0.5',ssh_host:'45.32.18.22',ssh_port:22,ssh_user:'root',auth_type:'key',status:'reachable',caps:['awg','hysteria2'],registered_at:'2024-02-15T00:00:00Z',traffic_limit_gb:250,traffic_used_gb:195},
+];
+var DEMO_LINKS = [
+  {id:'l1',name:'ams-fra-p2p',driver_name:'awg',left_node_id:'n1',right_node_id:'n2',topology_type:'p2p',state:'active',left_interface:'awg0',right_interface:'awg0'},
+  {id:'l2',name:'fra-lon-relay',driver_name:'awg',left_node_id:'n2',right_node_id:'n3',topology_type:'relay',state:'active',left_interface:'awg1',right_interface:'awg0'},
+  {id:'l3',name:'sin-nyc-upstream',driver_name:'wg',left_node_id:'n4',right_node_id:'n5',topology_type:'upstream',state:'active',left_interface:'wg0',right_interface:'wg0'},
+  {id:'l4',name:'ams-lon-backup',driver_name:'wg',left_node_id:'n1',right_node_id:'n3',topology_type:'p2p',state:'active',left_interface:'wg0',right_interface:'wg1'},
+  {id:'l5',name:'nyc-fra-mesh',driver_name:'awg',left_node_id:'n5',right_node_id:'n2',topology_type:'relay',state:'active',left_interface:'awg0',right_interface:'awg2'},
+];
+var DEMO_JOBS = [
+  {id:'j1',kind:'link.deploy',target_type:'link',target_id:'l1',state:'succeeded',created_at:new Date(Date.now()-7200000).toISOString(),log:[{message:'SSH connected to gw-ams-01'},{message:'Config rendered'},{message:'AWG interface up'},{message:'Handshake established'}]},
+  {id:'j2',kind:'node.probe',target_type:'node',target_id:'n3',state:'failed',created_at:new Date(Date.now()-3600000).toISOString(),log:[{message:'Probing egress-lon-01'},{message:'SSH timeout after 10s'},{message:'Probe failed'}]},
+  {id:'j3',kind:'link.deploy',target_type:'link',target_id:'l3',state:'running',created_at:new Date(Date.now()-600000).toISOString(),log:[{message:'Job dispatched'},{message:'Rendering WireGuard config'}]},
+];
+var DEMO_POLICIES = [
+  {id:'p1',name:'ams-nexthop',node_id:'n1',action:'next_hop',priority:10,enabled:true},
+  {id:'p2',name:'fra-balancer',node_id:'n2',action:'balancer',priority:20,enabled:true},
+  {id:'p3',name:'sin-direct',node_id:'n4',action:'direct',priority:5,enabled:true},
+];
+var DEMO_DNS = [
+  {id:'d1',route_policy_id:'p1',dns_address:'1.1.1.1',enabled:true},
+  {id:'d2',route_policy_id:'p3',dns_address:'8.8.8.8',enabled:false},
+];
+var DEMO_REGISTRATIONS = [
+  {id:'r1',username:'alex_k',email:'alex@example.com',created_at:new Date(Date.now()-86400000).toISOString(),referral_code:'ONX-2024-A1',device_count:3,status:'pending'},
+  {id:'r2',username:'marina_v',email:'marina@vpnuser.net',created_at:new Date(Date.now()-172800000).toISOString(),referral_code:'ONX-2024-B7',device_count:1,status:'pending'},
+  {id:'r3',username:'test_user',email:'test@demo.io',created_at:new Date(Date.now()-259200000).toISOString(),referral_code:'',device_count:2,status:'approved'},
+];
+
+var DEMO_PEERS = [
+  {id:'p1',username:'alex_k',email:'alex@example.com',node_id:'n1',registered_at:'2024-06-01T12:00:00Z',config_expires_at:'2025-06-01T12:00:00Z',last_ip:'91.234.12.55',traffic_24h_mb:342,traffic_month_mb:8820,config:'[Interface]\nPrivateKey = DEMO_KEY_ALEX\nAddress = 10.8.0.2/24\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = DEMO_SERVER_PUBKEY\nEndpoint = 185.12.44.1:51820\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25'},
+  {id:'p2',username:'marina_v',email:'marina@vpnuser.net',node_id:'n2',registered_at:'2024-07-15T09:00:00Z',config_expires_at:'2025-07-15T09:00:00Z',last_ip:'178.44.210.3',traffic_24h_mb:128,traffic_month_mb:3210,config:'[Interface]\nPrivateKey = DEMO_KEY_MARINA\nAddress = 10.8.0.3/24\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = DEMO_SERVER_PUBKEY\nEndpoint = 195.22.11.4:51820\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25'},
+  {id:'p3',username:'test_user',email:'test@demo.io',node_id:'n1',registered_at:'2024-08-20T14:30:00Z',config_expires_at:'2024-12-31T23:59:00Z',last_ip:'5.100.44.12',traffic_24h_mb:0,traffic_month_mb:540,config:'[Interface]\nPrivateKey = DEMO_KEY_TEST\nAddress = 10.8.0.4/24\nDNS = 8.8.8.8\n\n[Peer]\nPublicKey = DEMO_SERVER_PUBKEY\nEndpoint = 185.12.44.1:51820\nAllowedIPs = 10.0.0.0/8\nPersistentKeepalive = 25'},
+  {id:'p4',username:'ivan_p',email:'ivan@corp.ru',node_id:'n3',registered_at:'2024-09-05T08:00:00Z',config_expires_at:'2025-09-05T08:00:00Z',last_ip:'212.47.88.201',traffic_24h_mb:891,traffic_month_mb:14200,config:'[Interface]\nPrivateKey = DEMO_KEY_IVAN\nAddress = 10.8.0.5/24\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = DEMO_SERVER_PUBKEY\nEndpoint = 91.108.4.5:51820\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25'},
+  {id:'p5',username:'sarah_m',email:'sarah@example.org',node_id:'n4',registered_at:'2024-10-10T16:00:00Z',config_expires_at:'2025-10-10T16:00:00Z',last_ip:'104.28.55.99',traffic_24h_mb:210,traffic_month_mb:5600,config:'[Interface]\nPrivateKey = DEMO_KEY_SARAH\nAddress = 10.8.0.6/24\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = DEMO_SERVER_PUBKEY\nEndpoint = 103.21.55.8:51820\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25'},
+];
+var DEMO_GRAPH = {
+  nodes: DEMO_NODES.map(function(n){
+    var peerMap = {n1:3,n2:4,n3:1,n4:2,n5:3};
+    return {
+      id:n.id, name:n.name, role:n.role, status:n.status,
+      management_address:n.management_address,
+      metrics:{ load_ratio: 0.2 + Math.random()*0.5, peer_count: peerMap[n.id]||0 }
+    };
+  }),
+  edges: DEMO_LINKS.map(function(l){ return {id:l.id,name:l.name,left_node_id:l.left_node_id,right_node_id:l.right_node_id,driver_name:l.driver_name,topology_type:l.topology_type,state:l.state,left_interface:l.left_interface,right_interface:l.right_interface,metrics:{}}; }),
+  generated_at: new Date().toISOString()
+};
+
+// Live metrics ticker for demo — updates load_ratio every 3s and redraws topo
+var _demoMetricsTick = null;
+function startDemoMetricsTicker(){
+  if(_demoMetricsTick) clearInterval(_demoMetricsTick);
+  _demoMetricsTick = setInterval(function(){
+    var peerMap = {n1:3,n2:4,n3:1,n4:2,n5:3};
+    (GRAPH_DATA.nodes||[]).forEach(function(n){
+      if(!n.metrics) n.metrics = {};
+      // Fluctuate load ±0.05, clamp 0.03–0.97
+      var cur = n.metrics.load_ratio != null ? n.metrics.load_ratio : 0.3;
+      n.metrics.load_ratio = Math.max(0.03, Math.min(0.97, cur + (Math.random()-0.5)*0.1));
+      n.metrics.peer_count = peerMap[n.id] || 0;
+    });
+    // Only redraw if topology page is active
+    var topoPage = document.getElementById('page-topology');
+    if(topoPage && topoPage.classList.contains('active')){
+      _updateNodeMetricLabels();
+    }
+  }, 3000);
+}
+
+function _updateNodeMetricLabels(){
+  (GRAPH_DATA.nodes||[]).forEach(function(n){
+    var m = n.metrics || {};
+    var loadEl = document.getElementById('topo-load-'+n.id);
+    var peersEl = document.getElementById('topo-peers-'+n.id);
+    if(loadEl){
+      var pct = Math.round((m.load_ratio||0)*100);
+      loadEl.textContent = 'CPU ' + pct + '%';
+      loadEl.setAttribute('fill', pct > 80 ? '#ff4560' : pct > 50 ? '#f5a623' : '#00e676');
+    }
+    if(peersEl){
+      peersEl.textContent = (m.peer_count||0) + ' peers';
+    }
+  });
+}
+// ── END DEMO MODE ───────────────────────────────────────────────────────────
+
 async function doLogin(){
   var u = document.getElementById('iu').value.trim();
   var p = document.getElementById('ip').value;
@@ -2255,6 +2678,12 @@ async function doLogin(){
   if(!u||!p){ err.textContent='Enter username and password'; return; }
   err.textContent = '';
   document.getElementById('lbtn').textContent = 'AUTHENTICATING...';
+  if(DEMO_MODE){
+    await new Promise(function(r){ setTimeout(r, 600); });
+    DEMO_USER = u;
+    await bootApp();
+    return;
+  }
   try{
     await apiFetch(API_PREFIX + '/auth/login', {
       method:'POST',
@@ -2268,18 +2697,48 @@ async function doLogin(){
   }
 }
 async function bootApp(){
-  var me = await apiFetch(API_PREFIX + '/auth/me');
+  var username = DEMO_USER;
+  if(!DEMO_MODE){
+    var me = await apiFetch(API_PREFIX + '/auth/me');
+    username = me && me.user && me.user.username ? me.user.username : 'admin';
+  }
   isAuthenticated = true;
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('appWrap').style.display = 'flex';
-  document.getElementById('ubtn').textContent = me && me.user && me.user.username ? (me.user.username + ' ▾') : 'admin ▾';
+  document.getElementById('ubtn').textContent = username;
   document.getElementById('lbtn').textContent = 'AUTHENTICATE';
   document.getElementById('lerr').textContent = '';
+  if(DEMO_MODE){
+    NODES = DEMO_NODES;
+    LINKS = DEMO_LINKS;
+    JOBS = DEMO_JOBS;
+    POLICIES = DEMO_POLICIES;
+    DNS_P = DEMO_DNS;
+    GEO_P = [];
+    BALANCERS = [];
+    GRAPH_DATA = DEMO_GRAPH;
+    REGISTRATIONS = DEMO_REGISTRATIONS;
+    PEERS = DEMO_PEERS;
+    renderPeers();
+    updatePeersBadge();
+    setTimeout(checkNodeTrafficAlerts, 800);
+    renderNodes(); renderLinks(); renderPolicies(); renderJobs(); renderAudit(); renderElog();
+    renderRegistrations(); updateRegBadge(); updateShellCounters();
+    setTimeout(drawTopo, 60);
+    pushEv('system.connected', 'DEMO MODE — not connected to real backend');
+    // start fake sys stats
+    startSysStats();
+    startDemoMetricsTicker();
+    return;
+  }
   await loadData();
   connectWS();
   setTimeout(drawTopo, 60);
 }
-document.getElementById('ubtn').addEventListener('click', async function(){
+document.getElementById('ubtn').addEventListener('click', function(){
+  // username badge - no action
+});
+document.getElementById('logoutBtn').addEventListener('click', async function(){
   if(confirm('Logout from ONyX Control Plane?')){
     try{
       await apiFetch(API_PREFIX + '/auth/logout', {method:'POST', redirectOn401:false});
@@ -2291,8 +2750,439 @@ document.getElementById('modalClose').addEventListener('click', closeModal);
 document.getElementById('modal').addEventListener('click', function(event){
   if(event.target && event.target.id === 'modal'){ closeModal(); }
 });
+// ── SYS STATS (demo ticker / replace with real endpoint) ──────────────────
+var _sysStatsTimer = null;
+function startSysStats(){
+  if(_sysStatsTimer) clearInterval(_sysStatsTimer);
+  function update(){
+    var cpu = (20 + Math.random()*30).toFixed(1);
+    var ram = (2.1 + Math.random()*1.4).toFixed(1);
+    var el1 = document.getElementById('sysCpu');
+    var el2 = document.getElementById('sysRam');
+    if(el1) el1.textContent = 'CPU '+cpu+'%';
+    if(el2) el2.textContent = 'RAM '+ram+' / 8 GB';
+  }
+  update();
+  _sysStatsTimer = setInterval(update, 3000);
+}
+
+// ═══════════════════════════════════════
+// PEERS
+// ═══════════════════════════════════════
+function fmtBytes(mb){
+  if(mb == null) return '-';
+  if(mb < 1024) return mb.toFixed(0) + ' MB';
+  return (mb/1024).toFixed(2) + ' GB';
+}
+function fmtDate(v){
+  if(!v) return '-';
+  var d = new Date(v);
+  if(isNaN(d)) return v;
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+function isExpired(v){
+  if(!v) return false;
+  return new Date(v) < new Date();
+}
+
+async function loadPeers(){
+  try{
+    var data = await apiFetch(API_PREFIX + '/peers');
+    PEERS = Array.isArray(data) ? data : (data && data.items ? data.items : []);
+  }catch(e){
+    if(!PEERS.length) PEERS = [];
+  }
+  renderPeers();
+  updatePeersBadge();
+}
+
+function updatePeersBadge(){
+  var badge = document.getElementById('peersBadge');
+  if(!badge) return;
+  badge.textContent = String(PEERS.length);
+  if(PEERS.length > 0){ badge.style.display = ''; }
+  else { badge.style.display = 'none'; }
+}
+
+function renderPeers(){
+  var tb = document.getElementById('peerstb');
+  if(!tb) return;
+
+  // Populate node filter
+  var nodeFilter = document.getElementById('peerNodeFilter');
+  if(nodeFilter && nodeFilter.options.length <= 1){
+    NODES.forEach(function(n){
+      var opt = document.createElement('option');
+      opt.value = n.id; opt.textContent = n.name;
+      nodeFilter.appendChild(opt);
+    });
+  }
+
+  var search = (document.getElementById('peerSearch')||{}).value || '';
+  var nodeId = (document.getElementById('peerNodeFilter')||{}).value || '';
+  search = search.trim().toLowerCase();
+
+  var rows = PEERS.filter(function(p){
+    if(nodeId && p.node_id !== nodeId) return false;
+    if(search){
+      var hay = [p.username,p.email,p.last_ip,p.node_id].join(' ').toLowerCase();
+      if(hay.indexOf(search) === -1) return false;
+    }
+    return true;
+  });
+
+  if(!rows.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="9">No peers found.</td></tr>';
+    return;
+  }
+
+  tb.innerHTML = rows.map(function(p){
+    var node = NODES.find(function(n){ return n.id === p.node_id; });
+    var nodeName = node ? node.name : (p.node_id || '-');
+    var expired = isExpired(p.config_expires_at);
+    var expClass = expired ? 'style="color:var(--red)"' : '';
+    return '<tr onclick="showPeerDetail(\''+esc(p.id)+'\')" style="cursor:pointer">'
+      +'<td class="m">'+esc(p.username||'-')+'</td>'
+      +'<td style="color:var(--t1)">'+esc(p.email||'-')+'</td>'
+      +'<td><span class="pill pb">'+esc(nodeName)+'</span></td>'
+      +'<td style="color:var(--t1);font-size:13px;">'+fmtDate(p.registered_at)+'</td>'
+      +'<td '+expClass+'>'+fmtDate(p.config_expires_at)+(expired?' <span class="pill pr">expired</span>':'')+'</td>'
+      +'<td class="m">'+esc(p.last_ip||'-')+'</td>'
+      +'<td style="color:var(--t1)">'+fmtBytes(p.traffic_24h_mb)+'</td>'
+      +'<td style="color:var(--t1)">'+fmtBytes(p.traffic_month_mb)+'</td>'
+      +'<td><div style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="event.stopPropagation();openPeerConfig(\''+esc(p.id)+'\')">CONFIG</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();revokePeer(\''+esc(p.id)+'\')">REVOKE</button>'
+      +'</div></td>'
+      +'</tr>';
+  }).join('');
+}
+
+function showPeerDetail(id){
+  var p = PEERS.find(function(x){ return x.id===id; });
+  if(!p) return;
+  var node = NODES.find(function(n){ return n.id === p.node_id; });
+  openDP(p.username || 'Peer',
+    rows([
+      ['ID', p.id],
+      ['Login', p.username||'-'],
+      ['E-mail', p.email||'-'],
+      ['Node', node ? node.name : (p.node_id||'-')],
+      ['Registered', fmtDate(p.registered_at)],
+      ['Config Expires', fmtDate(p.config_expires_at)],
+      ['Last IP', p.last_ip||'-'],
+      ['Traffic 24h', fmtBytes(p.traffic_24h_mb)],
+      ['Traffic Month', fmtBytes(p.traffic_month_mb)],
+    ])
+    +'<div class="dp-actions">'
+      +'<button class="btn pri" onclick="openPeerConfig(\''+esc(p.id)+'\')">VIEW CONFIG</button>'
+      +'<button class="btn red" onclick="revokePeer(\''+esc(p.id)+'\')">REVOKE</button>'
+    +'</div>'
+  );
+}
+
+function openPeerConfig(id){
+  var p = PEERS.find(function(x){ return x.id===id; });
+  if(!p) return;
+  var configText = (p.config || '').replace(/\\n/g,'\n');
+  var body = '<div style="margin-bottom:8px;font-size:13px;color:var(--t1);">'
+    +'Peer: <strong style="color:var(--t0)">'+esc(p.username)+'</strong>'
+    +' &nbsp;|&nbsp; Node: <strong style="color:var(--t0)">'+(NODES.find(function(n){return n.id===p.node_id;})||{name:p.node_id}).name+'</strong>'
+    +'</div>'
+    +'<textarea class="config-editor" id="peerConfigEditor">'+esc(configText)+'</textarea>';
+  openModal('Peer Config — ' + esc(p.username), body, {
+    buttons:[
+      {label:'Close', className:'btn', onClick:closeModal},
+      {label:'Save Config', className:'btn pri', onClick:function(){
+        var val = document.getElementById('peerConfigEditor').value;
+        savePeerConfig(id, val);
+      }}
+    ]
+  });
+}
+
+async function savePeerConfig(id, configText){
+  try{
+    await apiFetch(API_PREFIX + '/peers/' + encodeURIComponent(id) + '/config', {
+      method:'PUT',
+      body:{config: configText}
+    });
+    var p = PEERS.find(function(x){ return x.id===id; });
+    if(p) p.config = configText;
+    pushEv('peer.config.saved', 'config saved for ' + (p ? p.username : id));
+    closeModal();
+  }catch(e){
+    pushEv('peer.config.error', 'config save failed: '+(e&&e.message?e.message:e));
+    alert(e&&e.message?e.message:e);
+  }
+}
+
+async function revokePeer(id){
+  var p = PEERS.find(function(x){ return x.id===id; });
+  if(!confirm('Revoke peer access for ' + (p ? p.username : id) + '?')) return;
+  try{
+    await apiFetch(API_PREFIX + '/peers/' + encodeURIComponent(id) + '/revoke', {method:'POST',body:{}});
+    PEERS = PEERS.filter(function(x){ return x.id!==id; });
+    pushEv('peer.revoked', 'peer revoked: ' + (p ? p.username : id));
+    renderPeers();
+    updatePeersBadge();
+    closeDP();
+  }catch(e){
+    pushEv('peer.revoke.error', 'revoke failed: '+(e&&e.message?e.message:e));
+    alert(e&&e.message?e.message:e);
+  }
+}
+
+// Wire peer search/filter
+(function(){
+  var ps = document.getElementById('peerSearch');
+  var pf = document.getElementById('peerNodeFilter');
+  if(ps) ps.addEventListener('input', renderPeers);
+  if(pf) pf.addEventListener('change', renderPeers);
+})();
+
+// ═══════════════════════════════════════
+// NODE TRAFFIC WARNINGS
+// ═══════════════════════════════════════
+function checkNodeTrafficAlerts(){
+  NODES.forEach(function(n){
+    if(!n.traffic_limit_gb || !n.traffic_used_gb) return;
+    var pct = n.traffic_used_gb / n.traffic_limit_gb;
+    if(pct >= 1.0){
+      pushEv('traffic.exhausted', 'Traffic limit exhausted on node "'+n.name+'" ('+n.traffic_used_gb+'/'+n.traffic_limit_gb+' GB)');
+    } else if(pct >= 0.8){
+      pushEv('traffic.warning', 'Traffic limit almost reached on node "'+n.name+'" ('+Math.round(pct*100)+'% used)');
+    }
+  });
+}
+
+function getNodeTrafficState(n){
+  if(!n.traffic_limit_gb || n.traffic_used_gb == null) return null;
+  var pct = n.traffic_used_gb / n.traffic_limit_gb;
+  if(pct >= 1.0) return 'crit';
+  if(pct >= 0.8) return 'warn';
+  return null;
+}
+
 wireStaticButtons();
+
+// ═══════════════════════════════════════
+// I18N — LANGUAGE SWITCHER
+// ═══════════════════════════════════════
+var LANG = 'en';
+var I18N = {
+  en: {
+    'nav.grp.core':        'Core',
+    'nav.grp.policy':      'Policy',
+    'nav.grp.operations':  'Operations',
+    'nav.grp.visual':      'Visual',
+    'nav.system':          'System',
+    'nav.nodes':           'Nodes',
+    'nav.links':           'Links',
+    'nav.policies':        'Policies',
+    'nav.jobs':            'Jobs',
+    'nav.peers':           'Peers',
+    'nav.registrations':   'Registrations',
+    'nav.audit':           'Audit / Access',
+    'nav.topology':        'Topology',
+    'nav.apidebug':        'API Debug',
+    'page.registrations':  'Registrations',
+    'page.audit':          'Audit / Access',
+    'page.topology':       'Topology',
+    'reg.filter.all':      'all statuses',
+    'reg.filter.pending':  'pending',
+    'reg.filter.approved': 'approved',
+    'reg.filter.rejected': 'rejected',
+    'reg.refresh':         'REFRESH',
+    'reg.col.login':       'Login',
+    'reg.col.email':       'E-mail',
+    'reg.col.date':        'Date',
+    'reg.col.refcode':     'Referral Code',
+    'reg.col.devices':     'Devices',
+    'reg.col.status':      'Status',
+    'reg.col.actions':     'Actions',
+    'reg.approve':         'APPROVE',
+    'reg.reject':          'REJECT',
+    'reg.empty':           'No registration requests.',
+    'topo.reachable':      'reachable',
+    'topo.degraded':       'degraded',
+    'topo.unreachable':    'unreachable',
+    'topo.unknown':        'unknown',
+    'topo.hint':           'click node for detail',
+    'topo.planpath':       'PLAN PATH',
+    'topo.refresh':        'REFRESH',
+    'topo.snapshot':       'Graph Snapshot',
+    'topo.pathoverlay':    'Path Overlay',
+  },
+  ru: {
+    'nav.grp.core':        'Основное',
+    'nav.grp.policy':      'Политики',
+    'nav.grp.operations':  'Операции',
+    'nav.grp.visual':      'Визуал',
+    'nav.system':          'Система',
+    'nav.nodes':           'Узлы',
+    'nav.links':           'Связи',
+    'nav.policies':        'Политики',
+    'nav.jobs':            'Задачи',
+    'nav.peers':           'Пиры',
+    'nav.registrations':   'Регистрации',
+    'nav.audit':           'Аудит / Доступ',
+    'nav.topology':        'Топология',
+    'nav.apidebug':        'API Отладка',
+    'page.registrations':  'Регистрации',
+    'page.audit':          'Аудит / Доступ',
+    'page.topology':       'Топология',
+    'reg.filter.all':      'все статусы',
+    'reg.filter.pending':  'ожидают',
+    'reg.filter.approved': 'одобрены',
+    'reg.filter.rejected': 'отклонены',
+    'reg.refresh':         'ОБНОВИТЬ',
+    'reg.col.login':       'Логин',
+    'reg.col.email':       'E-mail',
+    'reg.col.date':        'Дата',
+    'reg.col.refcode':     'Реф. код',
+    'reg.col.devices':     'Устройств',
+    'reg.col.status':      'Статус',
+    'reg.col.actions':     'Действия',
+    'reg.approve':         'ОДОБРИТЬ',
+    'reg.reject':          'ОТКЛОНИТЬ',
+    'reg.empty':           'Заявок на регистрацию нет.',
+    'topo.reachable':      'доступен',
+    'topo.degraded':       'деградация',
+    'topo.unreachable':    'недоступен',
+    'topo.unknown':        'неизвестно',
+    'topo.hint':           'клик по узлу — детали',
+    'topo.planpath':       'МАРШРУТ',
+    'topo.refresh':        'ОБНОВИТЬ',
+    'topo.snapshot':       'Снимок графа',
+    'topo.pathoverlay':    'Наложение пути',
+  }
+};
+function t(key){ return (I18N[LANG] && I18N[LANG][key]) || (I18N.en[key]) || key; }
+function applyI18n(){
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    var key = el.getAttribute('data-i18n');
+    if(el.tagName === 'OPTION'){
+      el.textContent = t(key);
+    } else if(el.tagName === 'BUTTON' && !el.hasAttribute('data-i18n-keep')){
+      el.textContent = t(key);
+    } else {
+      el.textContent = t(key);
+    }
+  });
+  // Re-render registrations table if visible
+  renderRegistrations();
+}
+function setLang(lang){
+  LANG = lang;
+  document.querySelectorAll('.lang-btn').forEach(function(b){
+    b.classList.toggle('active', b.textContent.trim().toLowerCase() === lang);
+  });
+  applyI18n();
+}
+
+// ═══════════════════════════════════════
+// REGISTRATIONS
+// ═══════════════════════════════════════
+var REGISTRATIONS = [];
+
+async function loadRegistrations(){
+  try{
+    var data = await apiFetch(API_PREFIX + '/registrations');
+    REGISTRATIONS = Array.isArray(data) ? data : (data && data.items ? data.items : []);
+  }catch(e){
+    // endpoint may not exist yet — keep current list or show empty
+    if(!REGISTRATIONS.length){ REGISTRATIONS = []; }
+  }
+  renderRegistrations();
+  updateRegBadge();
+}
+
+function updateRegBadge(){
+  var badge = document.getElementById('regBadge');
+  if(!badge) return;
+  var pending = REGISTRATIONS.filter(function(r){ return r.status === 'pending'; }).length;
+  if(pending > 0){
+    badge.textContent = String(pending);
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderRegistrations(){
+  var tb = document.getElementById('regtb');
+  if(!tb) return;
+  var filter = '';
+  var sel = document.getElementById('regStatusFilter');
+  if(sel) filter = sel.value;
+  var rows = REGISTRATIONS.filter(function(r){
+    return !filter || r.status === filter;
+  });
+  if(!rows.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="7">'+t('reg.empty')+'</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(function(r){
+    var statusCls = r.status === 'pending' ? 'pa' : r.status === 'approved' ? 'pg' : 'pr';
+    var rowCls = r.status === 'pending' ? 'reg-row-pending' : r.status === 'rejected' ? 'reg-row-rejected' : '';
+    var actions = '';
+    if(r.status === 'pending'){
+      actions = '<button class="btn sm pri" onclick="approveReg(\''+esc(r.id)+'\')">'+t('reg.approve')+'</button>'
+               +'<button class="btn sm red" onclick="rejectReg(\''+esc(r.id)+'\')">'+t('reg.reject')+'</button>';
+    }
+    return '<tr class="'+rowCls+'">'
+      +'<td class="m">'+esc(r.username || r.login || '-')+'</td>'
+      +'<td>'+esc(r.email || '-')+'</td>'
+      +'<td style="color:var(--t1);font-size:13px;">'+esc(r.created_at ? new Date(r.created_at).toLocaleString() : (r.date || '-'))+'</td>'
+      +'<td class="m">'+esc(r.referral_code || r.ref_code || '-')+'</td>'
+      +'<td style="text-align:center;">'+esc(String(r.device_count != null ? r.device_count : (r.devices != null ? r.devices : '-')))+'</td>'
+      +'<td><span class="pill '+statusCls+'">'+esc(r.status)+'</span></td>'
+      +'<td><div class="reg-actions">'+actions+'</div></td>'
+      +'</tr>';
+  }).join('');
+}
+
+async function approveReg(id){
+  try{
+    await apiFetch(API_PREFIX + '/registrations/' + encodeURIComponent(id) + '/approve', {method:'POST', body:{}});
+    var r = REGISTRATIONS.find(function(x){ return x.id===id; });
+    if(r) r.status = 'approved';
+    pushEv('registration.approved', 'registration approved: ' + (r ? (r.username || r.email || id) : id));
+  }catch(e){
+    pushEv('registration.error', 'approve failed: ' + (e && e.message ? e.message : e));
+    alert(e && e.message ? e.message : e);
+  }
+  renderRegistrations();
+  updateRegBadge();
+}
+
+async function rejectReg(id){
+  var r = REGISTRATIONS.find(function(x){ return x.id===id; });
+  if(!confirm('Reject registration for ' + (r ? (r.username || r.email || id) : id) + '?')){ return; }
+  try{
+    await apiFetch(API_PREFIX + '/registrations/' + encodeURIComponent(id) + '/reject', {method:'POST', body:{}});
+    if(r) r.status = 'rejected';
+    pushEv('registration.rejected', 'registration rejected: ' + (r ? (r.username || r.email || id) : id));
+  }catch(e){
+    pushEv('registration.error', 'reject failed: ' + (e && e.message ? e.message : e));
+    alert(e && e.message ? e.message : e);
+  }
+  renderRegistrations();
+  updateRegBadge();
+}
+
+// Wire registrations filter
+(function(){
+  var sel = document.getElementById('regStatusFilter');
+  if(sel){ sel.addEventListener('change', renderRegistrations); }
+})();
+
+// ═══════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════
 (async function init(){
+  if(DEMO_MODE){ return; } // demo: stay on login screen, user clicks manually
   try{
     await apiFetch(API_PREFIX + '/auth/me', { redirectOn401:false });
     await bootApp();
@@ -2303,6 +3193,5 @@ wireStaticButtons();
 </script>
 </body>
 </html>
-
 
 
