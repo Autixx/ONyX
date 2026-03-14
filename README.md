@@ -37,6 +37,7 @@ Important docs:
 - [ONX_CLAUDE_UI_PROMPT_SPEC.md](Q:\ONyX_export\docs\architecture\ONX_CLAUDE_UI_PROMPT_SPEC.md)
 - [ONX_CLIENT_DELIVERY_ARCHITECTURE.md](Q:\ONyX_export\docs\architecture\ONX_CLIENT_DELIVERY_ARCHITECTURE.md)
 - [ONX_DEVICE_IDENTITY_AND_PROFILE_DELIVERY.md](Q:\ONyX_export\docs\architecture\ONX_DEVICE_IDENTITY_AND_PROFILE_DELIVERY.md)
+- [ONX_CLIENT_MVP_DESIGN.md](Q:\ONyX_export\docs\architecture\ONX_CLIENT_MVP_DESIGN.md)
 - [ONX_SUBSCRIPTIONS_AND_BILLING.md](Q:\ONyX_export\docs\architecture\ONX_SUBSCRIPTIONS_AND_BILLING.md)
 - [ONX_V0_3_ROADMAP.md](Q:\ONyX_export\docs\architecture\ONX_V0_3_ROADMAP.md)
 - [ONX_MIGRATIONS.md](Q:\ONyX_export\docs\architecture\ONX_MIGRATIONS.md)
