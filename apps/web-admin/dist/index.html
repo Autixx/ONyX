@@ -255,6 +255,7 @@ td.m{color:var(--t0);}
   <div class="navtabs" id="navtabs">
     <div class="nav-item active" data-p="system"><span data-i18n="nav.system">System</span></div>
     <div class="nav-item" data-p="nodes"><span data-i18n="nav.nodes">Nodes</span> <span class="nbadge ok" id="nbn">0</span></div>
+    <div class="nav-item" data-p="traffic"><span data-i18n="nav.traffic">Node Traffic</span></div>
     <div class="nav-item" data-p="links"><span data-i18n="nav.links">Links</span> <span class="nbadge ok" id="lbn">0</span></div>
     <div class="nav-item" data-p="peers"><span data-i18n="nav.peers">Peers</span> <span class="nbadge ok" id="peersBadge" style="display:none">0</span></div>
     <div class="nav-item" data-p="policies"><span data-i18n="nav.policies">Policies</span></div>
@@ -306,6 +307,29 @@ td.m{color:var(--t0);}
           <table>
             <thead><tr><th>Name</th><th>Role</th><th>Mgmt Address</th><th>Status</th><th>Traffic Used</th><th>Limit</th><th>Capabilities</th><th>Actions</th></tr></thead>
             <tbody id="ntb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="page" id="page-traffic">
+        <div class="ph">
+          <span class="ptitle">Node Traffic</span>
+          <div class="pbtn-row">
+            <input class="mf-input" id="trafficSearch" placeholder="search node traffic" style="width:180px;padding:7px 10px;font-size:13px;">
+            <select class="mf-select" id="trafficStateFilter" style="width:160px;padding:7px 10px;font-size:13px;">
+              <option value="">all states</option>
+              <option value="normal">normal</option>
+              <option value="warning">warning</option>
+              <option value="exceeded">exceeded</option>
+              <option value="suspended">suspended</option>
+            </select>
+            <button class="btn" onclick="refreshNodeTrafficSummary()">REFRESH</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Node</th><th>Status</th><th>Cycle Start</th><th>Cycle End</th><th>Used</th><th>Limit</th><th>Usage</th><th>Suspended</th><th>Actions</th></tr></thead>
+            <tbody id="ttb"></tbody>
           </table>
         </div>
       </div>
@@ -550,6 +574,7 @@ var wsReconnectTimer = null;
 var isAuthenticated = false;
 
 var NODES = [];
+var NODE_TRAFFIC = [];
 var LINKS = [];
 var JOBS = [];
 var POLICIES = [];
@@ -695,6 +720,63 @@ function renderNodes(){
       +'</td>'
       +'</tr>';
   }).join('') : '<tr><td class="empty-state" colspan="6">No nodes match the current filter.</td></tr>';
+}
+function getNodeTrafficFilters(){
+  var search = document.getElementById('trafficSearch');
+  var state = document.getElementById('trafficStateFilter');
+  return {
+    search: String(search && search.value || '').trim().toLowerCase(),
+    state: String(state && state.value || '').trim().toLowerCase()
+  };
+}
+function nodeTrafficState(item){
+  if(item.traffic_suspended_at) return 'suspended';
+  if(item.usage_ratio == null) return 'normal';
+  if(item.usage_ratio >= 1.0) return 'exceeded';
+  if(item.usage_ratio >= 0.8) return 'warning';
+  return 'normal';
+}
+function renderNodeTraffic(){
+  var tb = document.getElementById('ttb');
+  if(!tb) return;
+  var filters = getNodeTrafficFilters();
+  var rows = NODE_TRAFFIC.filter(function(item){
+    var state = nodeTrafficState(item);
+    if(filters.state && state !== filters.state) return false;
+    if(filters.search){
+      var hay = [
+        item.node_name,
+        item.node_status,
+        item.traffic_suspension_reason
+      ].join(' ').toLowerCase();
+      if(hay.indexOf(filters.search) === -1) return false;
+    }
+    return true;
+  });
+  if(!rows.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="9">No node traffic entries match the current filter.</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(function(item){
+    var state = nodeTrafficState(item);
+    var usedCls = state === 'exceeded' || state === 'suspended' ? 'traffic-crit' : state === 'warning' ? 'traffic-warn' : '';
+    var ratioText = item.usage_ratio != null ? (Math.round(item.usage_ratio * 1000) / 10) + '%' : '-';
+    return '<tr onclick="showNodeTraffic(\''+esc(item.node_id)+'\')">'
+      +'<td class="m">'+esc(item.node_name)+'</td>'
+      +'<td>'+sp(item.node_status)+'</td>'
+      +'<td style="color:var(--t1)">'+fmtDate(item.cycle_started_at)+'</td>'
+      +'<td style="color:var(--t1)">'+fmtDate(item.cycle_ends_at)+'</td>'
+      +'<td class="'+usedCls+'">'+esc(String(item.traffic_used_gb))+' GB</td>'
+      +'<td style="color:var(--t1)">'+(item.traffic_limit_gb != null ? esc(String(item.traffic_limit_gb)) + ' GB' : '—')+'</td>'
+      +'<td class="'+usedCls+'">'+esc(ratioText)+'</td>'
+      +'<td>'+(item.traffic_suspended_at ? '<span class="pill pr">suspended</span>' : '<span class="pill pg">no</span>')+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="event.stopPropagation();showNodeTraffic(\''+esc(item.node_id)+'\')">VIEW</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionNodeTrafficReset(\''+esc(item.node_id)+'\')">RESET</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();actionNodeTrafficRollover(\''+esc(item.node_id)+'\')">ROLLOVER</button>'
+      +'</td>'
+      +'</tr>';
+  }).join('');
 }
 function renderLinks(){
   var filters = getLinkFilters();
@@ -944,7 +1026,9 @@ function showNode(id){
       ['Status',n.status],
       ['Capabilities',(n.caps||[]).join(', ') || '-'],
       ['Traffic Used', n.traffic_used_gb != null ? String(n.traffic_used_gb) + ' GB' : '-'],
-      ['Traffic Limit', n.traffic_limit_gb != null ? String(n.traffic_limit_gb) + ' GB' : '-']
+      ['Traffic Limit', n.traffic_limit_gb != null ? String(n.traffic_limit_gb) + ' GB' : '-'],
+      ['Traffic Suspended', n.traffic_suspended_at ? 'yes' : 'no'],
+      ['Suspension Reason', n.traffic_suspension_reason || '-']
     ])
     +'<div id="nodeTrafficBox" style="margin-top:14px;color:var(--t1);font-size:13px;">Loading node traffic cycle…</div>'
     +'<div class="dp-actions">'
@@ -979,6 +1063,38 @@ function showNode(id){
       var box = document.getElementById('nodeTrafficBox');
       if(box) box.innerHTML = '<div style="color:var(--rd)">Failed to load node traffic cycle.</div>';
     });
+}
+async function showNodeTraffic(nodeId){
+  try{
+    var overview = await apiFetch(API_PREFIX + '/node-traffic/nodes/' + encodeURIComponent(nodeId));
+    var current = overview.current_cycle;
+    var ratio = current && current.usage_ratio != null ? (Math.round(current.usage_ratio * 1000) / 10) + '%' : '-';
+    var recent = (overview.recent_cycles || []).slice(0, 6).map(function(cycle){
+      return '<div class="drow"><span class="dk">'+esc(fmtDate(cycle.cycle_started_at))+'</span><span class="dv">'+esc(String(cycle.used_gb)+' GB')+'</span></div>';
+    }).join('');
+    openDP((overview.node_name || nodeId) + ' — Traffic',
+      rows([
+        ['Cycle Start', current ? fmtDate(current.cycle_started_at) : '-'],
+        ['Cycle End', current ? fmtDate(current.cycle_ends_at) : '-'],
+        ['Used', current ? String(current.used_gb) + ' GB' : '-'],
+        ['Limit', current && current.traffic_limit_gb != null ? String(current.traffic_limit_gb) + ' GB' : '-'],
+        ['Usage Ratio', ratio],
+        ['Suspended', overview.traffic_suspended_at ? 'yes' : 'no'],
+        ['Suspension Reason', overview.traffic_suspension_reason || '-'],
+        ['Warning Triggered', current && current.warning_emitted_at ? fmtDate(current.warning_emitted_at) : '-'],
+        ['Exceeded Triggered', current && current.exceeded_emitted_at ? fmtDate(current.exceeded_emitted_at) : '-']
+      ])
+      + '<div style="margin-top:10px;color:var(--t2);font-size:12px;text-transform:uppercase;letter-spacing:.12em;">Recent Cycles</div>'
+      + '<div style="margin-top:8px;">' + (recent || '<div class="drow"><span class="dk">No data</span><span class="dv">-</span></div>') + '</div>'
+      + '<div class="dp-actions">'
+        +'<button class="btn" onclick="actionNodeTrafficReset(\''+esc(nodeId)+'\')">RESET</button>'
+        +'<button class="btn red" onclick="actionNodeTrafficRollover(\''+esc(nodeId)+'\')">ROLLOVER</button>'
+      +'</div>'
+    );
+  }catch(e){
+    pushEv('node.traffic.error', String(e && e.message ? e.message : e));
+    alert(e&&e.message?e.message:e);
+  }
 }
 function showLink(id){
   var l = linkById(id); if(!l) return;
@@ -1161,6 +1277,7 @@ function connectWS(){
       if(type.indexOf('job.') === 0){ refreshJobs().catch(function(){}); }
       if(type.indexOf('link.') === 0){ refreshLinks().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type.indexOf('node.') === 0){ refreshNodes().catch(function(){}); refreshTopology().catch(function(){}); }
+      if(type.indexOf('node.traffic.') === 0){ refreshNodes().catch(function(){}); refreshNodeTrafficSummary().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type.indexOf('registration.') === 0){ loadRegistrations().catch(function(){}); }
       if(type.indexOf('peer.') === 0){ loadPeers().catch(function(){}); }
       if(type === 'audit.event'){ refreshAudit().catch(function(){}); }
@@ -1190,6 +1307,11 @@ async function refreshNodes(){
   NODES = withCaps;
   renderNodes();
   updateShellCounters();
+}
+async function refreshNodeTrafficSummary(){
+  var items = await apiFetch(API_PREFIX + '/node-traffic/summary');
+  NODE_TRAFFIC = Array.isArray(items) ? items : [];
+  renderNodeTraffic();
 }
 async function refreshLinks(){
   var links = await apiFetch(API_PREFIX + '/links');
@@ -1309,6 +1431,7 @@ async function refreshHealth(){
 async function loadData(){
   await Promise.all([
     refreshNodes(),
+    refreshNodeTrafficSummary(),
     refreshLinks(),
     refreshPolicies(),
     refreshJobs(),
@@ -1848,6 +1971,34 @@ async function actionNodeBootstrap(nodeId){
     if(document.getElementById('dp').classList.contains('open') && nodeId === node.id){ showNode(nodeId); }
   }catch(err){
     pushEv('job.error', 'bootstrap failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
+  }
+}
+async function actionNodeTrafficReset(nodeId){
+  if(!confirm('Reset current traffic cycle counters for this node?')) return;
+  try{
+    var result = await apiFetch(API_PREFIX + '/node-traffic/nodes/' + encodeURIComponent(nodeId) + '/reset', { method:'POST', body:{} });
+    pushEv('node.traffic.reset', 'traffic reset for ' + (result.node_name || nodeId));
+    await refreshNodes();
+    await refreshNodeTrafficSummary();
+    await refreshTopology();
+    if(document.getElementById('dp').classList.contains('open')){ showNodeTraffic(nodeId); }
+  }catch(err){
+    pushEv('node.traffic.reset.error', 'traffic reset failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function actionNodeTrafficRollover(nodeId){
+  if(!confirm('Rollover the current traffic cycle and start a new one now?')) return;
+  try{
+    var result = await apiFetch(API_PREFIX + '/node-traffic/nodes/' + encodeURIComponent(nodeId) + '/rollover', { method:'POST', body:{} });
+    pushEv('node.traffic.rollover', 'traffic cycle rolled over for ' + (result.node_name || nodeId));
+    await refreshNodes();
+    await refreshNodeTrafficSummary();
+    await refreshTopology();
+    if(document.getElementById('dp').classList.contains('open')){ showNodeTraffic(nodeId); }
+  }catch(err){
+    pushEv('node.traffic.rollover.error', 'traffic rollover failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
   }
 }
 async function actionLinkValidate(linkId){
@@ -2579,6 +2730,8 @@ function wireStaticButtons(){
   var addBalancerBtn = document.getElementById('btnAddBalancer');
   var nodeSearch = document.getElementById('nodeSearch');
   var nodeStatusFilter = document.getElementById('nodeStatusFilter');
+  var trafficSearch = document.getElementById('trafficSearch');
+  var trafficStateFilter = document.getElementById('trafficStateFilter');
   var linkSearch = document.getElementById('linkSearch');
   var linkStateFilter = document.getElementById('linkStateFilter');
   var planBtn = document.getElementById('btnPlanPath');
@@ -2590,6 +2743,8 @@ function wireStaticButtons(){
   if(addBalancerBtn){ addBalancerBtn.addEventListener('click', function(){ openBalancerModal(); }); }
   if(nodeSearch){ nodeSearch.addEventListener('input', renderNodes); }
   if(nodeStatusFilter){ nodeStatusFilter.addEventListener('change', renderNodes); }
+  if(trafficSearch){ trafficSearch.addEventListener('input', renderNodeTraffic); }
+  if(trafficStateFilter){ trafficStateFilter.addEventListener('change', renderNodeTraffic); }
   if(linkSearch){ linkSearch.addEventListener('input', renderLinks); }
   if(linkStateFilter){ linkStateFilter.addEventListener('change', renderLinks); }
   if(planBtn){ planBtn.addEventListener('click', function(){ openPathPlanner(); }); }
@@ -2748,6 +2903,22 @@ async function bootApp(){
   document.getElementById('lerr').textContent = '';
   if(DEMO_MODE){
     NODES = DEMO_NODES;
+    NODE_TRAFFIC = DEMO_NODES.map(function(n){
+      var used = Number(n.traffic_used_gb || 0);
+      var limit = n.traffic_limit_gb != null ? Number(n.traffic_limit_gb) : null;
+      return {
+        node_id: n.id,
+        node_name: n.name,
+        node_status: n.status,
+        traffic_limit_gb: limit,
+        traffic_used_gb: used,
+        usage_ratio: limit ? used / limit : null,
+        cycle_started_at: n.registered_at,
+        cycle_ends_at: null,
+        traffic_suspended_at: limit && used >= limit ? new Date().toISOString() : null,
+        traffic_suspension_reason: limit && used >= limit ? 'traffic_limit_exceeded' : null
+      };
+    });
     LINKS = DEMO_LINKS;
     JOBS = DEMO_JOBS;
     POLICIES = DEMO_POLICIES;
@@ -2760,7 +2931,7 @@ async function bootApp(){
     renderPeers();
     updatePeersBadge();
     setTimeout(checkNodeTrafficAlerts, 800);
-    renderNodes(); renderLinks(); renderPolicies(); renderJobs(); renderAudit(); renderElog();
+    renderNodes(); renderNodeTraffic(); renderLinks(); renderPolicies(); renderJobs(); renderAudit(); renderElog();
     renderRegistrations(); updateRegBadge(); updateShellCounters();
     setTimeout(drawTopo, 60);
     pushEv('system.connected', 'DEMO MODE — not connected to real backend');
@@ -3016,6 +3187,7 @@ var I18N = {
     'nav.grp.visual':      'Visual',
     'nav.system':          'System',
     'nav.nodes':           'Nodes',
+    'nav.traffic':         'Node Traffic',
     'nav.links':           'Links',
     'nav.policies':        'Policies',
     'nav.jobs':            'Jobs',
@@ -3059,6 +3231,7 @@ var I18N = {
     'nav.grp.visual':      'Визуал',
     'nav.system':          'Система',
     'nav.nodes':           'Узлы',
+    'nav.traffic':         'Трафик узлов',
     'nav.links':           'Связи',
     'nav.policies':        'Политики',
     'nav.jobs':            'Задачи',
@@ -3231,4 +3404,3 @@ async function rejectReg(id){
 </script>
 </body>
 </html>
-

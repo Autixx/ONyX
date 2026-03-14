@@ -34,6 +34,8 @@ class AdminAccessControl:
         "jobs.write": {"roles": ["operator", "admin"], "description": "Modify jobs and locks"},
         "nodes.read": {"roles": ["viewer", "operator", "admin"], "description": "Read nodes"},
         "nodes.write": {"roles": ["operator", "admin"], "description": "Modify nodes and node jobs"},
+        "node_traffic.read": {"roles": ["viewer", "operator", "admin"], "description": "Read node traffic accounting"},
+        "node_traffic.write": {"roles": ["operator", "admin"], "description": "Reset and rollover node traffic accounting"},
         "registrations.read": {"roles": ["viewer", "operator", "admin"], "description": "Read registrations"},
         "registrations.write": {"roles": ["operator", "admin"], "description": "Approve and reject registrations"},
         "peers.read": {"roles": ["viewer", "operator", "admin"], "description": "Read peers"},
@@ -126,6 +128,8 @@ class AdminAccessControl:
             return "topology.read"
         if path == f"{prefix}/paths/plan":
             return "topology.plan"
+        if path == f"{prefix}/node-traffic/summary" or path.startswith(f"{prefix}/node-traffic/nodes/"):
+            return "node_traffic.read" if method in {"GET", "HEAD", "OPTIONS"} else "node_traffic.write"
         if path == f"{prefix}/peer-traffic/summary" or path.startswith(f"{prefix}/peer-traffic/nodes/"):
             return "peer_traffic.read"
         if path == f"{prefix}/access-rules" or path == f"{prefix}/access-rules/matrix":

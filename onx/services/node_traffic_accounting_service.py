@@ -181,6 +181,9 @@ class NodeTrafficAccountingService:
 
         if usage_ratio >= 1.0 and cycle.exceeded_emitted_at is None:
             cycle.exceeded_emitted_at = observed_at
+            if node.traffic_suspended_at is None:
+                node.traffic_suspended_at = observed_at
+                node.traffic_suspension_reason = "traffic_limit_exceeded"
             events.append(
                 NodeTrafficThresholdEvent(
                     event_type="node.traffic.exceeded",
@@ -189,8 +192,93 @@ class NodeTrafficAccountingService:
                     payload={"threshold": 1.0},
                 )
             )
+            if node.traffic_suspended_at is not None:
+                events.append(
+                    NodeTrafficThresholdEvent(
+                        event_type="node.traffic.suspended",
+                        level=EventLevel.ERROR,
+                        message=f"Node '{node.name}' has been suspended for new routing because its traffic limit was exceeded.",
+                        payload={"reason": node.traffic_suspension_reason or "traffic_limit_exceeded"},
+                    )
+                )
 
         return events
+
+    def reset_current_cycle(self, db: Session, node: Node, *, at: datetime | None = None) -> NodeTrafficCycle:
+        cycle = self.get_or_create_cycle(db, node, at or datetime.now(timezone.utc))
+        cycle.rx_bytes = 0
+        cycle.tx_bytes = 0
+        cycle.total_bytes = 0
+        cycle.warning_emitted_at = None
+        cycle.exceeded_emitted_at = None
+        node.traffic_suspended_at = None
+        node.traffic_suspension_reason = None
+        db.add(cycle)
+        db.add(node)
+        db.commit()
+        db.refresh(cycle)
+        self._event_logs.log(
+            db,
+            entity_type="node_traffic",
+            entity_id=node.id,
+            level=EventLevel.INFO,
+            message=f"Node '{node.name}' traffic cycle counters were reset.",
+            details={
+                "action": "reset",
+                "node_id": node.id,
+                "node_name": node.name,
+                "cycle_started_at": cycle.cycle_started_at.isoformat(),
+                "cycle_ends_at": cycle.cycle_ends_at.isoformat(),
+            },
+        )
+        realtime_service.publish(
+            "node.traffic.reset",
+            {
+                "node_id": node.id,
+                "node_name": node.name,
+                "cycle_started_at": cycle.cycle_started_at.isoformat(),
+                "cycle_ends_at": cycle.cycle_ends_at.isoformat(),
+            },
+        )
+        return cycle
+
+    def rollover_cycle(self, db: Session, node: Node, *, at: datetime | None = None) -> NodeTrafficCycle:
+        observed_at = self._ensure_utc(at or datetime.now(timezone.utc))
+        current_cycle = self.get_or_create_cycle(db, node, observed_at)
+        current_cycle.cycle_ends_at = observed_at
+        db.add(current_cycle)
+        node.registered_at = observed_at
+        node.traffic_suspended_at = None
+        node.traffic_suspension_reason = None
+        db.add(node)
+        next_cycle = self.get_or_create_cycle(db, node, observed_at)
+        db.commit()
+        db.refresh(next_cycle)
+        self._event_logs.log(
+            db,
+            entity_type="node_traffic",
+            entity_id=node.id,
+            level=EventLevel.INFO,
+            message=f"Node '{node.name}' traffic cycle was rolled over.",
+            details={
+                "action": "rollover",
+                "node_id": node.id,
+                "node_name": node.name,
+                "previous_cycle_ended_at": observed_at.isoformat(),
+                "current_cycle_started_at": next_cycle.cycle_started_at.isoformat(),
+                "current_cycle_ends_at": next_cycle.cycle_ends_at.isoformat(),
+            },
+        )
+        realtime_service.publish(
+            "node.traffic.rollover",
+            {
+                "node_id": node.id,
+                "node_name": node.name,
+                "current_cycle_started_at": next_cycle.cycle_started_at.isoformat(),
+                "current_cycle_ends_at": next_cycle.cycle_ends_at.isoformat(),
+            },
+        )
+        return next_cycle
 
     def _anchor_for_month(self, anchor: datetime, year: int, month: int) -> datetime:
         day = min(anchor.day, monthrange(year, month)[1])

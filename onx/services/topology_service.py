@@ -40,6 +40,8 @@ class TopologyService:
                     "status": node.status.value,
                     "management_address": node.management_address,
                     "last_seen_at": node.last_seen_at,
+                    "traffic_suspended_at": node.traffic_suspended_at,
+                    "traffic_suspension_reason": node.traffic_suspension_reason,
                     "metrics": {
                         "load_ratio": self._extract_load_ratio(load_probe),
                         "peer_count": peer_count_map.get(node.id, 0),
@@ -120,6 +122,8 @@ class TopologyService:
             if left_node.id in avoid_nodes or right_node.id in avoid_nodes:
                 continue
             if left_node.status == NodeStatus.OFFLINE or right_node.status == NodeStatus.OFFLINE:
+                continue
+            if left_node.traffic_suspended_at is not None or right_node.traffic_suspended_at is not None:
                 continue
 
             left_ep = endpoint_map.get((link.id, LinkSide.LEFT.value))

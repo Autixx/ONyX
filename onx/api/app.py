@@ -17,6 +17,7 @@ from onx.api.routers.jobs import router as jobs_router
 from onx.api.routers.links import router as links_router
 from onx.api.routers.maintenance import router as maintenance_router
 from onx.api.routers.nodes import router as nodes_router
+from onx.api.routers.node_traffic import router as node_traffic_router
 from onx.api.routers.peer_traffic import router as peer_traffic_router
 from onx.api.routers.peers import router as peers_router
 from onx.api.routers.probes import router as probes_router
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_logs_router, prefix=settings.api_prefix)
     app.include_router(jobs_router, prefix=settings.api_prefix)
     app.include_router(nodes_router, prefix=settings.api_prefix)
+    app.include_router(node_traffic_router, prefix=settings.api_prefix)
     app.include_router(peer_traffic_router, prefix=settings.api_prefix)
     app.include_router(peers_router, prefix=settings.api_prefix)
     app.include_router(registrations_router, prefix=settings.api_prefix)

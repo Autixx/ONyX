@@ -267,7 +267,9 @@ class ClientRoutingService:
         control_load = self._latest_control_load(db, node.id)
 
         status_penalty = 0.0
-        if node.status == NodeStatus.DEGRADED:
+        if node.traffic_suspended_at is not None:
+            status_penalty = 5000.0
+        elif node.status == NodeStatus.DEGRADED:
             status_penalty = 30.0
         elif node.status == NodeStatus.UNKNOWN:
             status_penalty = 60.0
@@ -294,9 +296,12 @@ class ClientRoutingService:
             "throughput_mbps": throughput,
             "control_load": control_load,
             "status": node.status.value,
+            "traffic_suspended": node.traffic_suspended_at is not None,
         }
 
     def _fallback_score(self, node: Node, control_load: float) -> float:
+        if node.traffic_suspended_at is not None:
+            return 5000.0 + control_load * 50.0
         status_base = {
             NodeStatus.REACHABLE: 240.0,
             NodeStatus.DEGRADED: 320.0,
@@ -363,7 +368,7 @@ class ClientRoutingService:
             NodeStatus.UNKNOWN: 2,
             NodeStatus.OFFLINE: 3,
         }
-        filtered = [node for node in nodes if node.status != NodeStatus.OFFLINE]
+        filtered = [node for node in nodes if node.status != NodeStatus.OFFLINE and node.traffic_suspended_at is None]
         filtered.sort(key=lambda node: (status_rank[node.status], node.name.lower()))
         return filtered
 
@@ -379,7 +384,7 @@ class ClientRoutingService:
             NodeStatus.UNKNOWN: 2,
             NodeStatus.OFFLINE: 3,
         }
-        filtered = [node for node in nodes if node.status != NodeStatus.OFFLINE]
+        filtered = [node for node in nodes if node.status != NodeStatus.OFFLINE and node.traffic_suspended_at is None]
         filtered.sort(key=lambda node: (status_rank[node.status], node.name.lower()))
         return filtered
 
@@ -397,6 +402,8 @@ class ClientRoutingService:
                 raise ValueError("Requested target egress node not found.")
             if node.status == NodeStatus.OFFLINE:
                 raise ValueError("Requested target egress node is offline.")
+            if node.traffic_suspended_at is not None:
+                raise ValueError("Requested target egress node is suspended by traffic policy.")
             return node
 
         candidates = self._list_egress_candidates(db)
@@ -408,6 +415,8 @@ class ClientRoutingService:
 
         ranked: list[tuple[float, Node]] = []
         for node in candidates:
+            if node.traffic_suspended_at is not None:
+                continue
             status_penalty = {
                 NodeStatus.REACHABLE: 0.0,
                 NodeStatus.DEGRADED: 40.0,

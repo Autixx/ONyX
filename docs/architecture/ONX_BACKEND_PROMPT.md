@@ -136,6 +136,13 @@ These are real routes already present in the backend and should be treated as st
 - `GET /api/v1/peer-traffic/summary`
 - `GET /api/v1/peer-traffic/nodes/{node_id}`
 
+### Node traffic accounting
+
+- `GET /api/v1/node-traffic/summary`
+- `GET /api/v1/node-traffic/nodes/{node_id}`
+- `POST /api/v1/node-traffic/nodes/{node_id}/reset`
+- `POST /api/v1/node-traffic/nodes/{node_id}/rollover`
+
 ## Backend Gaps Required by the Current Web UI
 
 These are the missing backend modules or fields the current web UI expects.
@@ -150,9 +157,10 @@ The frontend expects these additive fields on node payloads:
 
 Current implementation note:
 
-- `traffic_used_gb` should be derived from the current node traffic accounting cycle.
+- `traffic_used_gb` is derived from the current node traffic accounting cycle.
 - The current cycle is built from byte deltas received from the node agent via peer telemetry snapshots.
-- It should not replace raw peer telemetry endpoints.
+- It does not replace raw peer telemetry endpoints.
+- Separate control endpoints now exist under `/api/v1/node-traffic/*` for reset and rollover operations.
 
 ### 2. Graph node metrics expansion
 

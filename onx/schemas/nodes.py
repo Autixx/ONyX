@@ -75,6 +75,8 @@ class NodeRead(ONXBaseModel):
     registered_at: datetime
     traffic_limit_gb: float | None
     traffic_used_gb: float | None
+    traffic_suspended_at: datetime | None
+    traffic_suspension_reason: str | None
     last_seen_at: datetime | None
     created_at: datetime
     updated_at: datetime

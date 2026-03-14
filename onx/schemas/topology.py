@@ -19,6 +19,8 @@ class GraphNodeRead(ONXBaseModel):
     status: str
     management_address: str
     last_seen_at: datetime | None
+    traffic_suspended_at: datetime | None = None
+    traffic_suspension_reason: str | None = None
     metrics: GraphNodeMetricsRead
 
 
