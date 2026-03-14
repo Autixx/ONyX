@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     client_auth_session_ttl_seconds: int = 2592000
     client_auth_session_idle_timeout_seconds: int = 2592000
     client_auth_session_touch_interval_seconds: int = 300
+    client_device_challenge_ttl_seconds: int = 300
+    client_device_verify_max_age_seconds: int = 86400
+    client_bundle_ttl_seconds: int = 1800
+    client_bundle_dns_resolver: str = "1.1.1.1"
     client_probe_interval_seconds: int = 15
     client_probe_fresh_seconds: int = 120
     client_probe_retention_seconds: int = 86400

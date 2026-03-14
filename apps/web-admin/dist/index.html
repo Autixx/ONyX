@@ -483,7 +483,7 @@ td.m{color:var(--t0);}
       <!-- REGISTRATIONS -->
       <div class="page" id="page-registrations">
         <div class="ph">
-          <span class="ptitle" data-i18n="page.registrations">Registrations</span>
+          <span class="ptitle" data-i18n="page.registrations">Registrations / Identity</span>
           <div class="pbtn-row">
             <select id="regStatusFilter" class="mf-select" style="width:160px;padding:7px 10px;font-size:13px;">
               <option value="" data-i18n="reg.filter.all">all statuses</option>
@@ -509,6 +509,81 @@ td.m{color:var(--t0);}
             </thead>
             <tbody id="regtb"></tbody>
           </table>
+        </div>
+
+        <div class="ph" style="margin-top:18px">
+          <span class="ptitle">Users</span>
+          <div class="pbtn-row">
+            <button class="btn pri" id="btnAddUser">+ ADD USER</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Username</th><th>E-mail</th><th>Status</th><th>Goal</th><th>Devices</th><th>Actions</th></tr></thead>
+            <tbody id="usertb"></tbody>
+          </table>
+        </div>
+
+        <div class="two">
+          <div>
+            <div class="ph" style="margin-top:8px">
+              <span class="ptitle">Subscriptions</span>
+              <div class="pbtn-row">
+                <button class="btn pri" id="btnAddSubscription">+ ADD SUBSCRIPTION</button>
+              </div>
+            </div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>User</th><th>Plan</th><th>Status</th><th>Expires</th><th>Devices</th><th>Actions</th></tr></thead>
+                <tbody id="subtb"></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div class="ph" style="margin-top:8px">
+              <span class="ptitle">Plans</span>
+              <div class="pbtn-row">
+                <button class="btn pri" id="btnAddPlan">+ ADD PLAN</button>
+              </div>
+            </div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Code</th><th>Name</th><th>Mode</th><th>Enabled</th><th>Devices</th><th>Actions</th></tr></thead>
+                <tbody id="plantb"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="two">
+          <div>
+            <div class="ph" style="margin-top:8px">
+              <span class="ptitle">Referral Codes</span>
+              <div class="pbtn-row">
+                <button class="btn pri" id="btnAddReferralCode">+ ADD REFERRAL CODE</button>
+              </div>
+            </div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Code</th><th>Auto</th><th>Plan</th><th>Uses</th><th>Enabled</th><th>Actions</th></tr></thead>
+                <tbody id="reftb"></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div class="ph" style="margin-top:8px">
+              <span class="ptitle">Devices</span>
+              <div class="pbtn-row">
+                <button class="btn" onclick="refreshIdentityData()">REFRESH</button>
+              </div>
+            </div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>User</th><th>Label</th><th>Platform</th><th>Status</th><th>Verified</th><th>Actions</th></tr></thead>
+                <tbody id="devtb"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -584,6 +659,11 @@ var GEO_P = [];
 var BALANCERS = [];
 var AUDIT_EVTS = [];
 var PEERS = [];
+var USERS = [];
+var PLANS = [];
+var SUBSCRIPTIONS = [];
+var REFERRAL_CODES = [];
+var DEVICES = [];
 var JOB_EVENTS = {};
 var GRAPH_DATA = {nodes:[], edges:[], generated_at:null};
 var TOPO_HITBOXES = {nodes:[], edges:[]};
@@ -596,11 +676,24 @@ function policyById(id){ return POLICIES.find(function(p){ return p.id===id; }) 
 function dnsPolicyById(id){ return DNS_P.find(function(p){ return p.id===id; }) || null; }
 function geoPolicyById(id){ return GEO_P.find(function(p){ return p.id===id; }) || null; }
 function balancerById(id){ return BALANCERS.find(function(b){ return b.id===id; }) || null; }
+function userById(id){ return USERS.find(function(u){ return u.id===id; }) || null; }
+function planById(id){ return PLANS.find(function(p){ return p.id===id; }) || null; }
+function subscriptionById(id){ return SUBSCRIPTIONS.find(function(s){ return s.id===id; }) || null; }
+function referralCodeById(id){ return REFERRAL_CODES.find(function(r){ return r.id===id; }) || null; }
+function deviceById(id){ return DEVICES.find(function(d){ return d.id===id; }) || null; }
 function findNodeByName(name){
   var needle = String(name || '').trim().toLowerCase();
   return NODES.find(function(n){
     return String(n.name || '').trim().toLowerCase() === needle;
   }) || null;
+}
+function userNameById(id){
+  var user = userById(id);
+  return user ? user.username : id;
+}
+function planNameById(id){
+  var plan = planById(id);
+  return plan ? plan.name : (id || '-');
 }
 function policyNameById(id){
   var policy = policyById(id);
@@ -962,7 +1055,7 @@ function bindModalForm(formId, onSubmit){
 function formInput(label, name, value, extra){
   return '<div class=\"mf-row '+((extra && extra.full) ? 'full' : '')+'\">'
     +'<label class=\"mf-label\" for=\"'+esc(name)+'\">'+esc(label)+'</label>'
-    +'<input class=\"mf-input\" id=\"'+esc(name)+'\" name=\"'+esc(name)+'\" value=\"'+esc(value || '')+'\" '+(extra && extra.type ? 'type=\"'+esc(extra.type)+'\"' : 'type=\"text\"')+' '+(extra && extra.placeholder ? 'placeholder=\"'+esc(extra.placeholder)+'\"' : '')+' '+(extra && extra.required ? 'required' : '')+'>'
+    +'<input class=\"mf-input\" id=\"'+esc(name)+'\" name=\"'+esc(name)+'\" value=\"'+esc(value || '')+'\" '+(extra && extra.type ? 'type=\"'+esc(extra.type)+'\"' : 'type=\"text\"')+' '+(extra && extra.placeholder ? 'placeholder=\"'+esc(extra.placeholder)+'\"' : '')+' '+(extra && extra.required ? 'required' : '')+' '+(extra && extra.readonly ? 'readonly' : '')+'>'
     +(extra && extra.help ? '<div class=\"mf-help\">'+esc(extra.help)+'</div>' : '')
     +'</div>';
 }
@@ -1309,8 +1402,13 @@ function connectWS(){
       if(type.indexOf('link.') === 0){ refreshLinks().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type.indexOf('node.') === 0){ refreshNodes().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type.indexOf('node.traffic.') === 0){ refreshNodes().catch(function(){}); refreshNodeTrafficSummary().catch(function(){}); refreshTopology().catch(function(){}); }
-      if(type.indexOf('registration.') === 0){ loadRegistrations().catch(function(){}); }
+      if(type.indexOf('registration.') === 0){ loadRegistrations().catch(function(){}); loadUsers().catch(function(){}); loadSubscriptions().catch(function(){}); }
       if(type.indexOf('peer.') === 0){ loadPeers().catch(function(){}); }
+      if(type.indexOf('user.') === 0){ loadUsers().catch(function(){}); }
+      if(type.indexOf('subscription.') === 0){ loadSubscriptions().catch(function(){}); }
+      if(type.indexOf('plan.') === 0){ loadPlans().catch(function(){}); }
+      if(type.indexOf('referral_code.') === 0){ loadReferralCodes().catch(function(){}); }
+      if(type.indexOf('device.') === 0){ loadDevices().catch(function(){}); }
       if(type === 'audit.event'){ refreshAudit().catch(function(){}); }
     }catch(_){ }
   };
@@ -1470,7 +1568,8 @@ async function loadData(){
     refreshHealth(),
     refreshTopology(),
     loadPeers(),
-    loadRegistrations()
+    loadRegistrations(),
+    refreshIdentityData()
   ]);
 }
 async function healthCheck(){
@@ -3340,6 +3439,41 @@ async function loadRegistrations(){
   updateRegBadge();
 }
 
+async function refreshIdentityData(){
+  await Promise.all([
+    loadUsers(),
+    loadPlans(),
+    loadSubscriptions(),
+    loadReferralCodes(),
+    loadDevices()
+  ]);
+}
+
+async function loadUsers(){
+  USERS = await apiFetch(API_PREFIX + '/users');
+  renderUsers();
+}
+
+async function loadPlans(){
+  PLANS = await apiFetch(API_PREFIX + '/plans');
+  renderPlans();
+}
+
+async function loadSubscriptions(){
+  SUBSCRIPTIONS = await apiFetch(API_PREFIX + '/subscriptions');
+  renderSubscriptions();
+}
+
+async function loadReferralCodes(){
+  REFERRAL_CODES = await apiFetch(API_PREFIX + '/referral-codes');
+  renderReferralCodes();
+}
+
+async function loadDevices(){
+  DEVICES = await apiFetch(API_PREFIX + '/devices');
+  renderDevices();
+}
+
 function updateRegBadge(){
   var badge = document.getElementById('regBadge');
   if(!badge) return;
@@ -3385,6 +3519,120 @@ function renderRegistrations(){
   }).join('');
 }
 
+function renderUsers(){
+  var tb = document.getElementById('usertb');
+  if(!tb) return;
+  if(!USERS.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="6">No users.</td></tr>';
+    return;
+  }
+  tb.innerHTML = USERS.map(function(u){
+    return '<tr>'
+      +'<td class="m">'+esc(u.username)+'</td>'
+      +'<td>'+esc(u.email)+'</td>'
+      +'<td>'+sp(u.status)+'</td>'
+      +'<td>'+esc(u.usage_goal || '-')+'</td>'
+      +'<td>'+esc(String(u.requested_device_count || '-'))+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="showUser(\''+esc(u.id)+'\')">VIEW</button>'
+        +'<button class="btn sm" onclick="openUserModal(\''+esc(u.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="deleteUserFlow(\''+esc(u.id)+'\')">DEL</button>'
+      +'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+function renderPlans(){
+  var tb = document.getElementById('plantb');
+  if(!tb) return;
+  if(!PLANS.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="6">No plans.</td></tr>';
+    return;
+  }
+  tb.innerHTML = PLANS.map(function(p){
+    return '<tr>'
+      +'<td class="m">'+esc(p.code)+'</td>'
+      +'<td>'+esc(p.name)+'</td>'
+      +'<td>'+esc(p.billing_mode)+'</td>'
+      +'<td>'+(p.enabled ? sp('active') : sp('deleted'))+'</td>'
+      +'<td>'+esc(String(p.default_device_limit || '-'))+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="showPlan(\''+esc(p.id)+'\')">VIEW</button>'
+        +'<button class="btn sm" onclick="openPlanModal(\''+esc(p.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="deletePlanFlow(\''+esc(p.id)+'\')">DEL</button>'
+      +'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+function renderSubscriptions(){
+  var tb = document.getElementById('subtb');
+  if(!tb) return;
+  if(!SUBSCRIPTIONS.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="6">No subscriptions.</td></tr>';
+    return;
+  }
+  tb.innerHTML = SUBSCRIPTIONS.map(function(s){
+    return '<tr>'
+      +'<td class="m">'+esc(userNameById(s.user_id))+'</td>'
+      +'<td>'+esc(planNameById(s.plan_id))+'</td>'
+      +'<td>'+sp(s.status)+'</td>'
+      +'<td>'+esc(s.expires_at ? new Date(s.expires_at).toLocaleString() : 'lifetime')+'</td>'
+      +'<td>'+esc(String(s.device_limit || '-'))+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="showSubscription(\''+esc(s.id)+'\')">VIEW</button>'
+        +'<button class="btn sm" onclick="openSubscriptionModal(\''+esc(s.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="deleteSubscriptionFlow(\''+esc(s.id)+'\')">DEL</button>'
+      +'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+function renderReferralCodes(){
+  var tb = document.getElementById('reftb');
+  if(!tb) return;
+  if(!REFERRAL_CODES.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="6">No referral codes.</td></tr>';
+    return;
+  }
+  tb.innerHTML = REFERRAL_CODES.map(function(r){
+    return '<tr>'
+      +'<td class="m">'+esc(r.code)+'</td>'
+      +'<td>'+(r.auto_approve ? sp('active') : sp('pending'))+'</td>'
+      +'<td>'+esc(planNameById(r.plan_id))+'</td>'
+      +'<td>'+esc(String(r.used_count || 0) + (r.max_uses ? (' / ' + r.max_uses) : ''))+'</td>'
+      +'<td>'+(r.enabled ? sp('active') : sp('deleted'))+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="showReferralCode(\''+esc(r.id)+'\')">VIEW</button>'
+        +'<button class="btn sm" onclick="openReferralCodeModal(\''+esc(r.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="deleteReferralCodeFlow(\''+esc(r.id)+'\')">DEL</button>'
+      +'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+function renderDevices(){
+  var tb = document.getElementById('devtb');
+  if(!tb) return;
+  if(!DEVICES.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="6">No devices.</td></tr>';
+    return;
+  }
+  tb.innerHTML = DEVICES.map(function(d){
+    return '<tr>'
+      +'<td class="m">'+esc(userNameById(d.user_id))+'</td>'
+      +'<td>'+esc(d.device_label || '-')+'</td>'
+      +'<td>'+esc(d.platform || '-')+'</td>'
+      +'<td>'+sp(d.status)+'</td>'
+      +'<td>'+esc(d.verified_at ? new Date(d.verified_at).toLocaleString() : '-')+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="showDevice(\''+esc(d.id)+'\')">VIEW</button>'
+        +(d.status !== 'revoked' ? '<button class="btn sm red" onclick="revokeDeviceFlow(\''+esc(d.id)+'\')">REVOKE</button>' : '')
+      +'</td>'
+      +'</tr>';
+  }).join('');
+}
+
 async function approveReg(id){
   try{
     await apiFetch(API_PREFIX + '/registrations/' + encodeURIComponent(id) + '/approve', {method:'POST', body:{}});
@@ -3414,10 +3662,305 @@ async function rejectReg(id){
   updateRegBadge();
 }
 
+function showUser(id){
+  var u = userById(id); if(!u) return;
+  openDP('User ' + u.username, rows([
+    ['ID', u.id],
+    ['Username', u.username],
+    ['E-mail', u.email],
+    ['Status', u.status],
+    ['Name', ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || '-'],
+    ['Goal', u.usage_goal || '-'],
+    ['Requested Devices', String(u.requested_device_count || '-')],
+    ['Referral Code', u.referral_code || '-']
+  ]));
+}
+
+function showPlan(id){
+  var p = planById(id); if(!p) return;
+  openDP('Plan ' + p.code, rows([
+    ['ID', p.id],
+    ['Code', p.code],
+    ['Name', p.name],
+    ['Billing Mode', p.billing_mode],
+    ['Enabled', p.enabled ? 'yes' : 'no'],
+    ['Duration Days', p.duration_days != null ? String(p.duration_days) : '-'],
+    ['Default Device Limit', String(p.default_device_limit || '-')],
+    ['Traffic Quota Bytes', p.traffic_quota_bytes != null ? String(p.traffic_quota_bytes) : '-'],
+    ['Description', p.description || '-']
+  ]));
+}
+
+function showSubscription(id){
+  var s = subscriptionById(id); if(!s) return;
+  openDP('Subscription', rows([
+    ['ID', s.id],
+    ['User', userNameById(s.user_id)],
+    ['Plan', planNameById(s.plan_id)],
+    ['Status', s.status],
+    ['Billing Mode', s.billing_mode],
+    ['Starts', s.starts_at ? new Date(s.starts_at).toLocaleString() : '-'],
+    ['Expires', s.expires_at ? new Date(s.expires_at).toLocaleString() : 'lifetime'],
+    ['Device Limit', String(s.device_limit || '-')],
+    ['Traffic Quota Bytes', s.traffic_quota_bytes != null ? String(s.traffic_quota_bytes) : '-']
+  ]));
+}
+
+function showReferralCode(id){
+  var r = referralCodeById(id); if(!r) return;
+  openDP('Referral Code ' + r.code, rows([
+    ['ID', r.id],
+    ['Code', r.code],
+    ['Auto Approve', r.auto_approve ? 'yes' : 'no'],
+    ['Plan', planNameById(r.plan_id)],
+    ['Enabled', r.enabled ? 'yes' : 'no'],
+    ['Used', String(r.used_count || 0)],
+    ['Max Uses', r.max_uses != null ? String(r.max_uses) : '-'],
+    ['Device Override', r.device_limit_override != null ? String(r.device_limit_override) : '-'],
+    ['Goal Override', r.usage_goal_override || '-'],
+    ['Expires', r.expires_at ? new Date(r.expires_at).toLocaleString() : '-']
+  ]));
+}
+
+function showDevice(id){
+  var d = deviceById(id); if(!d) return;
+  openDP('Device ' + (d.device_label || d.id), rows([
+    ['ID', d.id],
+    ['User', userNameById(d.user_id)],
+    ['Label', d.device_label || '-'],
+    ['Platform', d.platform || '-'],
+    ['App Version', d.app_version || '-'],
+    ['Status', d.status],
+    ['Verified', d.verified_at ? new Date(d.verified_at).toLocaleString() : '-'],
+    ['Created', d.created_at ? new Date(d.created_at).toLocaleString() : '-']
+  ]));
+}
+
+function openUserModal(userId){
+  var user = userId ? userById(userId) : null;
+  var body = '<form id="userForm"><div class="modal-grid">'
+    +formInput('Username', 'username', user ? user.username : '', {required:true, readonly:!!user})
+    +formInput('E-mail', 'email', user ? user.email : '', {required:true})
+    +formInput(user ? 'New password (optional)' : 'Password', 'password', '', {type:'password', required:!user})
+    +formSelect('Status', 'status', user ? user.status : 'active', ['pending','active','blocked','deleted'])
+    +formInput('First name', 'first_name', user ? (user.first_name || '') : '')
+    +formInput('Last name', 'last_name', user ? (user.last_name || '') : '')
+    +formInput('Referral code', 'referral_code', user ? (user.referral_code || '') : '')
+    +formInput('Usage goal', 'usage_goal', user ? (user.usage_goal || '') : '')
+    +formInput('Requested devices', 'requested_device_count', user ? String(user.requested_device_count || 1) : '1', {type:'number', required:true})
+    +'</div></form>';
+  openModal(user ? 'Edit User' : 'Create User', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:user ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('userForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('userForm', function(fd){ saveUserForm(fd, userId); });
+}
+
+async function saveUserForm(fd, userId){
+  try{
+    var body = {
+      email: String(fd.get('email') || '').trim(),
+      status: String(fd.get('status') || 'active').trim(),
+      first_name: String(fd.get('first_name') || '').trim() || null,
+      last_name: String(fd.get('last_name') || '').trim() || null,
+      referral_code: String(fd.get('referral_code') || '').trim() || null,
+      usage_goal: String(fd.get('usage_goal') || '').trim() || null,
+      requested_device_count: Number(fd.get('requested_device_count') || 1)
+    };
+    if(userId){
+      var newPassword = String(fd.get('password') || '').trim();
+      if(newPassword){ body.password = newPassword; }
+      await apiFetch(API_PREFIX + '/users/' + encodeURIComponent(userId), { method:'PATCH', body:body });
+    } else {
+      body.username = String(fd.get('username') || '').trim();
+      body.password = String(fd.get('password') || '').trim();
+      await apiFetch(API_PREFIX + '/users', { method:'POST', body:body });
+    }
+    closeModal();
+    await loadUsers();
+  }catch(err){
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function deleteUserFlow(userId){
+  var user = userById(userId);
+  if(!confirm('Delete user ' + (user ? user.username : userId) + '?')) return;
+  await apiFetch(API_PREFIX + '/users/' + encodeURIComponent(userId), { method:'DELETE' });
+  await Promise.all([loadUsers(), loadSubscriptions(), loadDevices()]);
+}
+
+function openPlanModal(planId){
+  var plan = planId ? planById(planId) : null;
+  var body = '<form id="planForm"><div class="modal-grid">'
+    +formInput('Code', 'code', plan ? plan.code : '', {required:true, readonly:!!plan})
+    +formInput('Name', 'name', plan ? plan.name : '', {required:true})
+    +formSelect('Billing mode', 'billing_mode', plan ? plan.billing_mode : 'manual', ['manual','lifetime','periodic','trial'])
+    +formCheckbox('Enabled', 'enabled', plan ? plan.enabled : true, {caption:'Plan enabled'})
+    +formInput('Duration days', 'duration_days', plan && plan.duration_days != null ? String(plan.duration_days) : '', {type:'number'})
+    +formInput('Default device limit', 'default_device_limit', plan ? String(plan.default_device_limit || 1) : '1', {type:'number', required:true})
+    +formInput('Usage goal policy', 'default_usage_goal_policy', plan ? (plan.default_usage_goal_policy || '') : '')
+    +formInput('Traffic quota bytes', 'traffic_quota_bytes', plan && plan.traffic_quota_bytes != null ? String(plan.traffic_quota_bytes) : '', {type:'number'})
+    +formTextarea('Description', 'description', plan ? (plan.description || '') : '', {full:true})
+    +'</div></form>';
+  openModal(plan ? 'Edit Plan' : 'Create Plan', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:plan ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('planForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('planForm', function(fd){ savePlanForm(fd, planId); });
+}
+
+async function savePlanForm(fd, planId){
+  var body = {
+    name: String(fd.get('name') || '').trim(),
+    description: String(fd.get('description') || '').trim() || null,
+    enabled: checked(fd, 'enabled'),
+    billing_mode: String(fd.get('billing_mode') || 'manual').trim(),
+    duration_days: String(fd.get('duration_days') || '').trim() ? Number(fd.get('duration_days')) : null,
+    default_device_limit: Number(fd.get('default_device_limit') || 1),
+    default_usage_goal_policy: String(fd.get('default_usage_goal_policy') || '').trim() || null,
+    traffic_quota_bytes: String(fd.get('traffic_quota_bytes') || '').trim() ? Number(fd.get('traffic_quota_bytes')) : null
+  };
+  if(planId){
+    await apiFetch(API_PREFIX + '/plans/' + encodeURIComponent(planId), { method:'PATCH', body:body });
+  } else {
+    body.code = String(fd.get('code') || '').trim();
+    await apiFetch(API_PREFIX + '/plans', { method:'POST', body:body });
+  }
+  closeModal();
+  await loadPlans();
+}
+
+async function deletePlanFlow(planId){
+  var plan = planById(planId);
+  if(!confirm('Delete plan ' + (plan ? plan.code : planId) + '?')) return;
+  await apiFetch(API_PREFIX + '/plans/' + encodeURIComponent(planId), { method:'DELETE' });
+  await Promise.all([loadPlans(), loadSubscriptions(), loadReferralCodes()]);
+}
+
+function openSubscriptionModal(subscriptionId){
+  var sub = subscriptionId ? subscriptionById(subscriptionId) : null;
+  var userOptions = USERS.map(function(u){ return {value:u.id, label:u.username}; });
+  var planOptions = [{value:'', label:'-'}].concat(PLANS.map(function(p){ return {value:p.id, label:p.name}; }));
+  var body = '<form id="subscriptionForm"><div class="modal-grid">'
+    +formSelect('User', 'user_id', sub ? sub.user_id : (USERS[0] ? USERS[0].id : ''), userOptions)
+    +formSelect('Plan', 'plan_id', sub ? (sub.plan_id || '') : '', planOptions)
+    +formSelect('Status', 'status', sub ? sub.status : 'active', ['pending','active','suspended','expired','revoked'])
+    +formSelect('Billing mode', 'billing_mode', sub ? sub.billing_mode : 'manual', ['manual','lifetime','periodic','trial'])
+    +formInput('Starts at (ISO)', 'starts_at', sub ? (sub.starts_at || '') : '')
+    +formInput('Expires at (ISO)', 'expires_at', sub ? (sub.expires_at || '') : '')
+    +formInput('Device limit', 'device_limit', sub ? String(sub.device_limit || 1) : '1', {type:'number'})
+    +formInput('Traffic quota bytes', 'traffic_quota_bytes', sub && sub.traffic_quota_bytes != null ? String(sub.traffic_quota_bytes) : '', {type:'number'})
+    +'</div></form>';
+  openModal(sub ? 'Edit Subscription' : 'Create Subscription', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:sub ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('subscriptionForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('subscriptionForm', function(fd){ saveSubscriptionForm(fd, subscriptionId); });
+}
+
+async function saveSubscriptionForm(fd, subscriptionId){
+  var body = {
+    plan_id: String(fd.get('plan_id') || '').trim() || null,
+    status: String(fd.get('status') || 'active').trim(),
+    billing_mode: String(fd.get('billing_mode') || 'manual').trim(),
+    starts_at: String(fd.get('starts_at') || '').trim() || null,
+    expires_at: String(fd.get('expires_at') || '').trim() || null,
+    device_limit: Number(fd.get('device_limit') || 1),
+    traffic_quota_bytes: String(fd.get('traffic_quota_bytes') || '').trim() ? Number(fd.get('traffic_quota_bytes')) : null
+  };
+  if(subscriptionId){
+    await apiFetch(API_PREFIX + '/subscriptions/' + encodeURIComponent(subscriptionId), { method:'PATCH', body:body });
+  } else {
+    body.user_id = String(fd.get('user_id') || '').trim();
+    await apiFetch(API_PREFIX + '/subscriptions', { method:'POST', body:body });
+  }
+  closeModal();
+  await loadSubscriptions();
+}
+
+async function deleteSubscriptionFlow(subscriptionId){
+  if(!confirm('Delete subscription?')) return;
+  await apiFetch(API_PREFIX + '/subscriptions/' + encodeURIComponent(subscriptionId), { method:'DELETE' });
+  await loadSubscriptions();
+}
+
+function openReferralCodeModal(referralId){
+  var ref = referralId ? referralCodeById(referralId) : null;
+  var planOptions = [{value:'', label:'-'}].concat(PLANS.map(function(p){ return {value:p.id, label:p.name}; }));
+  var body = '<form id="referralCodeForm"><div class="modal-grid">'
+    +formInput('Code', 'code', ref ? ref.code : '', {required:true, readonly:!!ref})
+    +formSelect('Plan', 'plan_id', ref ? (ref.plan_id || '') : '', planOptions)
+    +formCheckbox('Enabled', 'enabled', ref ? ref.enabled : true, {caption:'Code enabled'})
+    +formCheckbox('Auto approve', 'auto_approve', ref ? ref.auto_approve : false, {caption:'Approve registration automatically'})
+    +formInput('Max uses', 'max_uses', ref && ref.max_uses != null ? String(ref.max_uses) : '', {type:'number'})
+    +formInput('Device limit override', 'device_limit_override', ref && ref.device_limit_override != null ? String(ref.device_limit_override) : '', {type:'number'})
+    +formInput('Usage goal override', 'usage_goal_override', ref ? (ref.usage_goal_override || '') : '')
+    +formInput('Expires at (ISO)', 'expires_at', ref ? (ref.expires_at || '') : '')
+    +formTextarea('Note', 'note', ref ? (ref.note || '') : '', {full:true})
+    +'</div></form>';
+  openModal(ref ? 'Edit Referral Code' : 'Create Referral Code', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:ref ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('referralCodeForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('referralCodeForm', function(fd){ saveReferralCodeForm(fd, referralId); });
+}
+
+async function saveReferralCodeForm(fd, referralId){
+  var body = {
+    enabled: checked(fd, 'enabled'),
+    auto_approve: checked(fd, 'auto_approve'),
+    plan_id: String(fd.get('plan_id') || '').trim() || null,
+    max_uses: String(fd.get('max_uses') || '').trim() ? Number(fd.get('max_uses')) : null,
+    device_limit_override: String(fd.get('device_limit_override') || '').trim() ? Number(fd.get('device_limit_override')) : null,
+    usage_goal_override: String(fd.get('usage_goal_override') || '').trim() || null,
+    expires_at: String(fd.get('expires_at') || '').trim() || null,
+    note: String(fd.get('note') || '').trim() || null
+  };
+  if(referralId){
+    await apiFetch(API_PREFIX + '/referral-codes/' + encodeURIComponent(referralId), { method:'PATCH', body:body });
+  } else {
+    body.code = String(fd.get('code') || '').trim();
+    await apiFetch(API_PREFIX + '/referral-codes', { method:'POST', body:body });
+  }
+  closeModal();
+  await loadReferralCodes();
+}
+
+async function deleteReferralCodeFlow(referralId){
+  var ref = referralCodeById(referralId);
+  if(!confirm('Delete referral code ' + (ref ? ref.code : referralId) + '?')) return;
+  await apiFetch(API_PREFIX + '/referral-codes/' + encodeURIComponent(referralId), { method:'DELETE' });
+  await loadReferralCodes();
+}
+
+async function revokeDeviceFlow(deviceId){
+  var device = deviceById(deviceId);
+  if(!confirm('Revoke device ' + (device && device.device_label ? device.device_label : deviceId) + '?')) return;
+  await apiFetch(API_PREFIX + '/devices/' + encodeURIComponent(deviceId) + '/revoke', { method:'POST', body:{} });
+  await loadDevices();
+}
+
 // Wire registrations filter
 (function(){
   var sel = document.getElementById('regStatusFilter');
   if(sel){ sel.addEventListener('change', renderRegistrations); }
+  var addUserBtn = document.getElementById('btnAddUser');
+  var addPlanBtn = document.getElementById('btnAddPlan');
+  var addSubscriptionBtn = document.getElementById('btnAddSubscription');
+  var addReferralCodeBtn = document.getElementById('btnAddReferralCode');
+  if(addUserBtn){ addUserBtn.addEventListener('click', function(){ openUserModal(); }); }
+  if(addPlanBtn){ addPlanBtn.addEventListener('click', function(){ openPlanModal(); }); }
+  if(addSubscriptionBtn){ addSubscriptionBtn.addEventListener('click', function(){ openSubscriptionModal(); }); }
+  if(addReferralCodeBtn){ addReferralCodeBtn.addEventListener('click', function(){ openReferralCodeModal(); }); }
 })();
 
 // ═══════════════════════════════════════

@@ -10,8 +10,11 @@ from onx.api.routers.access_rules import router as access_rules_router
 from onx.api.routers.audit_logs import router as audit_logs_router
 from onx.api.routers.balancers import router as balancers_router
 from onx.api.routers.client_auth import router as client_auth_router
+from onx.api.routers.client_bundles import router as client_bundles_router
+from onx.api.routers.client_devices import router as client_devices_router
 from onx.api.routers.client_registrations import router as client_registrations_router
 from onx.api.routers.client_routing import router as client_routing_router
+from onx.api.routers.devices import router as devices_router
 from onx.api.routers.dns_policies import router as dns_policies_router
 from onx.api.routers.geo_policies import router as geo_policies_router
 from onx.api.routers.health import router as health_router
@@ -94,6 +97,8 @@ def create_app() -> FastAPI:
     app.include_router(admin_web_auth_router, prefix=settings.api_prefix)
     app.include_router(agent_metrics_router, prefix=settings.api_prefix)
     app.include_router(client_auth_router, prefix=settings.api_prefix)
+    app.include_router(client_devices_router, prefix=settings.api_prefix)
+    app.include_router(client_bundles_router, prefix=settings.api_prefix)
     app.include_router(client_registrations_router, prefix=settings.api_prefix)
     app.include_router(client_routing_router, prefix=settings.api_prefix)
     app.include_router(access_rules_router, prefix=settings.api_prefix)
@@ -101,6 +106,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs_router, prefix=settings.api_prefix)
     app.include_router(nodes_router, prefix=settings.api_prefix)
     app.include_router(node_traffic_router, prefix=settings.api_prefix)
+    app.include_router(devices_router, prefix=settings.api_prefix)
     app.include_router(users_router, prefix=settings.api_prefix)
     app.include_router(plans_router, prefix=settings.api_prefix)
     app.include_router(subscriptions_router, prefix=settings.api_prefix)

@@ -36,6 +36,8 @@ class AdminAccessControl:
         "nodes.write": {"roles": ["operator", "admin"], "description": "Modify nodes and node jobs"},
         "node_traffic.read": {"roles": ["viewer", "operator", "admin"], "description": "Read node traffic accounting"},
         "node_traffic.write": {"roles": ["operator", "admin"], "description": "Reset and rollover node traffic accounting"},
+        "devices.read": {"roles": ["viewer", "operator", "admin"], "description": "Read devices"},
+        "devices.write": {"roles": ["operator", "admin"], "description": "Modify devices"},
         "users.read": {"roles": ["viewer", "operator", "admin"], "description": "Read users"},
         "users.write": {"roles": ["operator", "admin"], "description": "Modify users"},
         "plans.read": {"roles": ["viewer", "operator", "admin"], "description": "Read plans"},
@@ -149,6 +151,7 @@ class AdminAccessControl:
         path_groups = {
             "jobs": "jobs",
             "nodes": "nodes",
+            "devices": "devices",
             "users": "users",
             "plans": "plans",
             "subscriptions": "subscriptions",
