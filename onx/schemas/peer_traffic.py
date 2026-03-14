@@ -33,6 +33,9 @@ class AgentPeerTrafficReportAck(ONXBaseModel):
     peers_seen: int
     peers_upserted: int
     peers_deleted: int
+    node_rx_delta: int | None = None
+    node_tx_delta: int | None = None
+    node_total_delta: int | None = None
 
 
 class PeerTrafficStateRead(ONXBaseModel):

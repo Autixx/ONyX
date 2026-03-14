@@ -932,15 +932,53 @@ function checked(fd, name){
 }
 function showNode(id){
   var n = NODES.find(function(x){return x.id===id;}); if(!n) return;
-  openDP(n.name,
-    rows([['ID',n.id],['Role',n.role],['Mgmt Address',n.management_address],['SSH Host',n.ssh_host],['SSH Port',n.ssh_port],['SSH User',n.ssh_user],['Auth Type',n.auth_type],['Status',n.status],['Capabilities',(n.caps||[]).join(', ') || '-']])
+  var baseHtml =
+    rows([
+      ['ID',n.id],
+      ['Role',n.role],
+      ['Mgmt Address',n.management_address],
+      ['SSH Host',n.ssh_host],
+      ['SSH Port',n.ssh_port],
+      ['SSH User',n.ssh_user],
+      ['Auth Type',n.auth_type],
+      ['Status',n.status],
+      ['Capabilities',(n.caps||[]).join(', ') || '-'],
+      ['Traffic Used', n.traffic_used_gb != null ? String(n.traffic_used_gb) + ' GB' : '-'],
+      ['Traffic Limit', n.traffic_limit_gb != null ? String(n.traffic_limit_gb) + ' GB' : '-']
+    ])
+    +'<div id="nodeTrafficBox" style="margin-top:14px;color:var(--t1);font-size:13px;">Loading node traffic cycle…</div>'
     +'<div class="dp-actions">'
       +'<button class="btn" onclick="actionNodeDiscover(\''+esc(n.id)+'\')">PROBE SSH</button>'
       +'<button class="btn pri" onclick="actionNodeBootstrap(\''+esc(n.id)+'\')">BOOTSTRAP</button>'
       +'<button class="btn" onclick="openNodeModal(\''+esc(n.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteNodeFlow(\''+esc(n.id)+'\')">DELETE</button>'
-    +'</div>'
-  );
+    +'</div>';
+  openDP(n.name, baseHtml);
+  apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(n.id) + '/traffic')
+    .then(function(overview){
+      var box = document.getElementById('nodeTrafficBox');
+      if(!box || !overview || !overview.current_cycle) return;
+      var current = overview.current_cycle;
+      var ratio = current.usage_ratio != null ? (Math.round(current.usage_ratio * 1000) / 10) + '%' : '-';
+      var recent = (overview.recent_cycles || []).slice(0, 4).map(function(cycle){
+        return '<div class="drow"><span class="dk">'+esc(fmtDate(cycle.cycle_started_at))+'</span><span class="dv">'+esc(String(cycle.used_gb)+' GB')+'</span></div>';
+      }).join('');
+      box.innerHTML =
+        '<div class="dp-sep"></div>'
+        + rows([
+          ['Cycle Start', fmtDate(current.cycle_started_at)],
+          ['Cycle End', fmtDate(current.cycle_ends_at)],
+          ['Usage Ratio', ratio],
+          ['Warning Triggered', current.warning_emitted_at ? fmtDate(current.warning_emitted_at) : '-'],
+          ['Exceeded Triggered', current.exceeded_emitted_at ? fmtDate(current.exceeded_emitted_at) : '-']
+        ])
+        + '<div style="margin-top:10px;color:var(--t2);font-size:12px;text-transform:uppercase;letter-spacing:.12em;">Recent Cycles</div>'
+        + '<div style="margin-top:8px;">' + (recent || '<div class="drow"><span class="dk">No data</span><span class="dv">-</span></div>') + '</div>';
+    })
+    .catch(function(){
+      var box = document.getElementById('nodeTrafficBox');
+      if(box) box.innerHTML = '<div style="color:var(--rd)">Failed to load node traffic cycle.</div>';
+    });
 }
 function showLink(id){
   var l = linkById(id); if(!l) return;
@@ -3193,5 +3231,4 @@ async function rejectReg(id){
 </script>
 </body>
 </html>
-
 

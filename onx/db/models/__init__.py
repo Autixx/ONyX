@@ -16,6 +16,7 @@ from onx.db.models.link_endpoint import LinkEndpoint
 from onx.db.models.node import Node
 from onx.db.models.node_capability import NodeCapability
 from onx.db.models.node_secret import NodeSecret
+from onx.db.models.node_traffic_cycle import NodeTrafficCycle
 from onx.db.models.peer_registry import PeerRegistry
 from onx.db.models.peer import Peer
 from onx.db.models.peer_traffic_state import PeerTrafficState
@@ -30,6 +31,7 @@ __all__ = [
     "Node",
     "NodeSecret",
     "NodeCapability",
+    "NodeTrafficCycle",
     "PeerRegistry",
     "Peer",
     "PeerTrafficState",

@@ -8,6 +8,7 @@ from onx.db.models.job import Job, JobKind, JobState, JobTargetType
 from onx.db.models.node_capability import NodeCapability
 from onx.db.models.node_secret import NodeSecretKind
 from onx.schemas.jobs import JobEnqueueOptions, JobRead
+from onx.schemas.node_traffic import NodeTrafficCycleRead, NodeTrafficOverviewRead
 from onx.schemas.nodes import (
     NodeCapabilityRead,
     NodeCreate,
@@ -18,6 +19,7 @@ from onx.schemas.nodes import (
 )
 from onx.services.job_service import JobConflictError, JobService
 from onx.services.node_agent_service import NodeAgentService
+from onx.services.node_traffic_accounting_service import NodeTrafficAccountingService
 from onx.services.secret_service import SecretService
 
 
@@ -25,6 +27,7 @@ router = APIRouter(prefix="/nodes", tags=["nodes"])
 secret_service = SecretService()
 job_service = JobService()
 node_agent_service = NodeAgentService()
+node_traffic_accounting_service = NodeTrafficAccountingService()
 
 
 def _serialize_node(node: Node, *, traffic_used_gb: float | None = None) -> NodeRead:
@@ -79,6 +82,35 @@ def get_node(node_id: str, db: Session = Depends(get_database_session)) -> NodeR
     if node is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found.")
     return _serialize_node(node, traffic_used_gb=node_agent_service.build_node_traffic_usage_gb_map(db).get(node.id))
+
+
+@router.get("/{node_id}/traffic", response_model=NodeTrafficOverviewRead)
+def get_node_traffic(
+    node_id: str,
+    limit: int = 12,
+    db: Session = Depends(get_database_session),
+) -> NodeTrafficOverviewRead:
+    node = db.get(Node, node_id)
+    if node is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found.")
+    recent_cycles = node_traffic_accounting_service.list_recent_cycles(db, node_id, limit=max(1, min(limit, 60)))
+    current_cycle = node_traffic_accounting_service.get_current_cycle(db, node, create=True)
+    db.commit()
+    db.refresh(current_cycle)
+    cycle_map = {cycle.id: cycle for cycle in recent_cycles}
+    cycle_map[current_cycle.id] = current_cycle
+    serialized_recent = [
+        NodeTrafficCycleRead.model_validate(node_traffic_accounting_service.serialize_cycle(node, cycle))
+        for cycle in sorted(cycle_map.values(), key=lambda item: item.cycle_started_at, reverse=True)[: max(1, min(limit, 60))]
+    ]
+    return NodeTrafficOverviewRead(
+        node_id=node.id,
+        node_name=node.name,
+        current_cycle=NodeTrafficCycleRead.model_validate(
+            node_traffic_accounting_service.serialize_cycle(node, current_cycle)
+        ),
+        recent_cycles=serialized_recent,
+    )
 
 
 @router.delete("/{node_id}", status_code=status.HTTP_204_NO_CONTENT)

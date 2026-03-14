@@ -50,6 +50,7 @@ These are real routes already present in the backend and should be treated as st
 - `GET /api/v1/nodes`
 - `POST /api/v1/nodes`
 - `GET /api/v1/nodes/{id}`
+- `GET /api/v1/nodes/{id}/traffic`
 - `PATCH /api/v1/nodes/{id}`
 - `DELETE /api/v1/nodes/{id}`
 - `PUT /api/v1/nodes/{id}/secret`
@@ -149,7 +150,8 @@ The frontend expects these additive fields on node payloads:
 
 Current implementation note:
 
-- `traffic_used_gb` should be derived from current peer telemetry attribution where possible.
+- `traffic_used_gb` should be derived from the current node traffic accounting cycle.
+- The current cycle is built from byte deltas received from the node agent via peer telemetry snapshots.
 - It should not replace raw peer telemetry endpoints.
 
 ### 2. Graph node metrics expansion

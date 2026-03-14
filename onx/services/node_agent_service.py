@@ -12,6 +12,7 @@ from onx.db.models.node_secret import NodeSecretKind
 from onx.db.models.peer_registry import PeerRegistry
 from onx.db.models.peer_traffic_state import PeerTrafficState
 from onx.schemas.peer_traffic import AgentPeerTrafficReport
+from onx.services.node_traffic_accounting_service import NodeTrafficAccountingService
 from onx.services.secret_service import SecretService
 
 
@@ -21,6 +22,7 @@ NODE_AGENT_CAPABILITY = "onx_node_agent"
 class NodeAgentService:
     def __init__(self) -> None:
         self._secrets = SecretService()
+        self._traffic_accounting = NodeTrafficAccountingService()
 
     def ensure_agent_token(self, db: Session, node: Node) -> str:
         secret_ref = f"node-agent:{node.id}"
@@ -54,6 +56,8 @@ class NodeAgentService:
         collected_at = report.collected_at.astimezone(timezone.utc)
         seen_keys: set[tuple[str, str]] = set()
         upserted = 0
+        node_rx_delta = 0
+        node_tx_delta = 0
 
         capability = db.scalar(
             select(NodeCapability).where(
@@ -116,10 +120,21 @@ class NodeAgentService:
                     peer_public_key=item.peer_public_key,
                     sample_collected_at=collected_at,
                 )
+                previous_rx = 0
+                previous_tx = 0
+            else:
+                previous_rx = int(state.rx_bytes or 0)
+                previous_tx = int(state.tx_bytes or 0)
+
+            current_rx = int(item.rx_bytes)
+            current_tx = int(item.tx_bytes)
+            node_rx_delta += current_rx - previous_rx if current_rx >= previous_rx else current_rx
+            node_tx_delta += current_tx - previous_tx if current_tx >= previous_tx else current_tx
+
             state.endpoint = item.endpoint
             state.allowed_ips_json = list(item.allowed_ips or [])
-            state.rx_bytes = int(item.rx_bytes)
-            state.tx_bytes = int(item.tx_bytes)
+            state.rx_bytes = current_rx
+            state.tx_bytes = current_tx
             state.latest_handshake_at = item.latest_handshake_at
             state.sample_collected_at = collected_at
             state.agent_version = report.agent_version
@@ -140,13 +155,29 @@ class NodeAgentService:
                 db.delete(row)
                 deleted += 1
 
+        cycle, threshold_events = self._traffic_accounting.record_delta(
+            db,
+            node=node,
+            rx_delta=node_rx_delta,
+            tx_delta=node_tx_delta,
+            collected_at=collected_at,
+        )
         db.commit()
+        self._traffic_accounting.emit_threshold_events(
+            db,
+            node=node,
+            cycle=cycle,
+            events=threshold_events,
+        )
         return {
             "node_id": node.id,
             "received_at": datetime.now(timezone.utc),
             "peers_seen": len(report.peers),
             "peers_upserted": upserted,
             "peers_deleted": deleted,
+            "node_rx_delta": node_rx_delta,
+            "node_tx_delta": node_tx_delta,
+            "node_total_delta": node_rx_delta + node_tx_delta,
         }
 
     def list_node_peer_traffic(self, db: Session, node_id: str) -> list[dict]:
@@ -240,14 +271,7 @@ class NodeAgentService:
         return sorted(summary.values(), key=lambda item: (-item["total_bytes"], item["peer_public_key"]))
 
     def build_node_traffic_usage_gb_map(self, db: Session) -> dict[str, float]:
-        usage_bytes: dict[str, int] = {}
-        for item in self.list_peer_traffic_summary(db):
-            owner_node_id = item.get("owner_node_id")
-            if not owner_node_id:
-                continue
-            usage_bytes[owner_node_id] = usage_bytes.get(owner_node_id, 0) + int(item.get("total_bytes", 0) or 0)
-        gib = 1024 * 1024 * 1024
-        return {node_id: round(total / gib, 3) for node_id, total in usage_bytes.items()}
+        return self._traffic_accounting.build_current_usage_gb_map(db)
 
     def build_node_peer_count_map(self, db: Session) -> dict[str, int]:
         rows = db.execute(
