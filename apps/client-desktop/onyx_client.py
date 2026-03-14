@@ -11,6 +11,7 @@ Dependencies:
 import argparse
 import base64
 import json
+import os
 import platform
 import secrets
 import shutil
@@ -170,6 +171,17 @@ def normalize_api_base_url(raw: str) -> str:
     if not value.endswith("/api/v1"):
         value += "/api/v1"
     return value
+
+
+def open_tools_directory() -> None:
+    TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+    if platform.system() == "Windows":
+        os.startfile(str(TOOLS_DIR))
+        return
+    if platform.system() == "Darwin":
+        subprocess.run(["open", str(TOOLS_DIR)], check=False)
+        return
+    subprocess.run(["xdg-open", str(TOOLS_DIR)], check=False)
 
 
 def test_api_health(base_url: str) -> dict:
@@ -1155,13 +1167,19 @@ class DashboardScreen(QWidget):
         startup_status.setStyleSheet(f"color:{C_T2};font-size:11px;")
         lay.addWidget(startup_status)
 
+        runtime_ready_status = QLabel("")
+        runtime_ready_status.setStyleSheet(f"color:{C_T2};font-size:11px;")
+        lay.addWidget(runtime_ready_status)
+
         action_row=QWidget(); action_lay=QHBoxLayout(action_row); action_lay.setContentsMargins(0,0,0,0); action_lay.setSpacing(8)
         test_btn=GhostButton("Test API")
         runtime_btn=GhostButton("Check Runtime")
+        open_tools_btn=GhostButton("Open Tools Folder")
         install_btn=GhostButton("Install Startup")
         remove_btn=GhostButton("Remove Startup")
         action_lay.addWidget(test_btn)
         action_lay.addWidget(runtime_btn)
+        action_lay.addWidget(open_tools_btn)
         action_lay.addWidget(install_btn); action_lay.addWidget(remove_btn); action_lay.addStretch()
         lay.addWidget(action_row)
 
@@ -1174,6 +1192,15 @@ class DashboardScreen(QWidget):
         runtime_info.setFixedHeight(150)
         lay.addWidget(runtime_info)
 
+        dns_title = QLabel("DNS RUNTIME")
+        dns_title.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;")
+        lay.addWidget(dns_title)
+
+        dns_info = QTextEdit()
+        dns_info.setReadOnly(True)
+        dns_info.setFixedHeight(72)
+        lay.addWidget(dns_info)
+
         def _refresh_startup():
             startup_status.setText("Background startup installed" if is_autostart_installed() else "Background startup not installed")
 
@@ -1181,6 +1208,20 @@ class DashboardScreen(QWidget):
             info = self._runtime.diagnostics()
             tool_details = info["tool_details"]
             profiles = info["profiles"]
+            awg_ready = bool(tool_details["awg"]["tool"] and tool_details["awg"]["quick"])
+            wg_ready = bool(tool_details["wg"]["tool"] and tool_details["wg"]["quick"])
+            if awg_ready and wg_ready:
+                runtime_ready_status.setText("Runtime status: AWG READY / WG READY")
+                runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
+            elif awg_ready:
+                runtime_ready_status.setText("Runtime status: AWG READY")
+                runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
+            elif wg_ready:
+                runtime_ready_status.setText("Runtime status: WG READY")
+                runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
+            else:
+                runtime_ready_status.setText("Runtime status: NO RUNTIME")
+                runtime_ready_status.setStyleSheet(f"color:{C_AMB};font-size:11px;")
             lines = [
                 f"Tools directory: {info['tools_dir']}",
                 "",
@@ -1197,6 +1238,14 @@ class DashboardScreen(QWidget):
                 f"Active profile id: {info['active_profile_id'] or 'none'}",
             ]
             runtime_info.setPlainText("\n".join(lines))
+            dns_bundle = ((self.st.last_bundle or {}).get("decrypted") or {}).get("dns") or {}
+            dns_lines = [
+                f"Resolver: {dns_bundle.get('resolver', 'not issued')}",
+                f"Force all DNS: {'yes' if dns_bundle.get('force_all') else 'no'}",
+                f"Force DoH: {'yes' if dns_bundle.get('force_doh') else 'no'}",
+                "Host-level DNS enforcement is not applied yet.",
+            ]
+            dns_info.setPlainText("\n".join(dns_lines))
 
         def _install_startup():
             try:
@@ -1252,8 +1301,15 @@ class DashboardScreen(QWidget):
                     "Place them in ~/.onyx-client/bin or install them into PATH later.",
                 )
 
+        def _open_tools():
+            try:
+                open_tools_directory()
+            except Exception as exc:
+                QMessageBox.critical(dlg, "Tools Folder", str(exc))
+
         test_btn.clicked.connect(_test_api)
         runtime_btn.clicked.connect(_check_runtime)
+        open_tools_btn.clicked.connect(_open_tools)
         install_btn.clicked.connect(_install_startup)
         remove_btn.clicked.connect(_remove_startup)
         _refresh_runtime_info()

@@ -108,6 +108,18 @@ python onyx_client.py --uninstall-service
 - the client chooses the first working encrypted runtime profile from the issued bundle
 - transport type stays hidden from the normal UI
 - if the bundle contains no usable AWG/WG profile, connect will fail with a runtime error instead of faking success
+- `Settings` now shows:
+  - `AWG READY / WG READY / NO RUNTIME`
+  - resolved tool paths
+  - bundle runtime profile summary
+  - DNS runtime design state
+  - `Open Tools Folder` action
+
+## DNS Status
+
+- the bundle already carries DNS policy fields
+- the client displays them in diagnostics
+- host-level forced DNS is still not applied on the machine yet
 
 ## Icon Mapping
 
