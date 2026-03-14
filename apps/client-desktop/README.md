@@ -43,6 +43,11 @@ For real tunnel runtime on the client machine you also need local transport tool
 
 The client does not install those tools for you yet.
 
+Lookup order is:
+
+1. `~/.onyx-client/bin`
+2. system `PATH`
+
 ## Run
 
 Normal launch:

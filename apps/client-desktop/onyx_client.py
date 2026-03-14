@@ -48,6 +48,7 @@ APP_DIR     = Path.home() / ".onyx-client"
 STATE_PATH  = APP_DIR / "state.json"
 SPLASH_MARK = APP_DIR / "splash_seen"
 RUNTIME_DIR = APP_DIR / "runtime"
+TOOLS_DIR   = APP_DIR / "bin"
 APP_ROOT    = Path(__file__).resolve().parent
 ICON_DIR    = APP_ROOT / "assets" / "icons"
 AUTOSTART_TASK_NAME = "ONyX Desktop Client"
@@ -298,6 +299,23 @@ class LocalTunnelRuntime:
     def has_profiles(self) -> bool:
         return bool(self.available_profiles())
 
+    def diagnostics(self) -> dict:
+        profiles = self.available_profiles()
+        tool_details = {}
+        for transport in ("awg", "wg"):
+            tool_details[transport] = {
+                "tool": self._resolve_binary_candidates([f"{transport}.exe", transport]),
+                "quick": self._resolve_binary_candidates([f"{transport}-quick.exe", f"{transport}-quick"]),
+            }
+        return {
+            "tools_dir": str(TOOLS_DIR),
+            "profiles": profiles,
+            "active_transport": self.st.active_transport,
+            "active_interface": self.st.active_interface,
+            "active_profile_id": self.st.active_profile_id,
+            "tool_details": tool_details,
+        }
+
     def connect(self) -> dict:
         profiles = self.available_profiles()
         if not profiles:
@@ -409,17 +427,18 @@ class LocalTunnelRuntime:
 
     @staticmethod
     def _quick_binary(transport: str) -> str | None:
-        names = [f"{transport}-quick.exe", f"{transport}-quick"]
-        for name in names:
-            found = shutil.which(name)
-            if found:
-                return found
-        return None
+        return LocalTunnelRuntime._resolve_binary_candidates([f"{transport}-quick.exe", f"{transport}-quick"])
 
     @staticmethod
     def _tool_binary(transport: str) -> str | None:
-        names = [f"{transport}.exe", transport]
+        return LocalTunnelRuntime._resolve_binary_candidates([f"{transport}.exe", transport])
+
+    @staticmethod
+    def _resolve_binary_candidates(names: list[str]) -> str | None:
         for name in names:
+            bundled = TOOLS_DIR / name
+            if bundled.exists():
+                return str(bundled)
             found = shutil.which(name)
             if found:
                 return found
@@ -1125,7 +1144,7 @@ class DashboardScreen(QWidget):
         dlg.exec()
 
     def _settings(self):
-        dlg=QDialog(self); dlg.setWindowTitle("Settings"); dlg.setFixedSize(420,300)
+        dlg=QDialog(self); dlg.setWindowTitle("Settings"); dlg.setFixedSize(420,470)
         dlg.setStyleSheet(f"background:{C_BG0};")
         lay=QVBoxLayout(dlg); lay.setContentsMargins(26,26,26,26); lay.setSpacing(12)
         lay.addWidget(QLabel("Settings",styleSheet=f"color:{C_T0};font-size:16px;font-weight:bold;"))
@@ -1138,14 +1157,46 @@ class DashboardScreen(QWidget):
 
         action_row=QWidget(); action_lay=QHBoxLayout(action_row); action_lay.setContentsMargins(0,0,0,0); action_lay.setSpacing(8)
         test_btn=GhostButton("Test API")
+        runtime_btn=GhostButton("Check Runtime")
         install_btn=GhostButton("Install Startup")
         remove_btn=GhostButton("Remove Startup")
         action_lay.addWidget(test_btn)
+        action_lay.addWidget(runtime_btn)
         action_lay.addWidget(install_btn); action_lay.addWidget(remove_btn); action_lay.addStretch()
         lay.addWidget(action_row)
 
+        runtime_title = QLabel("RUNTIME DIAGNOSTICS")
+        runtime_title.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;")
+        lay.addWidget(runtime_title)
+
+        runtime_info = QTextEdit()
+        runtime_info.setReadOnly(True)
+        runtime_info.setFixedHeight(150)
+        lay.addWidget(runtime_info)
+
         def _refresh_startup():
             startup_status.setText("Background startup installed" if is_autostart_installed() else "Background startup not installed")
+
+        def _refresh_runtime_info():
+            info = self._runtime.diagnostics()
+            tool_details = info["tool_details"]
+            profiles = info["profiles"]
+            lines = [
+                f"Tools directory: {info['tools_dir']}",
+                "",
+                f"AWG tool: {tool_details['awg']['tool'] or 'missing'}",
+                f"AWG quick: {tool_details['awg']['quick'] or 'missing'}",
+                f"WG tool: {tool_details['wg']['tool'] or 'missing'}",
+                f"WG quick: {tool_details['wg']['quick'] or 'missing'}",
+                "",
+                f"Bundle runtime profiles: {len(profiles)}",
+                f"Profile types: {', '.join(sorted({p.get('type', '?') for p in profiles})) if profiles else 'none'}",
+                "",
+                f"Active transport: {info['active_transport'] or 'none'}",
+                f"Active interface: {info['active_interface'] or 'none'}",
+                f"Active profile id: {info['active_profile_id'] or 'none'}",
+            ]
+            runtime_info.setPlainText("\n".join(lines))
 
         def _install_startup():
             try:
@@ -1186,9 +1237,26 @@ class DashboardScreen(QWidget):
 
             run_async(dlg, _c, _d)
 
+        def _check_runtime():
+            _refresh_runtime_info()
+            details = self._runtime.diagnostics()["tool_details"]
+            awg_ready = bool(details["awg"]["tool"] and details["awg"]["quick"])
+            wg_ready = bool(details["wg"]["tool"] and details["wg"]["quick"])
+            if awg_ready or wg_ready:
+                QMessageBox.information(dlg, "Runtime Check", "At least one transport runtime is available.")
+            else:
+                QMessageBox.warning(
+                    dlg,
+                    "Runtime Check",
+                    "No local AWG/WG runtime tools were found.\n\n"
+                    "Place them in ~/.onyx-client/bin or install them into PATH later.",
+                )
+
         test_btn.clicked.connect(_test_api)
+        runtime_btn.clicked.connect(_check_runtime)
         install_btn.clicked.connect(_install_startup)
         remove_btn.clicked.connect(_remove_startup)
+        _refresh_runtime_info()
 
         lay.addStretch()
         def _sv():
