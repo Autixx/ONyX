@@ -171,6 +171,24 @@ def normalize_api_base_url(raw: str) -> str:
     return value
 
 
+def test_api_health(base_url: str) -> dict:
+    normalized = normalize_api_base_url(base_url)
+    with httpx.Client(timeout=10) as client:
+        response = client.get(normalized + "/health")
+    if response.status_code >= 400:
+        try:
+            detail = response.json().get("detail", response.text)
+        except Exception:
+            detail = response.text
+        raise RuntimeError(f"{response.status_code}: {detail}")
+    payload = response.json()
+    return {
+        "base_url": normalized,
+        "status": payload.get("status", "ok"),
+        "payload": payload,
+    }
+
+
 def b64u_encode(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -675,6 +693,9 @@ class LoginScreen(QWidget):
             border-bottom:1px solid {C_T3};border-radius:0;color:{C_T3};font-size:11px;padding:2px 0;}}
             QLineEdit:focus{{border-bottom:1px solid {C_ACC};color:{C_T2};}}""")
         self._url.editingFinished.connect(self._save_url); ul.addWidget(self._url)
+        self._test_api_btn = GhostButton("Test API")
+        self._test_api_btn.clicked.connect(self._test_api)
+        ul.addWidget(self._test_api_btn, alignment=Qt.AlignmentFlag.AlignCenter)
         uw=QHBoxLayout(); uw.addStretch(); ub.setMaximumWidth(350); uw.addWidget(ub); uw.addStretch()
         outer.addLayout(uw); outer.addStretch(3)
 
@@ -682,6 +703,28 @@ class LoginScreen(QWidget):
         self.st.base_url = normalize_api_base_url(self._url.text())
         self._url.setText(self.st.base_url)
         self.st.save()
+
+    def _test_api(self):
+        self._save_url()
+        self._test_api_btn.setEnabled(False)
+        self._test_api_btn.setText("TESTING...")
+
+        def _c():
+            return test_api_health(self.st.base_url)
+
+        def _d(data, err):
+            self._test_api_btn.setEnabled(True)
+            self._test_api_btn.setText("Test API")
+            if err:
+                QMessageBox.critical(self, "API Test Failed", str(err))
+                return
+            QMessageBox.information(
+                self,
+                "API Test",
+                f"API is reachable.\n\nBase URL: {data['base_url']}\nStatus: {data['status']}",
+            )
+
+        run_async(self, _c, _d)
 
     def _do_login(self):
         self._save_url(); u=self._ui.value(); pw=self._pi.value()
@@ -1094,8 +1137,10 @@ class DashboardScreen(QWidget):
         lay.addWidget(startup_status)
 
         action_row=QWidget(); action_lay=QHBoxLayout(action_row); action_lay.setContentsMargins(0,0,0,0); action_lay.setSpacing(8)
+        test_btn=GhostButton("Test API")
         install_btn=GhostButton("Install Startup")
         remove_btn=GhostButton("Remove Startup")
+        action_lay.addWidget(test_btn)
         action_lay.addWidget(install_btn); action_lay.addWidget(remove_btn); action_lay.addStretch()
         lay.addWidget(action_row)
 
@@ -1118,6 +1163,30 @@ class DashboardScreen(QWidget):
             except Exception as exc:
                 QMessageBox.critical(dlg, "Startup", str(exc))
 
+        def _test_api():
+            base_url = normalize_api_base_url(ui.value())
+            test_btn.setEnabled(False)
+            test_btn.setText("TESTING...")
+
+            def _c():
+                return test_api_health(base_url)
+
+            def _d(data, err):
+                test_btn.setEnabled(True)
+                test_btn.setText("Test API")
+                if err:
+                    QMessageBox.critical(dlg, "API Test Failed", str(err))
+                    return
+                ui.set_value(data["base_url"])
+                QMessageBox.information(
+                    dlg,
+                    "API Test",
+                    f"API is reachable.\n\nBase URL: {data['base_url']}\nStatus: {data['status']}",
+                )
+
+            run_async(dlg, _c, _d)
+
+        test_btn.clicked.connect(_test_api)
         install_btn.clicked.connect(_install_startup)
         remove_btn.clicked.connect(_remove_startup)
 
