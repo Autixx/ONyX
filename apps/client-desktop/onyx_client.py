@@ -155,6 +155,22 @@ def uninstall_autostart() -> None:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Failed to remove autostart task.")
 
 
+def normalize_api_base_url(raw: str) -> str:
+    value = (raw or "").strip()
+    if not value:
+        return "http://127.0.0.1:8081/api/v1"
+    if not value.startswith(("http://", "https://")):
+        lower = value.lower()
+        if lower.startswith(("localhost", "127.0.0.1")) or ":8081" in value:
+            value = "http://" + value
+        else:
+            value = "https://" + value
+    value = value.rstrip("/")
+    if not value.endswith("/api/v1"):
+        value += "/api/v1"
+    return value
+
+
 def b64u_encode(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -214,6 +230,7 @@ class ClientState:
                   "device_id","device_private_key","device_public_key","last_bundle",
                   "active_transport","active_interface","active_profile_id","active_config_path"):
             setattr(self, k, d.get(k, getattr(self, k)))
+        self.base_url = normalize_api_base_url(self.base_url)
 
     def save(self):
         APP_DIR.mkdir(parents=True, exist_ok=True)
@@ -649,9 +666,10 @@ class LoginScreen(QWidget):
 
         # URL
         ub=QWidget(); ul=QVBoxLayout(ub); ul.setContentsMargins(0,0,0,0); ul.setSpacing(3)
-        sl=QLabel("SERVER"); sl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sl=QLabel("API HOST"); sl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sl.setStyleSheet(f"color:{C_T3};font-size:9px;letter-spacing:2px;"); ul.addWidget(sl)
         self._url=QLineEdit(self.st.base_url); self._url.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._url.setPlaceholderText("api.example.com or https://api.example.com/api/v1")
         self._url.setStyleSheet(f"""QLineEdit{{background:transparent;border:none;
             border-bottom:1px solid {C_T3};border-radius:0;color:{C_T3};font-size:11px;padding:2px 0;}}
             QLineEdit:focus{{border-bottom:1px solid {C_ACC};color:{C_T2};}}""")
@@ -660,7 +678,9 @@ class LoginScreen(QWidget):
         outer.addLayout(uw); outer.addStretch(3)
 
     def _save_url(self):
-        self.st.base_url=self._url.text().strip().rstrip("/"); self.st.save()
+        self.st.base_url = normalize_api_base_url(self._url.text())
+        self._url.setText(self.st.base_url)
+        self.st.save()
 
     def _do_login(self):
         self._save_url(); u=self._ui.value(); pw=self._pi.value()
@@ -1004,11 +1024,24 @@ class DashboardScreen(QWidget):
         base=self.st.base_url; did=self.st.device_id; hdrs=self._hdrs()
         def _c():
             with httpx.Client(timeout=20) as c:
+                current = c.get(base + "/client/bundles/current", params={"device_id": did}, headers=hdrs)
+                if current.status_code >= 400:
+                    raise RuntimeError(current.json().get("detail", current.text))
+                current_payload = current.json()
+                if current_payload and current_payload.get("encrypted_bundle"):
+                    dec = self._dec_env(current_payload["encrypted_bundle"])
+                    return {
+                        "bundle_id": current_payload["id"],
+                        "expires_at": current_payload["expires_at"],
+                        "bundle_hash": current_payload["bundle_hash"],
+                        "decrypted": dec,
+                    }
+
                 r=c.post(base+"/client/bundles/issue",json={"device_id":did},headers=hdrs)
-            if r.status_code>=400: raise RuntimeError(r.json().get("detail",r.text))
-            issued=r.json(); dec=self._dec_env(issued["encrypted_bundle"])
-            return {"bundle_id":issued["bundle_id"],"expires_at":issued["expires_at"],
-                    "bundle_hash":issued["bundle_hash"],"decrypted":dec}
+                if r.status_code>=400: raise RuntimeError(r.json().get("detail",r.text))
+                issued=r.json(); dec=self._dec_env(issued["encrypted_bundle"])
+                return {"bundle_id":issued["bundle_id"],"expires_at":issued["expires_at"],
+                        "bundle_hash":issued["bundle_hash"],"decrypted":dec}
         def _d(data,err):
             if err: QMessageBox.critical(self,"Bundle",str(err)); return
             self.st.last_bundle=data; self.st.save(); self.refresh()
@@ -1052,7 +1085,7 @@ class DashboardScreen(QWidget):
         dlg.setStyleSheet(f"background:{C_BG0};")
         lay=QVBoxLayout(dlg); lay.setContentsMargins(26,26,26,26); lay.setSpacing(12)
         lay.addWidget(QLabel("Settings",styleSheet=f"color:{C_T0};font-size:16px;font-weight:bold;"))
-        ui=FormInput("SERVER URL"); ui.set_value(self.st.base_url); lay.addWidget(ui)
+        ui=FormInput("API HOST"); ui.set_value(self.st.base_url); lay.addWidget(ui)
 
         startup_status = QLabel("Background startup installed" if is_autostart_installed() else "Background startup not installed")
         startup_status.setStyleSheet(f"color:{C_T2};font-size:11px;")
@@ -1088,7 +1121,7 @@ class DashboardScreen(QWidget):
 
         lay.addStretch()
         def _sv():
-            self.st.base_url=ui.value().rstrip("/")
+            self.st.base_url = normalize_api_base_url(ui.value())
             self.st.save()
             dlg.accept()
         b=AccentButton("SAVE"); b.clicked.connect(_sv); lay.addWidget(b)

@@ -62,4 +62,17 @@ def current_bundle(
 ) -> BundleRead | None:
     user, _ = _resolve_client_user(db, authorization)
     bundle = bundle_service.get_current_for_device(db, user_id=user.id, device_id=device_id)
-    return bundle
+    if bundle is None:
+        return None
+    return BundleRead(
+        id=bundle.id,
+        user_id=bundle.user_id,
+        device_id=bundle.device_id,
+        bundle_format_version=bundle.bundle_format_version,
+        bundle_hash=bundle.bundle_hash,
+        encrypted_bundle=json.loads(bundle.encrypted_bundle_json),
+        expires_at=bundle.expires_at,
+        invalidated_at=bundle.invalidated_at,
+        created_at=bundle.created_at,
+        metadata_json=bundle.metadata_json or {},
+    )

@@ -19,6 +19,7 @@ class BundleRead(ONXBaseModel):
     device_id: str
     bundle_format_version: str
     bundle_hash: str
+    encrypted_bundle: dict
     expires_at: datetime
     invalidated_at: datetime | None
     created_at: datetime
