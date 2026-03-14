@@ -669,7 +669,8 @@ class LoginScreen(QWidget):
         sl=QLabel("API HOST"); sl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sl.setStyleSheet(f"color:{C_T3};font-size:9px;letter-spacing:2px;"); ul.addWidget(sl)
         self._url=QLineEdit(self.st.base_url); self._url.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._url.setPlaceholderText("api.example.com or https://api.example.com/api/v1")
+        self._url.setPlaceholderText("api.example.com, 203.0.113.10:8081 or full https://.../api/v1")
+        self._url.setToolTip("API host examples:\napi.example.com\n203.0.113.10:8081\nhttps://api.example.com/api/v1")
         self._url.setStyleSheet(f"""QLineEdit{{background:transparent;border:none;
             border-bottom:1px solid {C_T3};border-radius:0;color:{C_T3};font-size:11px;padding:2px 0;}}
             QLineEdit:focus{{border-bottom:1px solid {C_ACC};color:{C_T2};}}""")
@@ -1085,7 +1086,8 @@ class DashboardScreen(QWidget):
         dlg.setStyleSheet(f"background:{C_BG0};")
         lay=QVBoxLayout(dlg); lay.setContentsMargins(26,26,26,26); lay.setSpacing(12)
         lay.addWidget(QLabel("Settings",styleSheet=f"color:{C_T0};font-size:16px;font-weight:bold;"))
-        ui=FormInput("API HOST"); ui.set_value(self.st.base_url); lay.addWidget(ui)
+        ui=FormInput("API HOST", "api.example.com, 203.0.113.10:8081 or full https://.../api/v1"); ui.set_value(self.st.base_url); lay.addWidget(ui)
+        ui.edit.setToolTip("API host examples:\napi.example.com\n203.0.113.10:8081\nhttps://api.example.com/api/v1")
 
         startup_status = QLabel("Background startup installed" if is_autostart_installed() else "Background startup not installed")
         startup_status.setStyleSheet(f"color:{C_T2};font-size:11px;")
