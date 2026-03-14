@@ -259,7 +259,17 @@ td.m{color:var(--t0);}
       <div class="page" id="page-nodes">
         <div class="ph">
           <span class="ptitle">Nodes</span>
-          <button class="btn pri" id="btnAddNode">+ ADD NODE</button>
+          <div class="pbtn-row">
+            <input class="mf-input" id="nodeSearch" placeholder="search nodes" style="width:180px;padding:7px 10px;font-size:11px;">
+            <select class="mf-select" id="nodeStatusFilter" style="width:140px;padding:7px 10px;font-size:11px;">
+              <option value="">all statuses</option>
+              <option value="reachable">reachable</option>
+              <option value="degraded">degraded</option>
+              <option value="offline">offline</option>
+              <option value="unknown">unknown</option>
+            </select>
+            <button class="btn pri" id="btnAddNode">+ ADD NODE</button>
+          </div>
         </div>
         <div class="tw">
           <table>
@@ -273,7 +283,18 @@ td.m{color:var(--t0);}
       <div class="page" id="page-links">
         <div class="ph">
           <span class="ptitle">Links</span>
-          <button class="btn pri" id="btnAddLink">+ NEW LINK</button>
+          <div class="pbtn-row">
+            <input class="mf-input" id="linkSearch" placeholder="search links" style="width:180px;padding:7px 10px;font-size:11px;">
+            <select class="mf-select" id="linkStateFilter" style="width:140px;padding:7px 10px;font-size:11px;">
+              <option value="">all states</option>
+              <option value="planned">planned</option>
+              <option value="active">active</option>
+              <option value="failed">failed</option>
+              <option value="degraded">degraded</option>
+              <option value="deleted">deleted</option>
+            </select>
+            <button class="btn pri" id="btnAddLink">+ NEW LINK</button>
+          </div>
         </div>
         <div class="tw">
           <table>
@@ -362,7 +383,10 @@ td.m{color:var(--t0);}
       <div class="page" id="page-topology">
         <div class="ph">
           <span class="ptitle">Topology</span>
-          <button class="btn" onclick="drawTopo()">REFRESH</button>
+          <div class="pbtn-row">
+            <button class="btn" id="btnPlanPath">PLAN PATH</button>
+            <button class="btn" onclick="refreshTopology().then(drawTopo)">REFRESH</button>
+          </div>
         </div>
         <canvas id="tc"></canvas>
         <div class="topo-legend">
@@ -427,6 +451,9 @@ var GEO_P = [];
 var BALANCERS = [];
 var AUDIT_EVTS = [];
 var JOB_EVENTS = {};
+var GRAPH_DATA = {nodes:[], edges:[], generated_at:null};
+var TOPO_HITBOXES = {nodes:[], edges:[]};
+var TOPO_PATH = null;
 
 function nById(id){ return NODES.find(function(n){return n.id===id;})||{name:id,role:'unknown'}; }
 function linkById(id){ return LINKS.find(function(l){ return l.id===id; }) || null; }
@@ -514,8 +541,37 @@ function updateShellCounters(){
   var nodeBadge = document.getElementById('nbn');
   if(nodeBadge){ nodeBadge.textContent = String(NODES.length); }
 }
+function getNodeFilters(){
+  var search = document.getElementById('nodeSearch');
+  var status = document.getElementById('nodeStatusFilter');
+  return {
+    search: String(search && search.value || '').trim().toLowerCase(),
+    status: String(status && status.value || '').trim().toLowerCase()
+  };
+}
+function getLinkFilters(){
+  var search = document.getElementById('linkSearch');
+  var state = document.getElementById('linkStateFilter');
+  return {
+    search: String(search && search.value || '').trim().toLowerCase(),
+    state: String(state && state.value || '').trim().toLowerCase()
+  };
+}
 function renderNodes(){
-  document.getElementById('ntb').innerHTML = NODES.map(function(n){
+  var filters = getNodeFilters();
+  var rowsData = NODES.filter(function(n){
+    var haystack = [
+      n.name,
+      n.role,
+      n.management_address,
+      n.status,
+      (n.caps || []).join(' ')
+    ].join(' ').toLowerCase();
+    if(filters.search && haystack.indexOf(filters.search) === -1){ return false; }
+    if(filters.status && String(n.status || '').toLowerCase() !== filters.status){ return false; }
+    return true;
+  });
+  document.getElementById('ntb').innerHTML = rowsData.length ? rowsData.map(function(n){
     return '<tr onclick="showNode(\''+esc(n.id)+'\')">'
       +'<td class="m">'+esc(n.name)+'</td>'
       +'<td>'+rp(n.role)+'</td>'
@@ -528,10 +584,28 @@ function renderNodes(){
         +'<button class="btn sm red" onclick="event.stopPropagation();deleteNodeFlow(\''+esc(n.id)+'\')">DEL</button>'
       +'</td>'
       +'</tr>';
-  }).join('');
+  }).join('') : '<tr><td class="empty-state" colspan="6">No nodes match the current filter.</td></tr>';
 }
 function renderLinks(){
-  document.getElementById('ltb').innerHTML = LINKS.map(function(l){
+  var filters = getLinkFilters();
+  var rowsData = LINKS.filter(function(l){
+    var haystack = [
+      l.name,
+      l.driver,
+      nById(l.left).name,
+      nById(l.right).name,
+      l.topo,
+      l.state,
+      l.leftInterface,
+      l.rightInterface,
+      l.leftEndpoint,
+      l.rightEndpoint
+    ].join(' ').toLowerCase();
+    if(filters.search && haystack.indexOf(filters.search) === -1){ return false; }
+    if(filters.state && String(l.state || '').toLowerCase() !== filters.state){ return false; }
+    return true;
+  });
+  document.getElementById('ltb').innerHTML = rowsData.length ? rowsData.map(function(l){
     return '<tr onclick="showLink(\''+esc(l.id)+'\')">'
       +'<td class="m">'+esc(l.name)+'</td>'
       +'<td><span class="pill pb">'+esc(l.driver)+'</span></td>'
@@ -546,59 +620,59 @@ function renderLinks(){
         +'<button class="btn sm red" onclick="event.stopPropagation();deleteLinkFlow(\''+esc(l.id)+'\')">DEL</button>'
       +'</td>'
       +'</tr>';
-  }).join('');
+  }).join('') : '<tr><td class="empty-state" colspan="7">No links match the current filter.</td></tr>';
 }
 function renderPolicies(){
   document.getElementById('ptb').innerHTML = POLICIES.map(function(p){
-    return '<tr>'
+    return '<tr onclick="showRoutePolicy(\''+esc(p.id)+'\')">'
       +'<td class="m">'+esc(p.name)+'</td>'
       +'<td class="m">'+esc(nById(p.nid).name)+'</td>'
       +'<td><span class="pill pb">'+esc(p.action)+'</span></td>'
       +'<td>'+esc(String(p.pri))+'</td>'
       +'<td>'+(p.on?'<span class="pill pg">enabled</span>':'<span class="pill pq">disabled</span>')+'</td>'
       +'<td style="display:flex;gap:5px;">'
-        +'<button class="btn sm" onclick="actionRoutePolicyApply(\''+esc(p.id)+'\')">APPLY</button>'
-        +'<button class="btn sm" onclick="openRoutePolicyModal(\''+esc(p.id)+'\')">EDIT</button>'
-        +'<button class="btn sm red" onclick="deleteRoutePolicyFlow(\''+esc(p.id)+'\')">DEL</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionRoutePolicyApply(\''+esc(p.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openRoutePolicyModal(\''+esc(p.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();deleteRoutePolicyFlow(\''+esc(p.id)+'\')">DEL</button>'
       +'</td>'
       +'</tr>';
   }).join('');
   document.getElementById('dtb').innerHTML = DNS_P.map(function(d){
-    return '<tr>'
+    return '<tr onclick="showDNSPolicy(\''+esc(d.id)+'\')">'
       +'<td class="m">'+esc(policyNameById(d.route_policy_id))+'</td>'
       +'<td class="m">'+esc(d.addr)+'</td>'
       +'<td>'+(d.on?'<span class="pill pg">enabled</span>':'<span class="pill pq">disabled</span>')+'</td>'
       +'<td style="display:flex;gap:5px;">'
-        +'<button class="btn sm" onclick="actionDNSPolicyApply(\''+esc(d.id)+'\')">APPLY</button>'
-        +'<button class="btn sm" onclick="openDNSPolicyModal(\''+esc(d.id)+'\')">EDIT</button>'
-        +'<button class="btn sm red" onclick="deleteDNSPolicyFlow(\''+esc(d.id)+'\')">DEL</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionDNSPolicyApply(\''+esc(d.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openDNSPolicyModal(\''+esc(d.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();deleteDNSPolicyFlow(\''+esc(d.id)+'\')">DEL</button>'
       +'</td>'
       +'</tr>';
   }).join('');
   document.getElementById('gtb').innerHTML = (GEO_P.length ? GEO_P.map(function(g){
-    return '<tr>'
+    return '<tr onclick="showGeoPolicy(\''+esc(g.id)+'\')">'
       +'<td class="m">'+esc(policyNameById(g.route_policy_id))+'</td>'
       +'<td class="m">'+esc(g.country_code)+'</td>'
       +'<td><span class="pill pp">'+esc(g.mode)+'</span></td>'
       +'<td>'+(g.enabled?'<span class="pill pg">enabled</span>':'<span class="pill pq">disabled</span>')+'</td>'
       +'<td style="display:flex;gap:5px;">'
-        +'<button class="btn sm" onclick="actionGeoPolicyApply(\''+esc(g.id)+'\')">APPLY</button>'
-        +'<button class="btn sm" onclick="openGeoPolicyModal(\''+esc(g.id)+'\')">EDIT</button>'
-        +'<button class="btn sm red" onclick="deleteGeoPolicyFlow(\''+esc(g.id)+'\')">DEL</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionGeoPolicyApply(\''+esc(g.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openGeoPolicyModal(\''+esc(g.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();deleteGeoPolicyFlow(\''+esc(g.id)+'\')">DEL</button>'
       +'</td>'
       +'</tr>';
   }).join('') : '<tr><td class="empty-state" colspan="5">No geo policies.</td></tr>');
   document.getElementById('btb').innerHTML = (BALANCERS.length ? BALANCERS.map(function(b){
-    return '<tr>'
+    return '<tr onclick="showBalancer(\''+esc(b.id)+'\')">'
       +'<td class="m">'+esc(b.name)+'</td>'
       +'<td class="m">'+esc(nById(b.node_id).name)+'</td>'
       +'<td><span class="pill pb">'+esc(b.method)+'</span></td>'
       +'<td>'+esc(String((b.members || []).length))+'</td>'
       +'<td>'+(b.enabled?'<span class="pill pg">enabled</span>':'<span class="pill pq">disabled</span>')+'</td>'
       +'<td style="display:flex;gap:5px;">'
-        +'<button class="btn sm" onclick="actionBalancerPick(\''+esc(b.id)+'\')">PICK</button>'
-        +'<button class="btn sm" onclick="openBalancerModal(\''+esc(b.id)+'\')">EDIT</button>'
-        +'<button class="btn sm red" onclick="deleteBalancerFlow(\''+esc(b.id)+'\')">DEL</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionBalancerPick(\''+esc(b.id)+'\')">PICK</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openBalancerModal(\''+esc(b.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();deleteBalancerFlow(\''+esc(b.id)+'\')">DEL</button>'
       +'</td>'
       +'</tr>';
   }).join('') : '<tr><td class="empty-state" colspan="6">No balancers.</td></tr>');
@@ -781,6 +855,96 @@ function showLink(id){
     +'</div>'
   );
 }
+function showRoutePolicy(id){
+  var p = policyById(id); if(!p) return;
+  openDP(p.name,
+    rows([
+      ['ID', p.id],
+      ['Node', nById(p.nid).name],
+      ['Action', p.action],
+      ['Ingress', p.ingress_interface || '-'],
+      ['Target Interface', p.target_interface || '-'],
+      ['Target Gateway', p.target_gateway || '-'],
+      ['Balancer', (balancerById(p.balancer_id) || {}).name || p.balancer_id || '-'],
+      ['Routed Networks', (p.routed_networks || []).join(', ') || '-'],
+      ['Excluded Networks', (p.excluded_networks || []).join(', ') || '-'],
+      ['Table ID', p.table_id || '-'],
+      ['Priority', p.pri || '-'],
+      ['Firewall Mark', p.fwmark || '-'],
+      ['Masquerade', p.masquerade ? 'yes' : 'no'],
+      ['State', p.on ? 'enabled' : 'disabled']
+    ])
+    +'<div class="dp-actions">'
+      +'<button class="btn pri" onclick="actionRoutePolicyApply(\''+esc(p.id)+'\')">APPLY</button>'
+      +'<button class="btn" onclick="openRoutePolicyModal(\''+esc(p.id)+'\')">EDIT</button>'
+      +'<button class="btn red" onclick="deleteRoutePolicyFlow(\''+esc(p.id)+'\')">DELETE</button>'
+    +'</div>'
+  );
+}
+function showDNSPolicy(id){
+  var p = dnsPolicyById(id); if(!p) return;
+  openDP('DNS Policy',
+    rows([
+      ['ID', p.id],
+      ['Route Policy', policyNameById(p.route_policy_id)],
+      ['DNS Address', p.addr || '-'],
+      ['Capture Protocols', (p.capture_protocols || []).join(', ') || '-'],
+      ['Capture Ports', (p.capture_ports || []).join(', ') || '-'],
+      ['Exceptions', (p.exceptions_networks || []).join(', ') || '-'],
+      ['State', p.on ? 'enabled' : 'disabled']
+    ])
+    +'<div class="dp-actions">'
+      +'<button class="btn pri" onclick="actionDNSPolicyApply(\''+esc(p.id)+'\')">APPLY</button>'
+      +'<button class="btn" onclick="openDNSPolicyModal(\''+esc(p.id)+'\')">EDIT</button>'
+      +'<button class="btn red" onclick="deleteDNSPolicyFlow(\''+esc(p.id)+'\')">DELETE</button>'
+    +'</div>'
+  );
+}
+function showGeoPolicy(id){
+  var p = geoPolicyById(id); if(!p) return;
+  openDP('Geo Policy',
+    rows([
+      ['ID', p.id],
+      ['Route Policy', policyNameById(p.route_policy_id)],
+      ['Country', p.country_code || '-'],
+      ['Mode', p.mode || '-'],
+      ['Source URL', p.source_url_template || '-'],
+      ['State', p.enabled ? 'enabled' : 'disabled']
+    ])
+    +'<div class="dp-actions">'
+      +'<button class="btn pri" onclick="actionGeoPolicyApply(\''+esc(p.id)+'\')">APPLY</button>'
+      +'<button class="btn" onclick="openGeoPolicyModal(\''+esc(p.id)+'\')">EDIT</button>'
+      +'<button class="btn red" onclick="deleteGeoPolicyFlow(\''+esc(p.id)+'\')">DELETE</button>'
+    +'</div>'
+  );
+}
+function showBalancer(id){
+  var b = balancerById(id); if(!b) return;
+  var members = (b.members || []).map(function(member){
+    return [
+      member.interface_name || '-',
+      member.gateway || '-',
+      member.ping_target || '-',
+      member.weight || 1
+    ].join(' / ');
+  }).join('\n');
+  openDP(b.name,
+    rows([
+      ['ID', b.id],
+      ['Node', nById(b.node_id).name],
+      ['Method', b.method || '-'],
+      ['Members', String((b.members || []).length)],
+      ['Enabled', b.enabled ? 'yes' : 'no']
+    ])
+    +'<div class="stitle">Members</div>'
+    +'<div class="jlog">'+esc(members || 'No members defined.')+'</div>'
+    +'<div class="dp-actions">'
+      +'<button class="btn pri" onclick="actionBalancerPick(\''+esc(b.id)+'\')">PICK</button>'
+      +'<button class="btn" onclick="openBalancerModal(\''+esc(b.id)+'\')">EDIT</button>'
+      +'<button class="btn red" onclick="deleteBalancerFlow(\''+esc(b.id)+'\')">DELETE</button>'
+    +'</div>'
+  );
+}
 function showJob(id){
   var j = jobById(id); if(!j) return;
   var events = JOB_EVENTS[j.id] || [];
@@ -847,8 +1011,8 @@ function connectWS(){
       var msg = payload.message || payload.detail || payload.id || JSON.stringify(payload);
       pushEv(type, msg);
       if(type.indexOf('job.') === 0){ refreshJobs().catch(function(){}); }
-      if(type.indexOf('link.') === 0){ refreshLinks().catch(function(){}); }
-      if(type.indexOf('node.') === 0){ refreshNodes().catch(function(){}); }
+      if(type.indexOf('link.') === 0){ refreshLinks().catch(function(){}); refreshTopology().catch(function(){}); }
+      if(type.indexOf('node.') === 0){ refreshNodes().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type === 'audit.event'){ refreshAudit().catch(function(){}); }
     }catch(_){ }
   };
@@ -993,23 +1157,92 @@ async function refreshHealth(){
   pushEv('system.ping', 'GET /api/v1/health and /api/v1/health/worker completed');
 }
 async function loadData(){
-  await Promise.all([refreshNodes(), refreshLinks(), refreshPolicies(), refreshJobs(), refreshAudit(), refreshHealth()]);
+  await Promise.all([refreshNodes(), refreshLinks(), refreshPolicies(), refreshJobs(), refreshAudit(), refreshHealth(), refreshTopology()]);
 }
 async function healthCheck(){
   try{ await refreshHealth(); }
   catch(err){ pushEv('system.error', String(err && err.message ? err.message : err)); }
 }
-function buildNodePositions(width, height){
+async function refreshTopology(){
+  var graph = await apiFetch(API_PREFIX + '/graph');
+  GRAPH_DATA = graph || {nodes:[], edges:[], generated_at:null};
+  drawTopo();
+}
+function buildNodePositions(width, height, nodes){
   var positions = {};
-  var total = Math.max(NODES.length, 1);
+  var source = nodes || [];
+  var total = Math.max(source.length, 1);
   var centerX = width / 2;
   var centerY = height / 2;
   var radius = Math.max(90, Math.min(width, height) * 0.32);
-  NODES.forEach(function(node, index){
+  source.forEach(function(node, index){
     var angle = (Math.PI * 2 * index / total) - Math.PI / 2;
     positions[node.id] = { x: centerX + Math.cos(angle) * radius, y: centerY + Math.sin(angle) * radius };
   });
   return positions;
+}
+function edgeMidpoint(a, b){
+  return {x:(a.x + b.x) / 2, y:(a.y + b.y) / 2};
+}
+function pointSegmentDistance(px, py, ax, ay, bx, by){
+  var dx = bx - ax;
+  var dy = by - ay;
+  if(dx === 0 && dy === 0){ return Math.hypot(px - ax, py - ay); }
+  var t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+  t = Math.max(0, Math.min(1, t));
+  var ex = ax + t * dx;
+  var ey = ay + t * dy;
+  return Math.hypot(px - ex, py - ey);
+}
+function graphNodeById(id){
+  return (GRAPH_DATA.nodes || []).find(function(n){ return n.id === id; }) || null;
+}
+function graphEdgeById(id){
+  return (GRAPH_DATA.edges || []).find(function(e){ return e.id === id; }) || null;
+}
+function showGraphNode(id){
+  var node = graphNodeById(id) || nById(id);
+  if(!node) return;
+  var metrics = node.metrics || {};
+  openDP(node.name || 'Topology Node',
+    rows([
+      ['ID', node.id],
+      ['Role', node.role || '-'],
+      ['Status', node.status || '-'],
+      ['Management Address', node.management_address || '-'],
+      ['Last Seen', node.last_seen_at ? fmtTime(node.last_seen_at) : '-'],
+      ['Ping', metrics.ping_ms != null ? (Number(metrics.ping_ms).toFixed(1) + ' ms') : '-'],
+      ['Load', metrics.load_ratio != null ? Number(metrics.load_ratio).toFixed(3) : '-']
+    ])
+    +'<div class="dp-actions">'
+      +'<button class="btn" onclick="showNode(\''+esc(node.id)+'\')">NODE DETAIL</button>'
+      +'<button class="btn pri" onclick="openPathPlanner(\''+esc(node.id)+'\')">PLAN FROM</button>'
+    +'</div>'
+  );
+}
+function showGraphEdge(id){
+  var edge = graphEdgeById(id) || linkById(id);
+  if(!edge) return;
+  var metrics = edge.metrics || {};
+  openDP(edge.name || 'Topology Link',
+    rows([
+      ['ID', edge.id],
+      ['Driver', edge.driver_name || edge.driver || '-'],
+      ['Topology', edge.topology_type || edge.topo || '-'],
+      ['State', edge.state || '-'],
+      ['Left Node', nById(edge.left_node_id || edge.left).name],
+      ['Right Node', nById(edge.right_node_id || edge.right).name],
+      ['Left Interface', edge.left_interface || edge.leftInterface || '-'],
+      ['Right Interface', edge.right_interface || edge.rightInterface || '-'],
+      ['Latency', metrics.latency_ms != null ? (Number(metrics.latency_ms).toFixed(1) + ' ms') : '-'],
+      ['Load', metrics.load_ratio != null ? Number(metrics.load_ratio).toFixed(3) : '-'],
+      ['Loss', metrics.loss_pct != null ? (Number(metrics.loss_pct).toFixed(2) + '%') : '-']
+    ])
+    +'<div class="dp-actions">'
+      +'<button class="btn" onclick="showLink(\''+esc(edge.id)+'\')">LINK DETAIL</button>'
+      +'<button class="btn pri" onclick="actionLinkApply(\''+esc(edge.id)+'\')">APPLY</button>'
+    +'</div>'
+  );
 }
 function drawTopo(){
   var canvas = document.getElementById('tc');
@@ -1019,21 +1252,30 @@ function drawTopo(){
   var H = 440;
   canvas.width = W; canvas.height = H;
   ctx.clearRect(0,0,W,H);
-  var pos = buildNodePositions(W, H);
+  TOPO_HITBOXES = {nodes:[], edges:[]};
+  var graphNodes = GRAPH_DATA.nodes || [];
+  var graphEdges = GRAPH_DATA.edges || [];
+  var pos = buildNodePositions(W, H, graphNodes);
   var sc = {reachable:'#00e676',degraded:'#f5a623',offline:'#ff4560',unreachable:'#ff4560',unknown:'#4a6478'};
-  LINKS.forEach(function(l){
-    var a = pos[l.left], b = pos[l.right]; if(!a||!b) return;
+  graphEdges.forEach(function(l){
+    var a = pos[l.left_node_id], b = pos[l.right_node_id]; if(!a||!b) return;
+    var mid = edgeMidpoint(a, b);
+    var inPath = !!(TOPO_PATH && (TOPO_PATH.linkIds || []).indexOf(l.id) !== -1);
     ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
-    ctx.strokeStyle = l.state==='active' ? 'rgba(0,200,180,0.28)' : 'rgba(255,69,96,0.28)';
-    ctx.lineWidth = 1.5; ctx.setLineDash([5,5]); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(0,200,180,0.7)';
+    ctx.strokeStyle = inPath ? 'rgba(77,166,255,0.92)' : (l.state==='active' ? 'rgba(0,200,180,0.28)' : 'rgba(255,69,96,0.28)');
+    ctx.lineWidth = inPath ? 3 : 1.5;
+    ctx.setLineDash(inPath ? [] : [5,5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    TOPO_HITBOXES.edges.push({id:l.id, x1:a.x, y1:a.y, x2:b.x, y2:b.y});
+    ctx.fillStyle = inPath ? 'rgba(77,166,255,0.95)' : 'rgba(0,200,180,0.7)';
     ctx.font = '10px Courier New,monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(l.driver, (a.x+b.x)/2, (a.y+b.y)/2 - 7);
+    ctx.fillText(l.driver_name || '-', mid.x, mid.y - 7);
     ctx.fillStyle = 'rgba(138,168,192,0.5)';
-    ctx.fillText(l.topo, (a.x+b.x)/2, (a.y+b.y)/2 + 8);
+    ctx.fillText((l.left_interface || '?') + '→' + (l.right_interface || '?'), mid.x, mid.y + 8);
   });
-  NODES.forEach(function(n){
+  graphNodes.forEach(function(n){
     var p = pos[n.id]; if(!p) return;
     var col = sc[n.status]||'#4a6478';
     ctx.beginPath(); ctx.arc(p.x,p.y,24,0,Math.PI*2);
@@ -1050,7 +1292,93 @@ function drawTopo(){
     ctx.fillText(n.name, p.x, p.y+38);
     ctx.beginPath(); ctx.arc(p.x+16,p.y-16,4,0,Math.PI*2);
     ctx.fillStyle = col; ctx.fill();
+    TOPO_HITBOXES.nodes.push({id:n.id, x:p.x, y:p.y, r:24});
   });
+  if(TOPO_PATH){
+    ctx.fillStyle = 'rgba(77,166,255,.9)';
+    ctx.font = '11px Courier New,monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('PATH SCORE: ' + Number(TOPO_PATH.total_score || 0).toFixed(3), 16, 26);
+  }
+}
+function bindTopologyCanvas(){
+  var canvas = document.getElementById('tc');
+  if(!canvas || canvas.dataset.bound === '1'){ return; }
+  canvas.dataset.bound = '1';
+  canvas.addEventListener('click', function(event){
+    var rect = canvas.getBoundingClientRect();
+    var x = event.clientX - rect.left;
+    var y = event.clientY - rect.top;
+    for(var i = 0; i < TOPO_HITBOXES.nodes.length; i++){
+      var node = TOPO_HITBOXES.nodes[i];
+      if(Math.hypot(x - node.x, y - node.y) <= node.r){
+        showGraphNode(node.id);
+        return;
+      }
+    }
+    var nearest = null;
+    TOPO_HITBOXES.edges.forEach(function(edge){
+      var dist = pointSegmentDistance(x, y, edge.x1, edge.y1, edge.x2, edge.y2);
+      if(dist <= 10 && (!nearest || dist < nearest.dist)){
+        nearest = {id:edge.id, dist:dist};
+      }
+    });
+    if(nearest){ showGraphEdge(nearest.id); }
+  });
+}
+function openPathPlanner(defaultSourceId){
+  if((GRAPH_DATA.nodes || []).length < 2){
+    alert('At least two topology nodes are required.');
+    return;
+  }
+  var nodeOptions = GRAPH_DATA.nodes.map(function(node){ return {value:node.id, label:node.name}; });
+  var fallbackDestination = GRAPH_DATA.nodes.find(function(node){ return node.id !== defaultSourceId; });
+  var body = '<form id="pathPlannerForm"><div class="modal-grid">'
+    +formSelect('Source node', 'source_node_id', defaultSourceId || (GRAPH_DATA.nodes[0] && GRAPH_DATA.nodes[0].id), nodeOptions)
+    +formSelect('Destination node', 'destination_node_id', fallbackDestination ? fallbackDestination.id : (GRAPH_DATA.nodes[1] && GRAPH_DATA.nodes[1].id), nodeOptions)
+    +formInput('Max hops', 'max_hops', '8', {type:'number'})
+    +formCheckbox('Active links only', 'require_active_links', true, {caption:'Require active links'})
+    +formInput('Latency weight', 'latency_weight', '1.0', {type:'number'})
+    +formInput('Load weight', 'load_weight', '1.2', {type:'number'})
+    +formInput('Loss weight', 'loss_weight', '1.5', {type:'number'})
+    +formTextarea('Avoid node IDs (CSV)', 'avoid_node_ids', '', {full:true})
+    +'</div></form>';
+  openModal('Plan Path', body, {
+    buttons:[
+      {label:'Clear Overlay', className:'btn', onClick:function(){ TOPO_PATH = null; closeModal(); drawTopo(); }},
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:'Plan', className:'btn pri', onClick:function(){ document.getElementById('pathPlannerForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('pathPlannerForm', function(fd){ submitPathPlanner(fd); });
+}
+async function submitPathPlanner(fd){
+  try{
+    var response = await apiFetch(API_PREFIX + '/paths/plan', {
+      method:'POST',
+      body:{
+        source_node_id: String(fd.get('source_node_id') || '').trim(),
+        destination_node_id: String(fd.get('destination_node_id') || '').trim(),
+        max_hops: Number(fd.get('max_hops') || 8),
+        require_active_links: checked(fd, 'require_active_links'),
+        avoid_node_ids: splitCsv(fd.get('avoid_node_ids')),
+        latency_weight: Number(fd.get('latency_weight') || 1),
+        load_weight: Number(fd.get('load_weight') || 1.2),
+        loss_weight: Number(fd.get('loss_weight') || 1.5)
+      }
+    });
+    TOPO_PATH = {
+      nodeIds: response.node_path || [],
+      linkIds: (response.hops || []).map(function(h){ return h.link_id; }),
+      total_score: response.total_score
+    };
+    closeModal();
+    drawTopo();
+    pushEv('topology.path', 'planned path with ' + String((response.hops || []).length) + ' hops');
+  }catch(err){
+    pushEv('topology.path.error', 'path planning failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
 }
 async function apiCall(){
   var path = document.getElementById('ap').value;
@@ -1082,7 +1410,7 @@ async function actionNodeDiscover(nodeId){
     var job = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/discover', { method:'POST', body:{} });
     pushEv('job.created', 'discover queued for ' + (node.name || nodeId) + ' [' + job.id + ']');
     await refreshJobs();
-    setTimeout(function(){ refreshNodes().catch(function(){}); refreshJobs().catch(function(){}); }, 800);
+    setTimeout(function(){ refreshNodes().catch(function(){}); refreshJobs().catch(function(){}); refreshTopology().catch(function(){}); }, 800);
     if(document.getElementById('dp').classList.contains('open') && nodeId === node.id){ showNode(nodeId); }
   }catch(err){
     pushEv('job.error', 'discover failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
@@ -1094,7 +1422,7 @@ async function actionNodeBootstrap(nodeId){
     var job = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/bootstrap-runtime', { method:'POST', body:{} });
     pushEv('job.created', 'bootstrap queued for ' + (node.name || nodeId) + ' [' + job.id + ']');
     await refreshJobs();
-    setTimeout(function(){ refreshNodes().catch(function(){}); refreshJobs().catch(function(){}); }, 800);
+    setTimeout(function(){ refreshNodes().catch(function(){}); refreshJobs().catch(function(){}); refreshTopology().catch(function(){}); }, 800);
     if(document.getElementById('dp').classList.contains('open') && nodeId === node.id){ showNode(nodeId); }
   }catch(err){
     pushEv('job.error', 'bootstrap failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
@@ -1107,6 +1435,7 @@ async function actionLinkValidate(linkId){
     var warnings = (result.warnings || []).length ? (' warnings: ' + result.warnings.join('; ')) : '';
     pushEv(result.valid ? 'link.validate.ok' : 'link.validate.fail', 'validate ' + (link ? link.name : linkId) + ': ' + (result.valid ? 'valid' : 'invalid') + warnings);
     await refreshLinks();
+    await refreshTopology();
     if(link){ showLink(linkId); }
   }catch(err){
     pushEv('link.validate.error', 'validate failed for ' + linkId + ': ' + (err && err.message ? err.message : err));
@@ -1118,7 +1447,7 @@ async function actionLinkApply(linkId){
     var job = await apiFetch(API_PREFIX + '/links/' + encodeURIComponent(linkId) + '/apply', { method:'POST', body:{} });
     pushEv('job.created', 'apply queued for ' + (link ? link.name : linkId) + ' [' + job.id + ']');
     await refreshJobs();
-    setTimeout(function(){ refreshLinks().catch(function(){}); refreshJobs().catch(function(){}); }, 800);
+    setTimeout(function(){ refreshLinks().catch(function(){}); refreshJobs().catch(function(){}); refreshTopology().catch(function(){}); }, 800);
     if(link){ showLink(linkId); }
   }catch(err){
     pushEv('link.apply.error', 'apply failed for ' + linkId + ': ' + (err && err.message ? err.message : err));
@@ -1605,6 +1934,7 @@ async function saveRoutePolicyForm(fd, policyId){
     pushEv(policyId ? 'policy.updated' : 'policy.created', 'route policy ' + policy.name + (policyId ? ' updated' : ' created'));
     closeModal();
     await refreshPolicies();
+    showRoutePolicy(policy.id);
   }catch(err){
     pushEv('policy.save.error', 'route policy save failed: ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
@@ -1669,6 +1999,7 @@ async function saveDNSPolicyForm(fd, policyId){
     pushEv(policyId ? 'dns.updated' : 'dns.created', 'dns policy ' + policy.id + (policyId ? ' updated' : ' created'));
     closeModal();
     await refreshPolicies();
+    showDNSPolicy(policy.id);
   }catch(err){
     pushEv('dns.save.error', 'dns policy save failed: ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
@@ -1729,6 +2060,7 @@ async function saveGeoPolicyForm(fd, policyId){
     pushEv(policyId ? 'geo.updated' : 'geo.created', 'geo policy ' + policy.id + (policyId ? ' updated' : ' created'));
     closeModal();
     await refreshPolicies();
+    showGeoPolicy(policy.id);
   }catch(err){
     pushEv('geo.save.error', 'geo policy save failed: ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
@@ -1789,6 +2121,7 @@ async function saveBalancerForm(fd, balancerId){
     pushEv(balancerId ? 'balancer.updated' : 'balancer.created', 'balancer ' + balancer.name + (balancerId ? ' updated' : ' created'));
     closeModal();
     await refreshPolicies();
+    showBalancer(balancer.id);
   }catch(err){
     pushEv('balancer.save.error', 'balancer save failed: ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
@@ -1822,12 +2155,23 @@ function wireStaticButtons(){
   var addDNSBtn = document.getElementById('btnAddDNSPolicy');
   var addGeoBtn = document.getElementById('btnAddGeoPolicy');
   var addBalancerBtn = document.getElementById('btnAddBalancer');
+  var nodeSearch = document.getElementById('nodeSearch');
+  var nodeStatusFilter = document.getElementById('nodeStatusFilter');
+  var linkSearch = document.getElementById('linkSearch');
+  var linkStateFilter = document.getElementById('linkStateFilter');
+  var planBtn = document.getElementById('btnPlanPath');
   if(addNodeBtn){ addNodeBtn.addEventListener('click', function(){ openNodeModal(); }); }
   if(addLinkBtn){ addLinkBtn.addEventListener('click', function(){ openLinkModal(); }); }
   if(addRouteBtn){ addRouteBtn.addEventListener('click', function(){ openRoutePolicyModal(); }); }
   if(addDNSBtn){ addDNSBtn.addEventListener('click', function(){ openDNSPolicyModal(); }); }
   if(addGeoBtn){ addGeoBtn.addEventListener('click', function(){ openGeoPolicyModal(); }); }
   if(addBalancerBtn){ addBalancerBtn.addEventListener('click', function(){ openBalancerModal(); }); }
+  if(nodeSearch){ nodeSearch.addEventListener('input', renderNodes); }
+  if(nodeStatusFilter){ nodeStatusFilter.addEventListener('change', renderNodes); }
+  if(linkSearch){ linkSearch.addEventListener('input', renderLinks); }
+  if(linkStateFilter){ linkStateFilter.addEventListener('change', renderLinks); }
+  if(planBtn){ planBtn.addEventListener('click', function(){ openPathPlanner(); }); }
+  bindTopologyCanvas();
 }
 document.querySelectorAll('.nav-item').forEach(function(el){
   el.addEventListener('click', function(){
@@ -1837,7 +2181,12 @@ document.querySelectorAll('.nav-item').forEach(function(el){
     var pg = document.getElementById('page-'+el.dataset.p);
     if(pg) pg.classList.add('active');
     closeDP();
-    if(el.dataset.p==='topology') setTimeout(drawTopo, 60);
+    if(el.dataset.p==='topology'){
+      refreshTopology().catch(function(err){
+        pushEv('topology.refresh.error', String(err && err.message ? err.message : err));
+      });
+      setTimeout(drawTopo, 60);
+    }
   });
 });
 document.getElementById('lbtn').addEventListener('click', doLogin);
