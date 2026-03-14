@@ -36,6 +36,14 @@ class AdminAccessControl:
         "nodes.write": {"roles": ["operator", "admin"], "description": "Modify nodes and node jobs"},
         "node_traffic.read": {"roles": ["viewer", "operator", "admin"], "description": "Read node traffic accounting"},
         "node_traffic.write": {"roles": ["operator", "admin"], "description": "Reset and rollover node traffic accounting"},
+        "users.read": {"roles": ["viewer", "operator", "admin"], "description": "Read users"},
+        "users.write": {"roles": ["operator", "admin"], "description": "Modify users"},
+        "plans.read": {"roles": ["viewer", "operator", "admin"], "description": "Read plans"},
+        "plans.write": {"roles": ["operator", "admin"], "description": "Modify plans"},
+        "subscriptions.read": {"roles": ["viewer", "operator", "admin"], "description": "Read subscriptions"},
+        "subscriptions.write": {"roles": ["operator", "admin"], "description": "Modify subscriptions"},
+        "referral_codes.read": {"roles": ["viewer", "operator", "admin"], "description": "Read referral codes"},
+        "referral_codes.write": {"roles": ["operator", "admin"], "description": "Modify referral codes"},
         "registrations.read": {"roles": ["viewer", "operator", "admin"], "description": "Read registrations"},
         "registrations.write": {"roles": ["operator", "admin"], "description": "Approve and reject registrations"},
         "peers.read": {"roles": ["viewer", "operator", "admin"], "description": "Read peers"},
@@ -109,6 +117,7 @@ class AdminAccessControl:
             f"{prefix}/best-ingress",
             f"{prefix}/session-rebind",
             f"{prefix}/agent",
+            f"{prefix}/client",
         )
 
         if path in public_exact:
@@ -140,6 +149,10 @@ class AdminAccessControl:
         path_groups = {
             "jobs": "jobs",
             "nodes": "nodes",
+            "users": "users",
+            "plans": "plans",
+            "subscriptions": "subscriptions",
+            "referral-codes": "referral_codes",
             "registrations": "registrations",
             "peers": "peers",
             "links": "links",

@@ -9,6 +9,8 @@ from onx.api.routers.agent_metrics import router as agent_metrics_router
 from onx.api.routers.access_rules import router as access_rules_router
 from onx.api.routers.audit_logs import router as audit_logs_router
 from onx.api.routers.balancers import router as balancers_router
+from onx.api.routers.client_auth import router as client_auth_router
+from onx.api.routers.client_registrations import router as client_registrations_router
 from onx.api.routers.client_routing import router as client_routing_router
 from onx.api.routers.dns_policies import router as dns_policies_router
 from onx.api.routers.geo_policies import router as geo_policies_router
@@ -18,13 +20,17 @@ from onx.api.routers.links import router as links_router
 from onx.api.routers.maintenance import router as maintenance_router
 from onx.api.routers.nodes import router as nodes_router
 from onx.api.routers.node_traffic import router as node_traffic_router
+from onx.api.routers.plans import router as plans_router
 from onx.api.routers.peer_traffic import router as peer_traffic_router
 from onx.api.routers.peers import router as peers_router
 from onx.api.routers.probes import router as probes_router
+from onx.api.routers.referral_codes import router as referral_codes_router
 from onx.api.routers.registrations import router as registrations_router
 from onx.api.routers.realtime import router as realtime_router
 from onx.api.routers.route_policies import router as route_policies_router
+from onx.api.routers.subscriptions import router as subscriptions_router
 from onx.api.routers.topology import router as topology_router
+from onx.api.routers.users import router as users_router
 from onx.api.spa import SPAStaticFiles
 from onx.api.security.admin_access import admin_access_control
 from onx.core.config import get_settings
@@ -87,12 +93,18 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix=settings.api_prefix)
     app.include_router(admin_web_auth_router, prefix=settings.api_prefix)
     app.include_router(agent_metrics_router, prefix=settings.api_prefix)
+    app.include_router(client_auth_router, prefix=settings.api_prefix)
+    app.include_router(client_registrations_router, prefix=settings.api_prefix)
     app.include_router(client_routing_router, prefix=settings.api_prefix)
     app.include_router(access_rules_router, prefix=settings.api_prefix)
     app.include_router(audit_logs_router, prefix=settings.api_prefix)
     app.include_router(jobs_router, prefix=settings.api_prefix)
     app.include_router(nodes_router, prefix=settings.api_prefix)
     app.include_router(node_traffic_router, prefix=settings.api_prefix)
+    app.include_router(users_router, prefix=settings.api_prefix)
+    app.include_router(plans_router, prefix=settings.api_prefix)
+    app.include_router(subscriptions_router, prefix=settings.api_prefix)
+    app.include_router(referral_codes_router, prefix=settings.api_prefix)
     app.include_router(peer_traffic_router, prefix=settings.api_prefix)
     app.include_router(peers_router, prefix=settings.api_prefix)
     app.include_router(registrations_router, prefix=settings.api_prefix)

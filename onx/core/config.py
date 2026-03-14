@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     probe_load_sample_seconds: int = 1
     probe_load_reference_bytes_per_sec: float = 125000000.0
     client_session_ttl_seconds: int = 1800
+    client_auth_session_ttl_seconds: int = 2592000
+    client_auth_session_idle_timeout_seconds: int = 2592000
+    client_auth_session_touch_interval_seconds: int = 300
     client_probe_interval_seconds: int = 15
     client_probe_fresh_seconds: int = 120
     client_probe_retention_seconds: int = 86400
