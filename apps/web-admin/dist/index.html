@@ -154,6 +154,7 @@ td.m{color:var(--t0);}
 
 /* в”Ђв”Ђ GRID OVERLAY в”Ђв”Ђ */
 .topo-legend{display:flex;gap:16px;margin-top:10px;font-size:11px;color:var(--t2);}
+.topo-meta{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;}
 
 /* в”Ђв”Ђ MODAL FORM в”Ђв”Ђ */
 .modal{position:fixed;inset:0;background:rgba(3,8,12,.72);display:none;align-items:center;justify-content:center;z-index:120;}
@@ -395,6 +396,16 @@ td.m{color:var(--t0);}
           <span><span style="color:var(--red)">в—Џ</span> unreachable</span>
           <span><span style="color:var(--t2)">в—Џ</span> unknown</span>
           <span style="margin-left:auto;color:var(--t2)">click node for detail</span>
+        </div>
+        <div class="topo-meta">
+          <div class="tw">
+            <div class="th-row"><span>Graph Snapshot</span></div>
+            <div style="padding:12px 14px;" id="topoSummary">// awaiting graph...</div>
+          </div>
+          <div class="tw">
+            <div class="th-row"><span>Path Overlay</span></div>
+            <div style="padding:12px 14px;" id="topoPathSummary">// no path planned</div>
+          </div>
         </div>
       </div>
 
@@ -1166,6 +1177,7 @@ async function healthCheck(){
 async function refreshTopology(){
   var graph = await apiFetch(API_PREFIX + '/graph');
   GRAPH_DATA = graph || {nodes:[], edges:[], generated_at:null};
+  renderTopologyMeta();
   drawTopo();
 }
 function buildNodePositions(width, height, nodes){
@@ -1199,6 +1211,38 @@ function graphNodeById(id){
 }
 function graphEdgeById(id){
   return (GRAPH_DATA.edges || []).find(function(e){ return e.id === id; }) || null;
+}
+function renderTopologyMeta(){
+  var summary = document.getElementById('topoSummary');
+  var pathSummary = document.getElementById('topoPathSummary');
+  if(summary){
+    var nodes = GRAPH_DATA.nodes || [];
+    var edges = GRAPH_DATA.edges || [];
+    var activeEdges = edges.filter(function(edge){ return edge.state === 'active'; }).length;
+    var degradedNodes = nodes.filter(function(node){ return node.status === 'degraded'; }).length;
+    var offlineNodes = nodes.filter(function(node){ return node.status === 'offline' || node.status === 'unreachable'; }).length;
+    summary.innerHTML = rows([
+      ['Generated', GRAPH_DATA.generated_at ? fmtTime(GRAPH_DATA.generated_at) : '-'],
+      ['Nodes', String(nodes.length)],
+      ['Links', String(edges.length)],
+      ['Active Links', String(activeEdges)],
+      ['Degraded Nodes', String(degradedNodes)],
+      ['Offline Nodes', String(offlineNodes)]
+    ]);
+  }
+  if(pathSummary){
+    if(!TOPO_PATH || !(TOPO_PATH.nodeIds || []).length){
+      pathSummary.innerHTML = '<div class="empty-state">No active path overlay.</div>';
+      return;
+    }
+    var nodeNames = (TOPO_PATH.nodeIds || []).map(function(id){ return (graphNodeById(id) || nById(id)).name || id; }).join(' → ');
+    pathSummary.innerHTML = rows([
+      ['Nodes', String((TOPO_PATH.nodeIds || []).length)],
+      ['Links', String((TOPO_PATH.linkIds || []).length)],
+      ['Score', Number(TOPO_PATH.total_score || 0).toFixed(3)],
+      ['Route', nodeNames || '-']
+    ]);
+  }
 }
 function showGraphNode(id){
   var node = graphNodeById(id) || nById(id);
@@ -1261,6 +1305,7 @@ function drawTopo(){
     var a = pos[l.left_node_id], b = pos[l.right_node_id]; if(!a||!b) return;
     var mid = edgeMidpoint(a, b);
     var inPath = !!(TOPO_PATH && (TOPO_PATH.linkIds || []).indexOf(l.id) !== -1);
+    var metrics = l.metrics || {};
     ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
     ctx.strokeStyle = inPath ? 'rgba(77,166,255,0.92)' : (l.state==='active' ? 'rgba(0,200,180,0.28)' : 'rgba(255,69,96,0.28)');
     ctx.lineWidth = inPath ? 3 : 1.5;
@@ -1274,6 +1319,16 @@ function drawTopo(){
     ctx.fillText(l.driver_name || '-', mid.x, mid.y - 7);
     ctx.fillStyle = 'rgba(138,168,192,0.5)';
     ctx.fillText((l.left_interface || '?') + '→' + (l.right_interface || '?'), mid.x, mid.y + 8);
+    ctx.fillStyle = 'rgba(232,240,248,.52)';
+    ctx.fillText(
+      (metrics.latency_ms != null ? Number(metrics.latency_ms).toFixed(1) + 'ms' : '-') +
+      ' / ' +
+      (metrics.load_ratio != null ? Number(metrics.load_ratio).toFixed(2) : '-') +
+      ' / ' +
+      (metrics.loss_pct != null ? Number(metrics.loss_pct).toFixed(1) + '%' : '-'),
+      mid.x,
+      mid.y + 23
+    );
   });
   graphNodes.forEach(function(n){
     var p = pos[n.id]; if(!p) return;
@@ -1300,6 +1355,7 @@ function drawTopo(){
     ctx.textAlign = 'left';
     ctx.fillText('PATH SCORE: ' + Number(TOPO_PATH.total_score || 0).toFixed(3), 16, 26);
   }
+  renderTopologyMeta();
 }
 function bindTopologyCanvas(){
   var canvas = document.getElementById('tc');
@@ -1345,7 +1401,7 @@ function openPathPlanner(defaultSourceId){
     +'</div></form>';
   openModal('Plan Path', body, {
     buttons:[
-      {label:'Clear Overlay', className:'btn', onClick:function(){ TOPO_PATH = null; closeModal(); drawTopo(); }},
+      {label:'Clear Overlay', className:'btn', onClick:function(){ TOPO_PATH = null; closeModal(); renderTopologyMeta(); drawTopo(); }},
       {label:'Cancel', className:'btn', onClick:closeModal},
       {label:'Plan', className:'btn pri', onClick:function(){ document.getElementById('pathPlannerForm').requestSubmit(); }}
     ]
@@ -1373,6 +1429,7 @@ async function submitPathPlanner(fd){
       total_score: response.total_score
     };
     closeModal();
+    renderTopologyMeta();
     drawTopo();
     pushEv('topology.path', 'planned path with ' + String((response.hops || []).length) + ' hops');
   }catch(err){
