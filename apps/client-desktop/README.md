@@ -1,38 +1,102 @@
-# ONyX Desktop Client Skeleton
+# ONyX Desktop Client
 
-This is the first desktop client bootstrap skeleton for ONyX.
+This is the current PyQt6 desktop client for ONyX.
 
 Current scope:
 
-- client registration
 - client login/logout
+- registration request submit
 - local session persistence
-- local device keypair generation
+- local X25519 device key generation
 - device registration
 - device challenge/verify
-- bundle issue + local bundle decryption
-- basic dashboard state
+- encrypted bundle issue + local decrypt
+- first-run splash screen
+- system tray lifecycle
+- interactive background startup task for Windows user sessions
 
-Out of scope in this first skeleton:
+Not implemented yet:
 
 - real VPN tunnel runtime
-- DNS override on the host
-- protocol benchmarking
-- background reconnect daemon
-- production-grade secure local secret storage
+- host DNS enforcement
+- protocol benchmarking and automatic transport race
+- hardened secret vault
+- production support-ticket submit flow
+
+## Files
+
+- `onyx_client.py` - main PyQt6 client
+- `onyx_splash.py` - first-run splash screen
+- `assets/icons/onyx.ico` - Windows application icon
+- `assets/icons/onyx_*.png` - multi-resolution icon set for window/tray/app usage
+
+## Install Dependencies
+
+```bash
+python -m pip install -r requirements.txt
+```
 
 ## Run
+
+Normal launch:
 
 ```bash
 python onyx_client.py
 ```
 
-## Prerequisites
-
-Install the ONyX backend/client dependencies, or at minimum:
+Start hidden in the tray:
 
 ```bash
-python -m pip install httpx cryptography
+python onyx_client.py --background
 ```
 
-Tkinter is required and usually ships with the standard Python distribution.
+## Windows Background Startup
+
+This client is intentionally installed as an interactive startup task, not as a true Windows service.
+
+Reason:
+
+- a real Windows service is the wrong model for a GUI tray application
+- tray icons and interactive windows must run in the user session
+
+Install startup task for the current user:
+
+```bash
+python onyx_client.py --install-startup
+```
+
+Alias kept for operator convenience:
+
+```bash
+python onyx_client.py --install-service
+```
+
+Remove startup task:
+
+```bash
+python onyx_client.py --uninstall-startup
+```
+
+Alias:
+
+```bash
+python onyx_client.py --uninstall-service
+```
+
+## Tray Behavior
+
+- closing the window hides the client to tray
+- tray menu actions:
+  - `Open`
+  - `Connect` / `Disconnect`
+  - `Exit`
+
+## Icon Mapping
+
+The icon set is used as follows:
+
+- `onyx.ico` - Windows executable / application icon
+- `onyx_16.png` - smallest tray-compatible size
+- `onyx_32.png` - small app/window fallback
+- `onyx_48.png`, `onyx_64.png` - standard desktop/window sizes
+- `onyx_96.png`, `onyx_128.png`, `onyx_256.png` - high-DPI and launcher scaling
