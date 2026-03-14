@@ -101,6 +101,8 @@ class Settings(BaseSettings):
     onx_node_agent_timer_path: str = "/etc/systemd/system/onx-node-agent.timer"
     onx_node_agent_version: str = "1"
     onx_node_agent_interval_seconds: int = 60
+    onx_node_traffic_hard_enforcement_enabled: bool = True
+    onx_node_traffic_guard_chain: str = "ONX_NODE_TRAFFIC_GUARD"
     onx_awg_tools_repo: str = "https://github.com/amnezia-vpn/amneziawg-tools.git"
     onx_awg_tools_ref: str = "master"
     onx_awg_go_repo: str = "https://github.com/amnezia-vpn/amneziawg-go.git"

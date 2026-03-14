@@ -13,8 +13,10 @@ from onx.db.models.peer_registry import PeerRegistry
 from onx.db.models.peer_traffic_state import PeerTrafficState
 from onx.schemas.peer_traffic import AgentPeerTrafficReport
 from onx.services.node_traffic_accounting_service import NodeTrafficAccountingService
+from onx.services.node_traffic_enforcement_service import NodeTrafficEnforcementService
 from onx.services.node_traffic_failover_service import NodeTrafficFailoverService
 from onx.services.secret_service import SecretService
+from onx.core.config import get_settings
 
 
 NODE_AGENT_CAPABILITY = "onx_node_agent"
@@ -22,9 +24,11 @@ NODE_AGENT_CAPABILITY = "onx_node_agent"
 
 class NodeAgentService:
     def __init__(self) -> None:
+        self._settings = get_settings()
         self._secrets = SecretService()
         self._traffic_accounting = NodeTrafficAccountingService()
         self._traffic_failover = NodeTrafficFailoverService()
+        self._traffic_enforcement = NodeTrafficEnforcementService()
 
     def ensure_agent_token(self, db: Session, node: Node) -> str:
         secret_ref = f"node-agent:{node.id}"
@@ -173,12 +177,28 @@ class NodeAgentService:
             events=threshold_events,
         )
         failover_result: dict | None = None
+        hard_enforcement_result: dict | None = None
         if not was_suspended and node.traffic_suspended_at is not None:
             failover_result = self._traffic_failover.handle_node_suspended(
                 db,
                 node=node,
                 observed_at=collected_at,
             )
+            if self._settings.onx_node_traffic_hard_enforcement_enabled and node.traffic_hard_enforced_at is None:
+                try:
+                    hard_enforcement_result = self._traffic_enforcement.apply_hard_enforcement(
+                        db,
+                        node=node,
+                        reason=node.traffic_suspension_reason or "traffic_limit_exceeded",
+                        observed_at=collected_at,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    hard_enforcement_result = {
+                        "applied": False,
+                        "error": str(exc),
+                        "node_id": node.id,
+                        "node_name": node.name,
+                    }
         return {
             "node_id": node.id,
             "received_at": datetime.now(timezone.utc),
@@ -189,6 +209,7 @@ class NodeAgentService:
             "node_tx_delta": node_tx_delta,
             "node_total_delta": node_rx_delta + node_tx_delta,
             "failover": failover_result,
+            "hard_enforcement": hard_enforcement_result,
         }
 
     def list_node_peer_traffic(self, db: Session, node_id: str) -> list[dict]:

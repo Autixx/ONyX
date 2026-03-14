@@ -11,6 +11,7 @@ from onx.db.models.event_log import EventLevel
 from onx.db.models.node import Node
 from onx.db.models.node_traffic_cycle import NodeTrafficCycle
 from onx.services.event_log_service import EventLogService
+from onx.services.node_traffic_enforcement_service import NodeTrafficEnforcementService
 from onx.services.realtime_service import realtime_service
 
 
@@ -28,6 +29,7 @@ class NodeTrafficThresholdEvent:
 class NodeTrafficAccountingService:
     def __init__(self) -> None:
         self._event_logs = EventLogService()
+        self._enforcement = NodeTrafficEnforcementService()
 
     def resolve_cycle_bounds(self, node: Node, at: datetime) -> tuple[datetime, datetime]:
         anchor = self._ensure_utc(node.registered_at or node.created_at)
@@ -127,6 +129,10 @@ class NodeTrafficAccountingService:
             "usage_ratio": ratio,
             "warning_emitted_at": cycle.warning_emitted_at,
             "exceeded_emitted_at": cycle.exceeded_emitted_at,
+            "traffic_suspended_at": node.traffic_suspended_at,
+            "traffic_suspension_reason": node.traffic_suspension_reason,
+            "traffic_hard_enforced_at": node.traffic_hard_enforced_at,
+            "traffic_hard_enforcement_reason": node.traffic_hard_enforcement_reason,
             "created_at": cycle.created_at,
             "updated_at": cycle.updated_at,
         }
@@ -206,6 +212,8 @@ class NodeTrafficAccountingService:
 
     def reset_current_cycle(self, db: Session, node: Node, *, at: datetime | None = None) -> NodeTrafficCycle:
         cycle = self.get_or_create_cycle(db, node, at or datetime.now(timezone.utc))
+        if node.traffic_hard_enforced_at is not None:
+            self._enforcement.clear_hard_enforcement(db, node=node, observed_at=at)
         cycle.rx_bytes = 0
         cycle.tx_bytes = 0
         cycle.total_bytes = 0
@@ -244,6 +252,8 @@ class NodeTrafficAccountingService:
 
     def rollover_cycle(self, db: Session, node: Node, *, at: datetime | None = None) -> NodeTrafficCycle:
         observed_at = self._ensure_utc(at or datetime.now(timezone.utc))
+        if node.traffic_hard_enforced_at is not None:
+            self._enforcement.clear_hard_enforcement(db, node=node, observed_at=observed_at)
         current_cycle = self.get_or_create_cycle(db, node, observed_at)
         current_cycle.cycle_ends_at = observed_at
         db.add(current_cycle)

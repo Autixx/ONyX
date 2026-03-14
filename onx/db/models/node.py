@@ -61,6 +61,8 @@ class Node(Base):
     traffic_limit_gb: Mapped[float | None] = mapped_column(Float, nullable=True)
     traffic_suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     traffic_suspension_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    traffic_hard_enforced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    traffic_hard_enforcement_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

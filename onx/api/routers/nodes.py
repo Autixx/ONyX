@@ -49,6 +49,8 @@ def _serialize_node(node: Node, *, traffic_used_gb: float | None = None) -> Node
         traffic_used_gb=traffic_used_gb,
         traffic_suspended_at=node.traffic_suspended_at,
         traffic_suspension_reason=node.traffic_suspension_reason,
+        traffic_hard_enforced_at=node.traffic_hard_enforced_at,
+        traffic_hard_enforcement_reason=node.traffic_hard_enforcement_reason,
         last_seen_at=node.last_seen_at,
         created_at=node.created_at,
         updated_at=node.updated_at,
@@ -110,6 +112,8 @@ def get_node_traffic(
         node_name=node.name,
         traffic_suspended_at=node.traffic_suspended_at,
         traffic_suspension_reason=node.traffic_suspension_reason,
+        traffic_hard_enforced_at=node.traffic_hard_enforced_at,
+        traffic_hard_enforcement_reason=node.traffic_hard_enforcement_reason,
         current_cycle=NodeTrafficCycleRead.model_validate(
             node_traffic_accounting_service.serialize_cycle(node, current_cycle)
         ),

@@ -26,6 +26,8 @@ class NodeTrafficOverviewRead(ONXBaseModel):
     node_name: str
     traffic_suspended_at: datetime | None = None
     traffic_suspension_reason: str | None = None
+    traffic_hard_enforced_at: datetime | None = None
+    traffic_hard_enforcement_reason: str | None = None
     current_cycle: NodeTrafficCycleRead
     recent_cycles: list[NodeTrafficCycleRead]
 
@@ -41,6 +43,8 @@ class NodeTrafficSummaryRead(ONXBaseModel):
     cycle_ends_at: datetime | None
     traffic_suspended_at: datetime | None
     traffic_suspension_reason: str | None
+    traffic_hard_enforced_at: datetime | None = None
+    traffic_hard_enforcement_reason: str | None = None
 
 
 class NodeTrafficActionRead(ONXBaseModel):
@@ -50,4 +54,6 @@ class NodeTrafficActionRead(ONXBaseModel):
     action: str
     traffic_suspended_at: datetime | None
     traffic_suspension_reason: str | None
+    traffic_hard_enforced_at: datetime | None = None
+    traffic_hard_enforcement_reason: str | None = None
     current_cycle: NodeTrafficCycleRead

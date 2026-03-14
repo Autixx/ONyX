@@ -322,13 +322,14 @@ td.m{color:var(--t0);}
               <option value="warning">warning</option>
               <option value="exceeded">exceeded</option>
               <option value="suspended">suspended</option>
+              <option value="hard-enforced">hard enforced</option>
             </select>
             <button class="btn" onclick="refreshNodeTrafficSummary()">REFRESH</button>
           </div>
         </div>
         <div class="tw">
           <table>
-            <thead><tr><th>Node</th><th>Status</th><th>Cycle Start</th><th>Cycle End</th><th>Used</th><th>Limit</th><th>Usage</th><th>Suspended</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Node</th><th>Status</th><th>Cycle Start</th><th>Cycle End</th><th>Used</th><th>Limit</th><th>Usage</th><th>Suspended</th><th>Enforced</th><th>Actions</th></tr></thead>
             <tbody id="ttb"></tbody>
           </table>
         </div>
@@ -730,6 +731,7 @@ function getNodeTrafficFilters(){
   };
 }
 function nodeTrafficState(item){
+  if(item.traffic_hard_enforced_at) return 'hard-enforced';
   if(item.traffic_suspended_at) return 'suspended';
   if(item.usage_ratio == null) return 'normal';
   if(item.usage_ratio >= 1.0) return 'exceeded';
@@ -754,12 +756,12 @@ function renderNodeTraffic(){
     return true;
   });
   if(!rows.length){
-    tb.innerHTML = '<tr><td class="empty-state" colspan="9">No node traffic entries match the current filter.</td></tr>';
+    tb.innerHTML = '<tr><td class="empty-state" colspan="10">No node traffic entries match the current filter.</td></tr>';
     return;
   }
   tb.innerHTML = rows.map(function(item){
     var state = nodeTrafficState(item);
-    var usedCls = state === 'exceeded' || state === 'suspended' ? 'traffic-crit' : state === 'warning' ? 'traffic-warn' : '';
+    var usedCls = state === 'exceeded' || state === 'suspended' || state === 'hard-enforced' ? 'traffic-crit' : state === 'warning' ? 'traffic-warn' : '';
     var ratioText = item.usage_ratio != null ? (Math.round(item.usage_ratio * 1000) / 10) + '%' : '-';
     return '<tr onclick="showNodeTraffic(\''+esc(item.node_id)+'\')">'
       +'<td class="m">'+esc(item.node_name)+'</td>'
@@ -770,6 +772,7 @@ function renderNodeTraffic(){
       +'<td style="color:var(--t1)">'+(item.traffic_limit_gb != null ? esc(String(item.traffic_limit_gb)) + ' GB' : '—')+'</td>'
       +'<td class="'+usedCls+'">'+esc(ratioText)+'</td>'
       +'<td>'+(item.traffic_suspended_at ? '<span class="pill pr">suspended</span>' : '<span class="pill pg">no</span>')+'</td>'
+      +'<td>'+(item.traffic_hard_enforced_at ? '<span class="pill pr">yes</span>' : '<span class="pill pg">no</span>')+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="event.stopPropagation();showNodeTraffic(\''+esc(item.node_id)+'\')">VIEW</button>'
         +'<button class="btn sm" onclick="event.stopPropagation();actionNodeTrafficReset(\''+esc(item.node_id)+'\')">RESET</button>'
@@ -1028,9 +1031,12 @@ function showNode(id){
       ['Traffic Used', n.traffic_used_gb != null ? String(n.traffic_used_gb) + ' GB' : '-'],
       ['Traffic Limit', n.traffic_limit_gb != null ? String(n.traffic_limit_gb) + ' GB' : '-'],
       ['Traffic Suspended', n.traffic_suspended_at ? 'yes' : 'no'],
-      ['Suspension Reason', n.traffic_suspension_reason || '-']
+      ['Suspension Reason', n.traffic_suspension_reason || '-'],
+      ['Hard Enforced', n.traffic_hard_enforced_at ? 'yes' : 'no'],
+      ['Hard Enforcement Reason', n.traffic_hard_enforcement_reason || '-']
     ])
     +'<div id="nodeTrafficBox" style="margin-top:14px;color:var(--t1);font-size:13px;">Loading node traffic cycle…</div>'
+    +'<div id="nodeTrafficEventsInlineBox" style="margin-top:14px;color:var(--t1);font-size:13px;">Loading traffic events…</div>'
     +'<div class="dp-actions">'
       +'<button class="btn" onclick="actionNodeDiscover(\''+esc(n.id)+'\')">PROBE SSH</button>'
       +'<button class="btn pri" onclick="actionNodeBootstrap(\''+esc(n.id)+'\')">BOOTSTRAP</button>'
@@ -1053,11 +1059,14 @@ function showNode(id){
           ['Cycle Start', fmtDate(current.cycle_started_at)],
           ['Cycle End', fmtDate(current.cycle_ends_at)],
           ['Usage Ratio', ratio],
+          ['Hard Enforced', overview.traffic_hard_enforced_at ? 'yes' : 'no'],
+          ['Hard Enforcement Reason', overview.traffic_hard_enforcement_reason || '-'],
           ['Warning Triggered', current.warning_emitted_at ? fmtDate(current.warning_emitted_at) : '-'],
           ['Exceeded Triggered', current.exceeded_emitted_at ? fmtDate(current.exceeded_emitted_at) : '-']
         ])
         + '<div style="margin-top:10px;color:var(--t2);font-size:12px;text-transform:uppercase;letter-spacing:.12em;">Recent Cycles</div>'
         + '<div style="margin-top:8px;">' + (recent || '<div class="drow"><span class="dk">No data</span><span class="dv">-</span></div>') + '</div>';
+      loadNodeTrafficEvents(n.id, 'nodeTrafficEventsInlineBox');
     })
     .catch(function(){
       var box = document.getElementById('nodeTrafficBox');
@@ -1081,19 +1090,41 @@ async function showNodeTraffic(nodeId){
         ['Usage Ratio', ratio],
         ['Suspended', overview.traffic_suspended_at ? 'yes' : 'no'],
         ['Suspension Reason', overview.traffic_suspension_reason || '-'],
+        ['Hard Enforced', overview.traffic_hard_enforced_at ? 'yes' : 'no'],
+        ['Hard Enforcement Reason', overview.traffic_hard_enforcement_reason || '-'],
         ['Warning Triggered', current && current.warning_emitted_at ? fmtDate(current.warning_emitted_at) : '-'],
         ['Exceeded Triggered', current && current.exceeded_emitted_at ? fmtDate(current.exceeded_emitted_at) : '-']
       ])
       + '<div style="margin-top:10px;color:var(--t2);font-size:12px;text-transform:uppercase;letter-spacing:.12em;">Recent Cycles</div>'
       + '<div style="margin-top:8px;">' + (recent || '<div class="drow"><span class="dk">No data</span><span class="dv">-</span></div>') + '</div>'
+      + '<div id="nodeTrafficEventsBox" style="margin-top:14px;color:var(--t1);font-size:13px;">Loading traffic events…</div>'
       + '<div class="dp-actions">'
         +'<button class="btn" onclick="actionNodeTrafficReset(\''+esc(nodeId)+'\')">RESET</button>'
         +'<button class="btn red" onclick="actionNodeTrafficRollover(\''+esc(nodeId)+'\')">ROLLOVER</button>'
       +'</div>'
     );
+    loadNodeTrafficEvents(nodeId, 'nodeTrafficEventsBox');
   }catch(e){
     pushEv('node.traffic.error', String(e && e.message ? e.message : e));
     alert(e&&e.message?e.message:e);
+  }
+}
+async function loadNodeTrafficEvents(nodeId, containerId){
+  var box = document.getElementById(containerId);
+  if(!box) return;
+  try{
+    var items = await apiFetch(API_PREFIX + '/audit-logs?limit=8&entity_type=node_traffic&entity_id=' + encodeURIComponent(nodeId));
+    var html = '<div style="margin-top:10px;color:var(--t2);font-size:12px;text-transform:uppercase;letter-spacing:.12em;">Recent Traffic Events</div>';
+    if(!items || !items.length){
+      box.innerHTML = html + '<div class="drow"><span class="dk">No events</span><span class="dv">-</span></div>';
+      return;
+    }
+    html += '<div style="margin-top:8px;">' + items.slice(0, 6).map(function(evt){
+      return '<div class="drow"><span class="dk">'+esc(fmtDate(evt.created_at))+'</span><span class="dv">'+esc(evt.message || evt.level || '-')+'</span></div>';
+    }).join('') + '</div>';
+    box.innerHTML = html;
+  }catch(_){
+    box.innerHTML = '<div style="color:var(--rd)">Failed to load traffic events.</div>';
   }
 }
 function showLink(id){

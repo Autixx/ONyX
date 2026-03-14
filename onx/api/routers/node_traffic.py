@@ -38,6 +38,8 @@ def list_node_traffic_summary(db: Session = Depends(get_database_session)) -> li
                 cycle_ends_at=cycle.cycle_ends_at if cycle else None,
                 traffic_suspended_at=node.traffic_suspended_at,
                 traffic_suspension_reason=node.traffic_suspension_reason,
+                traffic_hard_enforced_at=node.traffic_hard_enforced_at,
+                traffic_hard_enforcement_reason=node.traffic_hard_enforcement_reason,
             )
         )
     return items
@@ -59,6 +61,8 @@ def get_node_traffic_overview(node_id: str, limit: int = 12, db: Session = Depen
         node_name=node.name,
         traffic_suspended_at=node.traffic_suspended_at,
         traffic_suspension_reason=node.traffic_suspension_reason,
+        traffic_hard_enforced_at=node.traffic_hard_enforced_at,
+        traffic_hard_enforcement_reason=node.traffic_hard_enforcement_reason,
         current_cycle=NodeTrafficCycleRead.model_validate(traffic_service.serialize_cycle(node, current_cycle)),
         recent_cycles=[
             NodeTrafficCycleRead.model_validate(traffic_service.serialize_cycle(node, cycle))
@@ -81,6 +85,8 @@ def reset_node_traffic(node_id: str, db: Session = Depends(get_database_session)
         action="reset",
         traffic_suspended_at=node.traffic_suspended_at,
         traffic_suspension_reason=node.traffic_suspension_reason,
+        traffic_hard_enforced_at=node.traffic_hard_enforced_at,
+        traffic_hard_enforcement_reason=node.traffic_hard_enforcement_reason,
         current_cycle=NodeTrafficCycleRead.model_validate(traffic_service.serialize_cycle(node, cycle)),
     )
 
@@ -99,5 +105,7 @@ def rollover_node_traffic(node_id: str, db: Session = Depends(get_database_sessi
         action="rollover",
         traffic_suspended_at=node.traffic_suspended_at,
         traffic_suspension_reason=node.traffic_suspension_reason,
+        traffic_hard_enforced_at=node.traffic_hard_enforced_at,
+        traffic_hard_enforcement_reason=node.traffic_hard_enforcement_reason,
         current_cycle=NodeTrafficCycleRead.model_validate(traffic_service.serialize_cycle(node, cycle)),
     )
