@@ -13,6 +13,7 @@ from onx.db.models.peer_registry import PeerRegistry
 from onx.db.models.peer_traffic_state import PeerTrafficState
 from onx.schemas.peer_traffic import AgentPeerTrafficReport
 from onx.services.node_traffic_accounting_service import NodeTrafficAccountingService
+from onx.services.node_traffic_failover_service import NodeTrafficFailoverService
 from onx.services.secret_service import SecretService
 
 
@@ -23,6 +24,7 @@ class NodeAgentService:
     def __init__(self) -> None:
         self._secrets = SecretService()
         self._traffic_accounting = NodeTrafficAccountingService()
+        self._traffic_failover = NodeTrafficFailoverService()
 
     def ensure_agent_token(self, db: Session, node: Node) -> str:
         secret_ref = f"node-agent:{node.id}"
@@ -58,6 +60,7 @@ class NodeAgentService:
         upserted = 0
         node_rx_delta = 0
         node_tx_delta = 0
+        was_suspended = node.traffic_suspended_at is not None
 
         capability = db.scalar(
             select(NodeCapability).where(
@@ -169,6 +172,13 @@ class NodeAgentService:
             cycle=cycle,
             events=threshold_events,
         )
+        failover_result: dict | None = None
+        if not was_suspended and node.traffic_suspended_at is not None:
+            failover_result = self._traffic_failover.handle_node_suspended(
+                db,
+                node=node,
+                observed_at=collected_at,
+            )
         return {
             "node_id": node.id,
             "received_at": datetime.now(timezone.utc),
@@ -178,6 +188,7 @@ class NodeAgentService:
             "node_rx_delta": node_rx_delta,
             "node_tx_delta": node_tx_delta,
             "node_total_delta": node_rx_delta + node_tx_delta,
+            "failover": failover_result,
         }
 
     def list_node_peer_traffic(self, db: Session, node_id: str) -> list[dict]:

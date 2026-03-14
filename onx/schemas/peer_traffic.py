@@ -36,6 +36,7 @@ class AgentPeerTrafficReportAck(ONXBaseModel):
     node_rx_delta: int | None = None
     node_tx_delta: int | None = None
     node_total_delta: int | None = None
+    failover: dict | None = None
 
 
 class PeerTrafficStateRead(ONXBaseModel):

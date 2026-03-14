@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from onx.db.models.balancer import Balancer, BalancerMethod
+from onx.db.models.link_endpoint import LinkEndpoint
 from onx.db.models.node import Node
 from onx.db.models.node_secret import NodeSecretKind
 from onx.db.models.probe_result import ProbeStatus, ProbeType
@@ -106,7 +107,7 @@ class BalancerService:
     def pick_member_for_node(self, db: Session, balancer: Balancer, node: Node, secret: str) -> dict:
         if not balancer.enabled:
             raise ValueError("Balancer is disabled.")
-        members = list(balancer.members or [])
+        members = self.list_available_members(db, balancer)
         if not members:
             raise ValueError("Balancer has no members.")
 
@@ -150,7 +151,7 @@ class BalancerService:
     ) -> dict:
         if not balancer.enabled:
             raise ValueError("Balancer is disabled.")
-        members = list(balancer.members or [])
+        members = self.list_available_members(db, balancer)
         if not members:
             raise ValueError("Balancer has no members.")
 
@@ -515,3 +516,70 @@ class BalancerService:
         if not normalized:
             raise ValueError("members must not be empty.")
         return normalized
+
+    def list_available_members(self, db: Session, balancer: Balancer) -> list[dict]:
+        return self._filter_available_members(db, balancer, list(balancer.members or []))
+
+    def _filter_available_members(self, db: Session, balancer: Balancer, members: list[dict]) -> list[dict]:
+        if not members:
+            return []
+
+        interface_names = {
+            str(member.get("interface_name") or "").strip()
+            for member in members
+            if str(member.get("interface_name") or "").strip()
+        }
+        if not interface_names:
+            return members
+
+        local_endpoints = list(
+            db.scalars(
+                select(LinkEndpoint).where(
+                    LinkEndpoint.node_id == balancer.node_id,
+                    LinkEndpoint.interface_name.in_(sorted(interface_names)),
+                )
+            ).all()
+        )
+        if not local_endpoints:
+            return members
+
+        local_by_link: dict[str, LinkEndpoint] = {endpoint.link_id: endpoint for endpoint in local_endpoints}
+        counterpart_endpoints = list(
+            db.scalars(
+                select(LinkEndpoint).where(
+                    LinkEndpoint.link_id.in_(sorted(local_by_link.keys())),
+                )
+            ).all()
+        )
+
+        remote_node_ids: set[str] = set()
+        remote_node_by_interface: dict[str, str] = {}
+        for endpoint in counterpart_endpoints:
+            local_endpoint = local_by_link.get(endpoint.link_id)
+            if local_endpoint is None or endpoint.node_id == balancer.node_id:
+                continue
+            if local_endpoint.interface_name:
+                remote_node_by_interface[local_endpoint.interface_name] = endpoint.node_id
+                remote_node_ids.add(endpoint.node_id)
+
+        if not remote_node_ids:
+            return members
+
+        remote_nodes = {
+            node.id: node
+            for node in db.scalars(select(Node).where(Node.id.in_(sorted(remote_node_ids)))).all()
+        }
+
+        filtered: list[dict] = []
+        for member in members:
+            interface_name = str(member.get("interface_name") or "").strip()
+            remote_node_id = remote_node_by_interface.get(interface_name)
+            if remote_node_id is None:
+                filtered.append(member)
+                continue
+
+            remote_node = remote_nodes.get(remote_node_id)
+            if remote_node is not None and remote_node.traffic_suspended_at is not None:
+                continue
+            filtered.append(member)
+        return filtered
