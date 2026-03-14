@@ -11,13 +11,13 @@ Current scope:
 - device registration
 - device challenge/verify
 - encrypted bundle issue + local decrypt
+- real local tunnel connect/disconnect for AWG and WG when encrypted bundle contains runtime profiles
 - first-run splash screen
 - system tray lifecycle
 - interactive background startup task for Windows user sessions
 
 Not implemented yet:
 
-- real VPN tunnel runtime
 - host DNS enforcement
 - protocol benchmarking and automatic transport race
 - hardened secret vault
@@ -35,6 +35,13 @@ Not implemented yet:
 ```bash
 python -m pip install -r requirements.txt
 ```
+
+For real tunnel runtime on the client machine you also need local transport tools in `PATH`:
+
+- `awg.exe` and `awg-quick.exe` for AWG
+- `wg.exe` and `wg-quick.exe` for WireGuard
+
+The client does not install those tools for you yet.
 
 ## Run
 
@@ -90,6 +97,12 @@ python onyx_client.py --uninstall-service
   - `Open`
   - `Connect` / `Disconnect`
   - `Exit`
+
+## Runtime Notes
+
+- the client chooses the first working encrypted runtime profile from the issued bundle
+- transport type stays hidden from the normal UI
+- if the bundle contains no usable AWG/WG profile, connect will fail with a runtime error instead of faking success
 
 ## Icon Mapping
 

@@ -5,13 +5,14 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from onx.core.config import get_settings
 from onx.db.models.device import Device
 from onx.db.models.issued_bundle import IssuedBundle
 from onx.db.models.node import Node, NodeRole, NodeStatus
+from onx.db.models.peer import Peer
 from onx.db.models.subscription import SubscriptionStatus
 from onx.db.models.user import User, UserStatus
 from onx.services.client_device_service import client_device_service
@@ -118,6 +119,7 @@ class BundleService:
             }
             for index, node in enumerate(candidates)
         ]
+        runtime_profiles = self._build_runtime_profiles(db, user=user)
         return {
             "bundle_id": f"bundle-{user.id[:8]}-{device.id[:8]}-{int(issued_at.timestamp())}",
             "bundle_format_version": "1",
@@ -147,11 +149,74 @@ class BundleService:
                 "destination_country_code": destination_country_code,
                 "transports": transports,
             },
+            "runtime": {
+                "profiles": runtime_profiles,
+            },
             "policy": {
                 "hide_protocol": True,
                 "hide_topology": True,
             },
         }
+
+    def _build_runtime_profiles(self, db: Session, *, user: User) -> list[dict]:
+        peers = list(
+            db.scalars(
+                select(Peer)
+                .where(
+                    Peer.is_active.is_(True),
+                    Peer.revoked_at.is_(None),
+                    Peer.config.is_not(None),
+                    or_(Peer.username == user.username, Peer.email == user.email),
+                )
+                .order_by(Peer.created_at.desc())
+            ).all()
+        )
+
+        profiles: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+
+        for index, peer in enumerate(peers, start=1):
+            config_text = (peer.config or "").strip()
+            if not config_text:
+                continue
+            transport_type = self._detect_transport_type(config_text)
+            if transport_type is None:
+                continue
+            key = (transport_type, config_text)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            node = db.get(Node, peer.node_id)
+            if node is None:
+                continue
+            if node.status != NodeStatus.REACHABLE or node.traffic_suspended_at is not None:
+                continue
+
+            profiles.append(
+                {
+                    "id": f"profile-{peer.id}",
+                    "type": transport_type,
+                    "priority": index,
+                    "peer_id": peer.id,
+                    "node_id": node.id,
+                    "node_name": node.name,
+                    "expires_at": peer.config_expires_at.isoformat() if peer.config_expires_at else None,
+                    "config": config_text,
+                }
+            )
+
+        return profiles
+
+    @staticmethod
+    def _detect_transport_type(config_text: str) -> str | None:
+        lower = config_text.lower()
+        if "[interface]" not in lower or "[peer]" not in lower:
+            return None
+        awg_markers = ("jc =", "jmin =", "jmax =", "s1 =", "s2 =", "h1 =", "h2 =")
+        if any(marker in lower for marker in awg_markers):
+            return "awg"
+        return "wg"
 
 
 bundle_service = BundleService()

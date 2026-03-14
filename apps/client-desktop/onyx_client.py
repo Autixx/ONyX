@@ -13,6 +13,7 @@ import base64
 import json
 import platform
 import secrets
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -46,6 +47,7 @@ from PyQt6.QtWidgets import (
 APP_DIR     = Path.home() / ".onyx-client"
 STATE_PATH  = APP_DIR / "state.json"
 SPLASH_MARK = APP_DIR / "splash_seen"
+RUNTIME_DIR = APP_DIR / "runtime"
 APP_ROOT    = Path(__file__).resolve().parent
 ICON_DIR    = APP_ROOT / "assets" / "icons"
 AUTOSTART_TASK_NAME = "ONyX Desktop Client"
@@ -200,12 +202,17 @@ class ClientState:
         self.connected          = False
         self.rx_bytes = self.tx_bytes = 0
         self.rx_rate  = self.tx_rate  = 0.0
+        self.active_transport   = ""
+        self.active_interface   = ""
+        self.active_profile_id  = ""
+        self.active_config_path = ""
 
     def load(self):
         if not STATE_PATH.exists(): return
         d = json.loads(STATE_PATH.read_text(encoding="utf-8"))
         for k in ("base_url","session_token","user","subscription",
-                  "device_id","device_private_key","device_public_key","last_bundle"):
+                  "device_id","device_private_key","device_public_key","last_bundle",
+                  "active_transport","active_interface","active_profile_id","active_config_path"):
             setattr(self, k, d.get(k, getattr(self, k)))
 
     def save(self):
@@ -215,11 +222,20 @@ class ClientState:
             "user":self.user,"subscription":self.subscription,
             "device_id":self.device_id,"device_private_key":self.device_private_key,
             "device_public_key":self.device_public_key,"last_bundle":self.last_bundle,
+            "active_transport":self.active_transport,"active_interface":self.active_interface,
+            "active_profile_id":self.active_profile_id,"active_config_path":self.active_config_path,
         },indent=2,ensure_ascii=False),encoding="utf-8")
 
     def clear_session(self):
         self.session_token=""; self.user=None; self.subscription=None
-        self.connected=False; self.save()
+        self.connected=False
+        self.rx_bytes = self.tx_bytes = 0
+        self.rx_rate = self.tx_rate = 0.0
+        self.active_transport = ""
+        self.active_interface = ""
+        self.active_profile_id = ""
+        self.active_config_path = ""
+        self.save()
 
     @property
     def username(self): return (self.user or {}).get("username","")
@@ -228,6 +244,151 @@ class ClientState:
         return (self.subscription or {}).get("expires_at") or (self.last_bundle or {}).get("expires_at")
     @property
     def has_session(self): return bool(self.user)
+
+
+class LocalTunnelRuntime:
+    def __init__(self, st: ClientState):
+        self.st = st
+        self._last_transfer_sample: tuple[int, int] | None = None
+
+    def available_profiles(self):
+        decrypted = ((self.st.last_bundle or {}).get("decrypted") or {})
+        runtime = decrypted.get("runtime") or {}
+        profiles = runtime.get("profiles") or []
+        return sorted(
+            [p for p in profiles if p.get("type") in ("awg", "wg") and p.get("config")],
+            key=lambda p: (p.get("priority", 9999), p.get("id", "")),
+        )
+
+    def has_profiles(self) -> bool:
+        return bool(self.available_profiles())
+
+    def connect(self) -> dict:
+        profiles = self.available_profiles()
+        if not profiles:
+            raise RuntimeError("No AWG/WG runtime profiles are available in the issued bundle.")
+
+        errors = []
+        for profile in profiles:
+            try:
+                return self._connect_profile(profile)
+            except Exception as exc:
+                errors.append(f"{profile.get('type','unknown')}: {exc}")
+        raise RuntimeError("Unable to connect using available profiles.\n" + "\n".join(errors))
+
+    def disconnect(self) -> None:
+        if not self.st.active_transport or not self.st.active_config_path:
+            self._clear_runtime_state()
+            return
+        quick_cmd = self._quick_binary(self.st.active_transport)
+        if not quick_cmd:
+            self._clear_runtime_state()
+            raise RuntimeError(f"{self.st.active_transport.upper()} runtime binary is not installed.")
+        config_path = Path(self.st.active_config_path)
+        self._run_quick(quick_cmd, "down", config_path, allow_fail=True)
+        if config_path.exists():
+            self._run_quick(quick_cmd, "down", Path(self.st.active_interface), allow_fail=True)
+        self._clear_runtime_state()
+
+    def read_transfer(self) -> tuple[int, int] | None:
+        if not self.st.connected or not self.st.active_transport or not self.st.active_interface:
+            self._last_transfer_sample = None
+            return None
+        tool_cmd = self._tool_binary(self.st.active_transport)
+        if not tool_cmd:
+            return None
+        result = subprocess.run(
+            [tool_cmd, "show", self.st.active_interface, "transfer"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        if result.returncode != 0:
+            return None
+        rx_total = 0
+        tx_total = 0
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            try:
+                rx_total += int(parts[-2])
+                tx_total += int(parts[-1])
+            except ValueError:
+                continue
+        return rx_total, tx_total
+
+    def _connect_profile(self, profile: dict) -> dict:
+        transport = profile["type"]
+        quick_cmd = self._quick_binary(transport)
+        if not quick_cmd:
+            raise RuntimeError(f"{transport.upper()} quick runtime is not installed.")
+
+        interface_name = self._interface_name_for(transport)
+        config_path = self._write_config(interface_name, profile["config"])
+        self._run_quick(quick_cmd, "down", config_path, allow_fail=True)
+        self._run_quick(quick_cmd, "up", config_path)
+
+        self.st.connected = True
+        self.st.active_transport = transport
+        self.st.active_interface = interface_name
+        self.st.active_profile_id = profile.get("id", "")
+        self.st.active_config_path = str(config_path)
+        self.st.rx_bytes = self.st.tx_bytes = 0
+        self.st.rx_rate = self.st.tx_rate = 0.0
+        self.st.save()
+        self._last_transfer_sample = None
+        return profile
+
+    def _clear_runtime_state(self) -> None:
+        self.st.connected = False
+        self.st.active_transport = ""
+        self.st.active_interface = ""
+        self.st.active_profile_id = ""
+        self.st.active_config_path = ""
+        self.st.rx_bytes = self.st.tx_bytes = 0
+        self.st.rx_rate = self.st.tx_rate = 0.0
+        self.st.save()
+        self._last_transfer_sample = None
+
+    def _interface_name_for(self, transport: str) -> str:
+        return "onyxawg0" if transport == "awg" else "onyxwg0"
+
+    def _write_config(self, interface_name: str, config_text: str) -> Path:
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        config_path = RUNTIME_DIR / f"{interface_name}.conf"
+        normalized = config_text.replace("\r\n", "\n").strip() + "\n"
+        config_path.write_text(normalized, encoding="utf-8")
+        return config_path
+
+    def _run_quick(self, quick_cmd: str, action: str, config_path: Path, *, allow_fail: bool = False) -> None:
+        result = subprocess.run(
+            [quick_cmd, action, str(config_path)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode != 0 and not allow_fail:
+            message = result.stderr.strip() or result.stdout.strip() or f"{quick_cmd} {action} failed."
+            raise RuntimeError(message)
+
+    @staticmethod
+    def _quick_binary(transport: str) -> str | None:
+        names = [f"{transport}-quick.exe", f"{transport}-quick"]
+        for name in names:
+            found = shutil.which(name)
+            if found:
+                return found
+        return None
+
+    @staticmethod
+    def _tool_binary(transport: str) -> str | None:
+        names = [f"{transport}.exe", transport]
+        for name in names:
+            found = shutil.which(name)
+            if found:
+                return found
+        return None
 
 # ── Worker ─────────────────────────────────────────────────────────────────────
 
@@ -611,7 +772,13 @@ class DashboardScreen(QWidget):
     connection_state_changed = pyqtSignal(bool)
 
     def __init__(self,st,parent=None):
-        super().__init__(parent); self.st=st; self._build()
+        super().__init__(parent)
+        self.st = st
+        self._runtime = LocalTunnelRuntime(st)
+        self._build()
+        self._stats_timer = QTimer(self)
+        self._stats_timer.timeout.connect(self._poll_runtime_stats)
+        self._stats_timer.start(2000)
 
     def _build(self):
         outer=QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
@@ -718,6 +885,54 @@ class DashboardScreen(QWidget):
         if self.st.device_id: self._cd.set_value(self.st.device_id[:8]+"…")
         else:                  self._cd.set_value("Not registered",C_AMB)
 
+    def disconnect_runtime(self, silent: bool = False):
+        try:
+            self._runtime.disconnect()
+        except Exception as exc:
+            if not silent:
+                QMessageBox.critical(self, "Disconnect", str(exc))
+        finally:
+            self.refresh()
+            self.connection_state_changed.emit(self.st.connected)
+
+    def _connect_runtime(self):
+        self._cbtn.set_connecting(True)
+        self._stlbl.setText("CONNECTING")
+        self._hlbl.setText("Preparing secure tunnel...")
+
+        def _c():
+            return self._runtime.connect()
+
+        def _d(profile, err):
+            self._cbtn.set_connecting(False)
+            if err:
+                self.st.connected = False
+                self.refresh()
+                QMessageBox.critical(self, "Connect", str(err))
+                self.connection_state_changed.emit(False)
+                return
+            self.refresh()
+            self.connection_state_changed.emit(True)
+
+        run_async(self, _c, _d)
+
+    def _poll_runtime_stats(self):
+        transfer = self._runtime.read_transfer()
+        if transfer is None:
+            if not self.st.connected and (self.st.rx_bytes or self.st.tx_bytes or self.st.rx_rate or self.st.tx_rate):
+                self.st.rx_bytes = self.st.tx_bytes = 0
+                self.st.rx_rate = self.st.tx_rate = 0.0
+                self.refresh()
+            return
+
+        rx_total, tx_total = transfer
+        prev_rx, prev_tx = self.st.rx_bytes, self.st.tx_bytes
+        self.st.rx_rate = max(0.0, float(rx_total - prev_rx)) / 2.0
+        self.st.tx_rate = max(0.0, float(tx_total - prev_tx)) / 2.0
+        self.st.rx_bytes = rx_total
+        self.st.tx_bytes = tx_total
+        self.refresh()
+
     def _hdrs(self):
         return {"Authorization":f"Bearer {self.st.session_token}"} if self.st.session_token else {}
 
@@ -784,7 +999,7 @@ class DashboardScreen(QWidget):
             QMessageBox.information(self,"Verify","Device verified.")
         run_async(self,_c,_d)
 
-    def _issue_bundle(self):
+    def _issue_bundle(self, auto_connect: bool = False):
         if not self.st.device_id: QMessageBox.warning(self,"Bundle","Register device first."); return
         base=self.st.base_url; did=self.st.device_id; hdrs=self._hdrs()
         def _c():
@@ -797,15 +1012,21 @@ class DashboardScreen(QWidget):
         def _d(data,err):
             if err: QMessageBox.critical(self,"Bundle",str(err)); return
             self.st.last_bundle=data; self.st.save(); self.refresh()
+            if auto_connect:
+                self._connect_runtime()
         run_async(self,_c,_d)
 
     def _toggle(self):
-        if not self.st.last_bundle:
-            self._issue_bundle()
+        if self.st.connected:
+            self.disconnect_runtime()
             return
-        self.st.connected = not self.st.connected
-        self.refresh()
-        self.connection_state_changed.emit(self.st.connected)
+        if not self.st.last_bundle:
+            self._issue_bundle(auto_connect=True)
+            return
+        if not self._runtime.has_profiles():
+            self._issue_bundle(auto_connect=True)
+            return
+        self._connect_runtime()
 
     def _support(self):
         dlg=QDialog(self); dlg.setWindowTitle("Support"); dlg.setFixedSize(400,420)
@@ -1055,6 +1276,7 @@ class ONyXClient(QMainWindow):
 
     def _exit_from_tray(self):
         self._quit_requested = True
+        self._ds.disconnect_runtime(silent=True)
         if self._tray is not None:
             self._tray.hide()
         QApplication.instance().quit()
@@ -1086,6 +1308,7 @@ class ONyXClient(QMainWindow):
         self._ds.refresh(); self._go(2); self._update_tray_state()
 
     def _on_logout(self):
+        self._ds.disconnect_runtime(silent=True)
         base=self.st.base_url; tok=self.st.session_token
         def _c():
             if tok:
