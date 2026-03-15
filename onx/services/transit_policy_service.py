@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from onx.db.models.node import Node, NodeAuthType
 from onx.db.models.node_secret import NodeSecretKind
 from onx.db.models.transit_policy import TransitPolicy, TransitPolicyState
+from onx.db.models.xray_service import XrayService, XrayServiceState
 from onx.deploy.ssh_executor import SSHExecutor
 from onx.services.interface_runtime_service import InterfaceRuntimeService
 from onx.services.secret_service import SecretService
@@ -138,6 +139,7 @@ class TransitPolicyManager:
         return policy
 
     def delete_policy(self, db: Session, policy: TransitPolicy) -> None:
+        xray_service = self._resolve_attached_xray_service(db, policy)
         node = db.get(Node, policy.node_id)
         if node is not None:
             try:
@@ -147,6 +149,7 @@ class TransitPolicyManager:
                 pass
         db.delete(policy)
         db.commit()
+        self._reapply_attached_xray_if_needed(db, xray_service)
 
     def apply_policy(self, db: Session, policy: TransitPolicy) -> dict:
         node = db.get(Node, policy.node_id)
@@ -154,6 +157,7 @@ class TransitPolicyManager:
             raise ValueError("Node not found.")
         management_secret = self._get_management_secret(db, node)
         self._runtime.ensure_transit_runtime(node, management_secret)
+        attached_xray = self._resolve_attached_xray_service(db, policy)
 
         config_path = f"{self._runtime.settings.onx_transit_conf_dir}/{policy.id}.json"
         previous = self._executor.read_file(node, management_secret, config_path)
@@ -169,6 +173,7 @@ class TransitPolicyManager:
                 self._runtime.restart_transit_policy(node, management_secret, policy.id)
             else:
                 self._runtime.stop_transit_policy(node, management_secret, policy.id)
+            self._reapply_attached_xray_if_needed(db, attached_xray)
         except Exception as exc:
             try:
                 self._runtime.stop_transit_policy(node, management_secret, policy.id)
@@ -210,6 +215,137 @@ class TransitPolicyManager:
             "chain_name": runtime_summary["chain_name"],
         }
 
+    def preview_policy(self, db: Session, policy: TransitPolicy) -> dict:
+        config_path = f"{self._runtime.settings.onx_transit_conf_dir}/{policy.id}.json"
+        chain_name = self._chain_name(policy.id)
+        unit_name = f"onx-transit@{policy.id}.service"
+        rules: list[dict] = [
+            {
+                "kind": "iptables",
+                "table": "mangle",
+                "chain": "PREROUTING",
+                "command": f"iptables -w -t mangle -A PREROUTING -i {policy.ingress_interface} -j {chain_name}",
+                "summary": f"Jump incoming traffic from {policy.ingress_interface} into ONX-owned chain {chain_name}.",
+            },
+            {
+                "kind": "iptables",
+                "table": "mangle",
+                "chain": chain_name,
+                "command": "iptables -w -t mangle -A "
+                + f"{chain_name} -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN",
+                "summary": "Bypass established traffic before transparent capture.",
+            },
+        ]
+        for port in policy.management_bypass_tcp_ports_json or []:
+            rules.append(
+                {
+                    "kind": "iptables",
+                    "table": "mangle",
+                    "chain": chain_name,
+                    "command": (
+                        f"iptables -w -t mangle -A {chain_name} -m addrtype --dst-type LOCAL "
+                        f"-p tcp --dport {int(port)} -j RETURN"
+                    ),
+                    "summary": f"Protect local management TCP port {int(port)} from TPROXY capture.",
+                }
+            )
+        for cidr in policy.management_bypass_ipv4_json or []:
+            rules.append(
+                {
+                    "kind": "iptables",
+                    "table": "mangle",
+                    "chain": chain_name,
+                    "command": f"iptables -w -t mangle -A {chain_name} -d {cidr} -j RETURN",
+                    "summary": f"Bypass management destination subnet {cidr}.",
+                }
+            )
+        for cidr in policy.excluded_cidrs_json or []:
+            rules.append(
+                {
+                    "kind": "iptables",
+                    "table": "mangle",
+                    "chain": chain_name,
+                    "command": f"iptables -w -t mangle -A {chain_name} -d {cidr} -j RETURN",
+                    "summary": f"Bypass excluded destination subnet {cidr}.",
+                }
+            )
+        for proto in policy.capture_protocols_json or []:
+            for cidr in policy.capture_cidrs_json or []:
+                rules.append(
+                    {
+                        "kind": "iptables",
+                        "table": "mangle",
+                        "chain": chain_name,
+                        "command": (
+                            f"iptables -w -t mangle -A {chain_name} -p {proto} -d {cidr} "
+                            f"-j TPROXY --on-port {policy.transparent_port} "
+                            f"--tproxy-mark {policy.firewall_mark}/{policy.firewall_mark}"
+                        ),
+                        "summary": f"Capture {proto.upper()} traffic to {cidr} into transparent port {policy.transparent_port}.",
+                    }
+                )
+        rules.extend(
+            [
+                {
+                    "kind": "iprule",
+                    "table": "policy",
+                    "chain": None,
+                    "command": (
+                        f"ip rule add fwmark {policy.firewall_mark} table {policy.route_table_id} "
+                        f"priority {policy.rule_priority}"
+                    ),
+                    "summary": "Route TPROXY-marked packets into dedicated local table.",
+                },
+                {
+                    "kind": "iproute",
+                    "table": str(policy.route_table_id),
+                    "chain": None,
+                    "command": f"ip route replace local 0.0.0.0/0 dev lo table {policy.route_table_id}",
+                    "summary": "Deliver marked packets locally so XRAY can receive them transparently.",
+                },
+            ]
+        )
+
+        xray_attachment = {
+            "attached": False,
+            "service_id": None,
+            "service_name": None,
+            "transport_mode": None,
+            "inbound_tag": None,
+            "transparent_port": None,
+            "route_path": None,
+        }
+        warnings: list[str] = []
+        xray_service = self._resolve_attached_xray_service(db, policy)
+        if xray_service is not None:
+            xray_attachment = {
+                "attached": True,
+                "service_id": xray_service.id,
+                "service_name": xray_service.name,
+                "transport_mode": xray_service.transport_mode.value,
+                "inbound_tag": f"transit-{policy.id}",
+                "transparent_port": policy.transparent_port,
+                "route_path": "dokodemo-door -> freedom -> kernel route",
+            }
+        else:
+            warnings.append("Transit policy is not attached to an active XRAY service. Rules will capture traffic, but XRAY will not terminate it.")
+        if not policy.enabled:
+            warnings.append("Transit policy is disabled. Preview shows intended runtime, but apply will keep the unit stopped.")
+        if not (policy.capture_protocols_json or []):
+            warnings.append("No capture protocols configured.")
+        return {
+            "policy_id": policy.id,
+            "policy_name": policy.name,
+            "node_id": policy.node_id,
+            "enabled": policy.enabled,
+            "unit_name": unit_name,
+            "config_path": config_path,
+            "chain_name": chain_name,
+            "rules": rules,
+            "xray_attachment": xray_attachment,
+            "warnings": warnings,
+        }
+
     def _serialize_policy(self, policy: TransitPolicy) -> dict:
         return {
             "id": policy.id,
@@ -239,6 +375,20 @@ class TransitPolicyManager:
         payload = self._serialize_policy(policy)
         payload["mark_hex"] = hex(policy.firewall_mark)
         return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+    @staticmethod
+    def _resolve_attached_xray_service(db: Session, policy: TransitPolicy) -> XrayService | None:
+        if policy.ingress_service_kind != "xray_service" or not policy.ingress_service_ref_id:
+            return None
+        return db.get(XrayService, policy.ingress_service_ref_id)
+
+    @staticmethod
+    def _reapply_attached_xray_if_needed(db: Session, service: XrayService | None) -> None:
+        if service is None or service.state != XrayServiceState.ACTIVE:
+            return
+        from onx.services.xray_service_service import xray_service_manager
+
+        xray_service_manager.apply_service(db, service)
 
     def _get_management_secret(self, db: Session, node: Node) -> str:
         secret_kind = NodeSecretKind.SSH_PASSWORD if node.auth_type == NodeAuthType.PASSWORD else NodeSecretKind.SSH_PRIVATE_KEY

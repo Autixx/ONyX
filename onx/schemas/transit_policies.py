@@ -79,3 +79,34 @@ class TransitPolicyUpdate(BaseModel):
     excluded_cidrs_json: list[str] | None = None
     management_bypass_ipv4_json: list[str] | None = None
     management_bypass_tcp_ports_json: list[int] | None = None
+
+
+class TransitPolicyPreviewRule(ONXBaseModel):
+    kind: str
+    table: str
+    chain: str | None = None
+    command: str
+    summary: str
+
+
+class TransitPolicyPreviewXrayAttachment(ONXBaseModel):
+    attached: bool
+    service_id: str | None = None
+    service_name: str | None = None
+    transport_mode: str | None = None
+    inbound_tag: str | None = None
+    transparent_port: int | None = None
+    route_path: str | None = None
+
+
+class TransitPolicyPreview(ONXBaseModel):
+    policy_id: str
+    policy_name: str
+    node_id: str
+    enabled: bool
+    unit_name: str
+    config_path: str
+    chain_name: str
+    rules: list[TransitPolicyPreviewRule]
+    xray_attachment: TransitPolicyPreviewXrayAttachment
+    warnings: list[str]

@@ -12,6 +12,7 @@ from onx.db.models.node import Node
 from onx.db.models.node_capability import NodeCapability
 from onx.db.models.node_secret import NodeSecretKind
 from onx.db.models.peer import Peer
+from onx.db.models.transit_policy import TransitPolicy
 from onx.db.models.xray_service import XrayService, XrayServiceState
 from onx.deploy.ssh_executor import SSHExecutor
 from onx.services.interface_runtime_service import InterfaceRuntimeService
@@ -156,9 +157,12 @@ class XrayServiceManager:
         service.state = XrayServiceState.ACTIVE
         service.last_error_text = None
         service.applied_config_json = config
+        transit_policies = self._list_transit_policies(db, service.id)
         service.health_summary_json = {
             "status": "active",
             "peer_count": len(self._list_service_peers(db, service.id)),
+            "transit_policy_count": len(transit_policies),
+            "transparent_ports": [item.transparent_port for item in transit_policies],
             "applied_at": datetime.now(timezone.utc).isoformat(),
             "config_path": config_path,
         }
@@ -204,11 +208,45 @@ class XrayServiceManager:
             inbound["streamSettings"]["tlsSettings"] = {
                 "serverName": service.server_name or service.public_host,
             }
-        return {
+        transit_policies = self._list_transit_policies(db, service.id)
+        transit_inbounds = [
+            {
+                "tag": f"transit-{policy.id}",
+                "listen": "0.0.0.0",
+                "port": policy.transparent_port,
+                "protocol": "dokodemo-door",
+                "settings": {
+                    "network": ",".join(policy.capture_protocols_json or ["tcp", "udp"]),
+                    "followRedirect": True,
+                },
+                "sniffing": {
+                    "enabled": True,
+                    "destOverride": ["http", "tls"],
+                },
+                "streamSettings": {
+                    "sockopt": {
+                        "tproxy": "tproxy",
+                    }
+                },
+            }
+            for policy in transit_policies
+        ]
+        routing_rules = [
+            {
+                "type": "field",
+                "inboundTag": [f"transit-{policy.id}"],
+                "outboundTag": "direct",
+            }
+            for policy in transit_policies
+        ]
+        payload = {
             "log": {"loglevel": "warning"},
-            "inbounds": [inbound],
+            "inbounds": [inbound, *transit_inbounds],
             "outbounds": [{"tag": "direct", "protocol": "freedom"}],
         }
+        if routing_rules:
+            payload["routing"] = {"rules": routing_rules}
+        return payload
 
     def render_peer_config(self, service: XrayService, peer: Peer) -> str:
         security = "tls" if service.tls_enabled else "none"
@@ -282,6 +320,20 @@ class XrayServiceManager:
         return list(
             db.scalars(
                 select(Peer).where(Peer.xray_service_id == service_id).order_by(Peer.created_at.asc())
+            ).all()
+        )
+
+    @staticmethod
+    def _list_transit_policies(db: Session, service_id: str) -> list[TransitPolicy]:
+        return list(
+            db.scalars(
+                select(TransitPolicy)
+                .where(
+                    TransitPolicy.ingress_service_kind == "xray_service",
+                    TransitPolicy.ingress_service_ref_id == service_id,
+                    TransitPolicy.enabled.is_(True),
+                )
+                .order_by(TransitPolicy.created_at.asc())
             ).all()
         )
 

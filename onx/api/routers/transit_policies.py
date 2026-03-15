@@ -3,7 +3,12 @@ from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
 from onx.db.models.event_log import EventLevel
-from onx.schemas.transit_policies import TransitPolicyCreate, TransitPolicyRead, TransitPolicyUpdate
+from onx.schemas.transit_policies import (
+    TransitPolicyCreate,
+    TransitPolicyPreview,
+    TransitPolicyRead,
+    TransitPolicyUpdate,
+)
 from onx.services.event_log_service import EventLogService
 from onx.services.realtime_service import realtime_service
 from onx.services.transit_policy_service import transit_policy_manager
@@ -44,6 +49,14 @@ def get_transit_policy(policy_id: str, db: Session = Depends(get_database_sessio
     if policy is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transit policy not found.")
     return policy
+
+
+@router.get("/{policy_id}/preview", response_model=TransitPolicyPreview, status_code=status.HTTP_200_OK)
+def preview_transit_policy(policy_id: str, db: Session = Depends(get_database_session)):
+    policy = transit_policy_manager.get_policy(db, policy_id)
+    if policy is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transit policy not found.")
+    return transit_policy_manager.preview_policy(db, policy)
 
 
 @router.patch("/{policy_id}", response_model=TransitPolicyRead, status_code=status.HTTP_200_OK)
