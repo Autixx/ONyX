@@ -9,6 +9,7 @@ Dependencies:
 """
 
 import argparse
+import asyncio
 import base64
 import ipaddress
 import json
@@ -35,6 +36,9 @@ from PyQt6.QtGui import (
     QAction, QColor, QFont, QIcon, QPainter, QPen, QRadialGradient, QBrush,
 )
 from onyx_splash import SplashScreen
+from runtime.ipc import DaemonPipeClient
+from runtime.models import CommandEnvelope, DaemonCommand
+from runtime.paths import expected_binary_layout
 
 from PyQt6.QtWidgets import (
     QApplication, QButtonGroup, QComboBox, QDialog, QFrame,
@@ -52,6 +56,7 @@ SPLASH_MARK = APP_DIR / "splash_seen"
 RUNTIME_DIR = APP_DIR / "runtime"
 TOOLS_DIR   = APP_DIR / "bin"
 APP_ROOT    = Path(__file__).resolve().parent
+PROJECT_BIN_DIR = APP_ROOT / "bin"
 ICON_DIR    = APP_ROOT / "assets" / "icons"
 AUTOSTART_TASK_NAME = "ONyX Desktop Client"
 APP_VERSION = "0.2.0"
@@ -191,14 +196,15 @@ def normalize_api_base_url(raw: str) -> str:
 
 
 def open_tools_directory() -> None:
-    TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+    target = PROJECT_BIN_DIR if PROJECT_BIN_DIR.exists() else TOOLS_DIR
+    target.mkdir(parents=True, exist_ok=True)
     if platform.system() == "Windows":
-        os.startfile(str(TOOLS_DIR))
+        os.startfile(str(target))
         return
     if platform.system() == "Darwin":
-        subprocess.run(["open", str(TOOLS_DIR)], check=False)
+        subprocess.run(["open", str(target)], check=False)
         return
-    subprocess.run(["xdg-open", str(TOOLS_DIR)], check=False)
+    subprocess.run(["xdg-open", str(target)], check=False)
 
 
 def test_api_health(base_url: str) -> dict:
@@ -270,13 +276,14 @@ class ClientState:
         self.active_interface   = ""
         self.active_profile_id  = ""
         self.active_config_path = ""
+        self.active_runtime_mode = ""
 
     def load(self):
         if not STATE_PATH.exists(): return
         d = json.loads(STATE_PATH.read_text(encoding="utf-8"))
         for k in ("base_url","session_token","user","subscription",
                   "device_id","device_private_key","device_public_key","last_bundle",
-                  "active_transport","active_interface","active_profile_id","active_config_path"):
+                  "active_transport","active_interface","active_profile_id","active_config_path","active_runtime_mode"):
             setattr(self, k, d.get(k, getattr(self, k)))
         self.base_url = normalize_api_base_url(self.base_url)
 
@@ -289,6 +296,7 @@ class ClientState:
             "device_public_key":self.device_public_key,"last_bundle":self.last_bundle,
             "active_transport":self.active_transport,"active_interface":self.active_interface,
             "active_profile_id":self.active_profile_id,"active_config_path":self.active_config_path,
+            "active_runtime_mode":self.active_runtime_mode,
         },indent=2,ensure_ascii=False),encoding="utf-8")
 
     def clear_session(self):
@@ -300,6 +308,7 @@ class ClientState:
         self.active_interface = ""
         self.active_profile_id = ""
         self.active_config_path = ""
+        self.active_runtime_mode = ""
         self.save()
 
     @property
@@ -315,6 +324,7 @@ class LocalTunnelRuntime:
     def __init__(self, st: ClientState):
         self.st = st
         self._last_transfer_sample: tuple[int, int] | None = None
+        self._daemon = DaemonPipeClient()
         self._clear_dns_enforcement_rules()
 
     def available_profiles(self):
@@ -335,18 +345,27 @@ class LocalTunnelRuntime:
 
     def diagnostics(self) -> dict:
         profiles = self.available_profiles()
+        daemon_info = self._daemon_status()
         tool_details = {}
         for transport in ("awg", "wg"):
+            manager_key = "amneziawg_manager" if transport == "awg" else "wireguard_manager"
+            cli_key = "amneziawg_cli" if transport == "awg" else "wireguard_cli"
             tool_details[transport] = {
+                "manager": self._layout_binary(manager_key),
+                "cli": self._layout_binary(cli_key),
+                "dll": self._layout_binary("wintun_dll"),
                 "tool": self._resolve_binary_candidates([f"{transport}.exe", transport]),
                 "quick": self._resolve_binary_candidates([f"{transport}-quick.exe", f"{transport}-quick"]),
             }
         return {
-            "tools_dir": str(TOOLS_DIR),
+            "tools_dir": str(PROJECT_BIN_DIR),
+            "legacy_tools_dir": str(TOOLS_DIR),
             "profiles": profiles,
+            "daemon": daemon_info,
             "active_transport": self.st.active_transport,
             "active_interface": self.st.active_interface,
             "active_profile_id": self.st.active_profile_id,
+            "active_runtime_mode": self.st.active_runtime_mode,
             "tool_details": tool_details,
         }
 
@@ -354,6 +373,9 @@ class LocalTunnelRuntime:
         profiles = self.available_profiles()
         if not profiles:
             raise RuntimeError("No AWG/WG runtime profiles are available in the issued bundle.")
+
+        if self._can_use_daemon():
+            return self._connect_via_daemon(profiles)
 
         errors = []
         for profile in profiles:
@@ -364,10 +386,19 @@ class LocalTunnelRuntime:
         raise RuntimeError("Unable to connect using available profiles.\n" + "\n".join(errors))
 
     def disconnect(self) -> None:
+        if self.st.active_runtime_mode == "daemon":
+            self._disconnect_via_daemon()
+            return
         if not self.st.active_transport or not self.st.active_config_path:
             self._clear_runtime_state()
             return
+        manager_cmd = self._manager_binary(self.st.active_transport)
         quick_cmd = self._quick_binary(self.st.active_transport)
+        if manager_cmd:
+            self._clear_dns_policy(self.st.active_interface)
+            self._run_manager_disconnect(manager_cmd, self.st.active_interface)
+            self._clear_runtime_state()
+            return
         if not quick_cmd:
             self._clear_runtime_state()
             raise RuntimeError(f"{self.st.active_transport.upper()} runtime binary is not installed.")
@@ -408,19 +439,29 @@ class LocalTunnelRuntime:
 
     def _connect_profile(self, profile: dict) -> dict:
         transport = profile["type"]
-        quick_cmd = self._quick_binary(transport)
-        if not quick_cmd:
-            raise RuntimeError(f"{transport.upper()} quick runtime is not installed.")
-
         interface_name = self._interface_name_for(transport)
+        manager_cmd = self._manager_binary(transport)
+        quick_cmd = self._quick_binary(transport)
+        if not manager_cmd and not quick_cmd:
+            raise RuntimeError(f"{transport.upper()} runtime is not installed.")
+
         config_path = self._write_config(interface_name, profile["config"])
-        self._run_quick(quick_cmd, "down", config_path, allow_fail=True)
-        self._run_quick(quick_cmd, "up", config_path)
+        if manager_cmd:
+            self._run_manager_disconnect(manager_cmd, interface_name, allow_fail=True)
+            self._run_manager_connect(manager_cmd, config_path)
+        else:
+            assert quick_cmd is not None
+            self._run_quick(quick_cmd, "down", config_path, allow_fail=True)
+            self._run_quick(quick_cmd, "up", config_path)
         try:
             self._apply_dns_policy(interface_name)
         except Exception:
             self._clear_dns_policy(interface_name)
-            self._run_quick(quick_cmd, "down", config_path, allow_fail=True)
+            if manager_cmd:
+                self._run_manager_disconnect(manager_cmd, interface_name, allow_fail=True)
+            else:
+                assert quick_cmd is not None
+                self._run_quick(quick_cmd, "down", config_path, allow_fail=True)
             raise
 
         self.st.connected = True
@@ -428,6 +469,7 @@ class LocalTunnelRuntime:
         self.st.active_interface = interface_name
         self.st.active_profile_id = profile.get("id", "")
         self.st.active_config_path = str(config_path)
+        self.st.active_runtime_mode = "local"
         self.st.rx_bytes = self.st.tx_bytes = 0
         self.st.rx_rate = self.st.tx_rate = 0.0
         self.st.save()
@@ -440,6 +482,7 @@ class LocalTunnelRuntime:
         self.st.active_interface = ""
         self.st.active_profile_id = ""
         self.st.active_config_path = ""
+        self.st.active_runtime_mode = ""
         self.st.rx_bytes = self.st.tx_bytes = 0
         self.st.rx_rate = self.st.tx_rate = 0.0
         self.st.save()
@@ -464,6 +507,28 @@ class LocalTunnelRuntime:
         )
         if result.returncode != 0 and not allow_fail:
             message = result.stderr.strip() or result.stdout.strip() or f"{quick_cmd} {action} failed."
+            raise RuntimeError(message)
+
+    def _run_manager_connect(self, manager_cmd: str, config_path: Path) -> None:
+        result = subprocess.run(
+            [manager_cmd, "/installtunnelservice", str(config_path)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode != 0:
+            message = result.stderr.strip() or result.stdout.strip() or f"{manager_cmd} /installtunnelservice failed."
+            raise RuntimeError(message)
+
+    def _run_manager_disconnect(self, manager_cmd: str, tunnel_name: str, *, allow_fail: bool = False) -> None:
+        result = subprocess.run(
+            [manager_cmd, "/uninstalltunnelservice", tunnel_name],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode != 0 and not allow_fail:
+            message = result.stderr.strip() or result.stdout.strip() or f"{manager_cmd} /uninstalltunnelservice failed."
             raise RuntimeError(message)
 
     def _apply_dns_policy(self, interface_name: str) -> None:
@@ -598,17 +663,135 @@ class LocalTunnelRuntime:
             return None
         return str(parsed)
 
+    def _can_use_daemon(self) -> bool:
+        info = self._daemon_status()
+        return bool(info.get("available"))
+
+    def _daemon_status(self) -> dict:
+        try:
+            response = asyncio.run(
+                self._daemon.request(
+                    CommandEnvelope(
+                        request_id=secrets.token_hex(8),
+                        command=DaemonCommand.PING.value,
+                        payload={},
+                    )
+                )
+            )
+            if not response.ok:
+                return {"available": False, "error": (response.error or {}).get("message", "daemon ping failed")}
+            return {"available": True, "service": (response.result or {}).get("service", "onyx-client-daemon")}
+        except Exception as exc:
+            return {"available": False, "error": str(exc)}
+
+    def _connect_via_daemon(self, profiles: list[dict]) -> dict:
+        apply_payload = {
+            "bundle_id": ((self.st.last_bundle or {}).get("bundle_id") or ""),
+            "dns": self.dns_policy(),
+            "runtime_profiles": [
+                {
+                    "id": profile.get("id", ""),
+                    "transport": profile.get("type", ""),
+                    "priority": int(profile.get("priority", 9999)),
+                    "config_text": profile.get("config", ""),
+                    "metadata": {"tunnel_name": self._interface_name_for(profile.get("type", ""))},
+                }
+                for profile in profiles
+            ],
+        }
+        apply_response = asyncio.run(
+            self._daemon.request(
+                CommandEnvelope(
+                    request_id=secrets.token_hex(8),
+                    command=DaemonCommand.APPLY_BUNDLE.value,
+                    payload=apply_payload,
+                )
+            )
+        )
+        if not apply_response.ok:
+            raise RuntimeError((apply_response.error or {}).get("message", "failed to apply bundle to daemon"))
+
+        errors = []
+        for profile in profiles:
+            response = asyncio.run(
+                self._daemon.request(
+                    CommandEnvelope(
+                        request_id=secrets.token_hex(8),
+                        command=DaemonCommand.CONNECT.value,
+                        payload={
+                            "profile_id": profile.get("id", ""),
+                            "transport": profile.get("type", ""),
+                            "dns": self.dns_policy(),
+                        },
+                    )
+                )
+            )
+            if response.ok:
+                result = response.result or {}
+                self.st.connected = True
+                self.st.active_transport = result.get("transport", profile.get("type", ""))
+                self.st.active_interface = result.get("tunnel_name", self._interface_name_for(profile.get("type", "")))
+                self.st.active_profile_id = result.get("profile_id", profile.get("id", ""))
+                self.st.active_config_path = result.get("config_path", "")
+                self.st.active_runtime_mode = "daemon"
+                self.st.rx_bytes = self.st.tx_bytes = 0
+                self.st.rx_rate = self.st.tx_rate = 0.0
+                self.st.save()
+                self._last_transfer_sample = None
+                return profile
+            errors.append(f"{profile.get('type','unknown')}: {(response.error or {}).get('message', 'daemon connect failed')}")
+
+        raise RuntimeError("Unable to connect using available profiles via daemon.\n" + "\n".join(errors))
+
+    def _disconnect_via_daemon(self) -> None:
+        try:
+            response = asyncio.run(
+                self._daemon.request(
+                    CommandEnvelope(
+                        request_id=secrets.token_hex(8),
+                        command=DaemonCommand.DISCONNECT.value,
+                        payload={},
+                    )
+                )
+            )
+            if not response.ok:
+                raise RuntimeError((response.error or {}).get("message", "daemon disconnect failed"))
+        finally:
+            self._clear_runtime_state()
+
     @staticmethod
     def _quick_binary(transport: str) -> str | None:
         return LocalTunnelRuntime._resolve_binary_candidates([f"{transport}-quick.exe", f"{transport}-quick"])
 
     @staticmethod
     def _tool_binary(transport: str) -> str | None:
+        if transport == "awg":
+            return LocalTunnelRuntime._layout_binary("amneziawg_cli") or LocalTunnelRuntime._resolve_binary_candidates(["awg.exe", "awg"])
+        if transport == "wg":
+            return LocalTunnelRuntime._layout_binary("wireguard_cli") or LocalTunnelRuntime._resolve_binary_candidates(["wg.exe", "wg"])
         return LocalTunnelRuntime._resolve_binary_candidates([f"{transport}.exe", transport])
+
+    @staticmethod
+    def _manager_binary(transport: str) -> str | None:
+        if transport == "awg":
+            return LocalTunnelRuntime._layout_binary("amneziawg_manager")
+        if transport == "wg":
+            return LocalTunnelRuntime._layout_binary("wireguard_manager")
+        return None
+
+    @staticmethod
+    def _layout_binary(key: str) -> str | None:
+        candidate = expected_binary_layout().get(key)
+        if candidate and Path(candidate).exists():
+            return candidate
+        return None
 
     @staticmethod
     def _resolve_binary_candidates(names: list[str]) -> str | None:
         for name in names:
+            bundled_project = PROJECT_BIN_DIR / name
+            if bundled_project.exists():
+                return str(bundled_project)
             bundled = TOOLS_DIR / name
             if bundled.exists():
                 return str(bundled)
@@ -1368,9 +1551,10 @@ class DashboardScreen(QWidget):
         def _refresh_runtime_info():
             info = self._runtime.diagnostics()
             tool_details = info["tool_details"]
+            daemon_info = info.get("daemon") or {}
             profiles = info["profiles"]
-            awg_ready = bool(tool_details["awg"]["tool"] and tool_details["awg"]["quick"])
-            wg_ready = bool(tool_details["wg"]["tool"] and tool_details["wg"]["quick"])
+            awg_ready = bool((tool_details["awg"]["manager"] and tool_details["awg"]["cli"] and tool_details["awg"]["dll"]) or (tool_details["awg"]["tool"] and tool_details["awg"]["quick"]))
+            wg_ready = bool((tool_details["wg"]["manager"] and tool_details["wg"]["cli"] and tool_details["wg"]["dll"]) or (tool_details["wg"]["tool"] and tool_details["wg"]["quick"]))
             if awg_ready and wg_ready:
                 runtime_ready_status.setText("Runtime status: AWG READY / WG READY")
                 runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
@@ -1384,16 +1568,23 @@ class DashboardScreen(QWidget):
                 runtime_ready_status.setText("Runtime status: NO RUNTIME")
                 runtime_ready_status.setStyleSheet(f"color:{C_AMB};font-size:11px;")
             lines = [
-                f"Tools directory: {info['tools_dir']}",
+                f"Daemon pipe: {'available' if daemon_info.get('available') else 'unavailable'}",
+                f"Daemon detail: {daemon_info.get('service') or daemon_info.get('error') or 'n/a'}",
                 "",
-                f"AWG tool: {tool_details['awg']['tool'] or 'missing'}",
-                f"AWG quick: {tool_details['awg']['quick'] or 'missing'}",
-                f"WG tool: {tool_details['wg']['tool'] or 'missing'}",
-                f"WG quick: {tool_details['wg']['quick'] or 'missing'}",
+                f"Tools directory: {info['tools_dir']}",
+                f"Legacy fallback dir: {info['legacy_tools_dir']}",
+                "",
+                f"AWG manager: {tool_details['awg']['manager'] or 'missing'}",
+                f"AWG cli: {tool_details['awg']['cli'] or tool_details['awg']['tool'] or 'missing'}",
+                f"AWG wintun: {tool_details['awg']['dll'] or 'missing'}",
+                f"WG manager: {tool_details['wg']['manager'] or 'missing'}",
+                f"WG cli: {tool_details['wg']['cli'] or tool_details['wg']['tool'] or 'missing'}",
+                f"WG wintun: {tool_details['wg']['dll'] or 'missing'}",
                 "",
                 f"Bundle runtime profiles: {len(profiles)}",
                 f"Profile types: {', '.join(sorted({p.get('type', '?') for p in profiles})) if profiles else 'none'}",
                 "",
+                f"Runtime mode: {info['active_runtime_mode'] or 'none'}",
                 f"Active transport: {info['active_transport'] or 'none'}",
                 f"Active interface: {info['active_interface'] or 'none'}",
                 f"Active profile id: {info['active_profile_id'] or 'none'}",
@@ -1454,8 +1645,8 @@ class DashboardScreen(QWidget):
         def _check_runtime():
             _refresh_runtime_info()
             details = self._runtime.diagnostics()["tool_details"]
-            awg_ready = bool(details["awg"]["tool"] and details["awg"]["quick"])
-            wg_ready = bool(details["wg"]["tool"] and details["wg"]["quick"])
+            awg_ready = bool((details["awg"]["manager"] and details["awg"]["cli"] and details["awg"]["dll"]) or (details["awg"]["tool"] and details["awg"]["quick"]))
+            wg_ready = bool((details["wg"]["manager"] and details["wg"]["cli"] and details["wg"]["dll"]) or (details["wg"]["tool"] and details["wg"]["quick"]))
             if awg_ready or wg_ready:
                 QMessageBox.information(dlg, "Runtime Check", "At least one transport runtime is available.")
             else:
@@ -1463,7 +1654,8 @@ class DashboardScreen(QWidget):
                     dlg,
                     "Runtime Check",
                     "No local AWG/WG runtime tools were found.\n\n"
-                    "Place them in ~/.onyx-client/bin or install them into PATH later.",
+                    "Place the bundled runtime files in apps/client-desktop/bin for the new Windows runtime path,\n"
+                    "or keep using the older PATH-based fallback until migration is complete.",
                 )
 
         def _open_tools():

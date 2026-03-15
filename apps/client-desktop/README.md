@@ -59,6 +59,8 @@ The bundled `bin/` layout is documented in:
 - `apps/client-desktop/bin/README.md`
 - `docs/architecture/ONX_WINDOWS_CLIENT_RUNTIME_ARCHITECTURE.md`
 
+For the current migration step, bundled binaries placed in `apps/client-desktop/bin/` are treated as the primary runtime source.
+
 ## Run
 
 Normal launch:
