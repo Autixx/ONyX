@@ -68,4 +68,4 @@ class XrayPeerConfigResponse(ONXBaseModel):
     client_id: str
     config: str
     saved_to_peer: bool
-
+    auto_applied: bool = False

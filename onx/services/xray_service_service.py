@@ -59,6 +59,7 @@ class XrayServiceManager:
         return service
 
     def update_service(self, db: Session, service: XrayService, payload) -> XrayService:
+        was_active = service.state == XrayServiceState.ACTIVE
         if payload.name is not None and payload.name != service.name:
             existing = db.scalar(select(XrayService).where(XrayService.name == payload.name))
             if existing is not None:
@@ -82,6 +83,8 @@ class XrayServiceManager:
         service.desired_config_json = self._serialize_service(service)
         db.add(service)
         db.commit()
+        if was_active:
+            self.apply_service(db, service)
         db.refresh(service)
         return service
 
@@ -104,14 +107,19 @@ class XrayServiceManager:
             peer.config = config_text
         db.add(peer)
         db.commit()
-        return {
+        result = {
             "peer_id": peer.id,
             "service_id": service.id,
             "transport": "xray",
             "client_id": self._client_uuid(service, peer),
             "config": config_text,
             "saved_to_peer": save_to_peer,
+            "auto_applied": False,
         }
+        if service.state == XrayServiceState.ACTIVE:
+            self.apply_service(db, service)
+            result["auto_applied"] = True
+        return result
 
     def apply_service(self, db: Session, service: XrayService) -> dict:
         node = db.get(Node, service.node_id)

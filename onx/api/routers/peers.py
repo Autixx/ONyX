@@ -7,9 +7,11 @@ from sqlalchemy.orm import Session
 from onx.api.deps import get_database_session
 from onx.db.models.node import Node
 from onx.db.models.peer import Peer
+from onx.db.models.xray_service import XrayServiceState
 from onx.schemas.peers import PeerConfigUpdate, PeerCreate, PeerRead
 from onx.services.event_log_service import EventLogService
 from onx.services.realtime_service import realtime_service
+from onx.services.xray_service_service import xray_service_manager
 
 
 router = APIRouter(prefix="/peers", tags=["peers"])
@@ -76,16 +78,21 @@ def revoke_peer(peer_id: str, db: Session = Depends(get_database_session)) -> Re
     peer = db.get(Peer, peer_id)
     if peer is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Peer not found.")
+    xray_service_id = peer.xray_service_id
     peer.is_active = False
     peer.revoked_at = datetime.now(timezone.utc)
     db.add(peer)
     db.commit()
+    if xray_service_id:
+        xray_service = xray_service_manager.get_service(db, xray_service_id)
+        if xray_service is not None and xray_service.state == XrayServiceState.ACTIVE:
+            xray_service_manager.apply_service(db, xray_service)
     event_log_service.log(
         db,
         entity_type="peer",
         entity_id=peer.id,
         message=f"Peer '{peer.username}' revoked.",
-        details={"node_id": peer.node_id},
+        details={"node_id": peer.node_id, "xray_service_id": xray_service_id},
     )
     realtime_service.publish("peer.revoked", {"id": peer.id})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
