@@ -76,9 +76,9 @@ COMMON_PUBLIC_DNS_IPS = [
     "45.90.30.0/24",
 ]
 
-C_BG0  = "#06090d"
-C_BG1  = "#0a0f15"
-C_BG2  = "#0f161e"
+C_BG0  = "#0d131b"
+C_BG1  = "#121b25"
+C_BG2  = "#182331"
 C_ACC  = "#00c8b4"
 C_ACC2 = "#00e5cc"
 C_ADIM = "#071a17"
@@ -86,10 +86,10 @@ C_RED  = "#ff4560"
 C_AMB  = "#f5a623"
 C_GRN  = "#00e676"
 C_T0   = "#ffffff"
-C_T1   = "#dcecff"
-C_T2   = "#a9c7e4"
-C_T3   = "#6f91ad"
-C_BDR  = "#122230"
+C_T1   = "#eef6ff"
+C_T2   = "#d3e4f5"
+C_T3   = "#9db7cf"
+C_BDR  = "#274056"
 
 APP_STYLE = f"""
 QWidget {{ background:{C_BG0}; color:{C_T0}; font-family:'Courier New'; font-size:13px; }}
@@ -1828,6 +1828,14 @@ class ONyXClient(QMainWindow):
 
         self._stack = QStackedWidget()
         root_lay.addWidget(self._stack)
+        self._stack_effect = QGraphicsOpacityEffect(self._stack)
+        self._stack_effect.setOpacity(1.0)
+        self._stack.setGraphicsEffect(self._stack_effect)
+        self._stack_fade = QPropertyAnimation(self._stack_effect, b"opacity", self)
+        self._stack_fade.setDuration(180)
+        self._stack_fade.setStartValue(0.0)
+        self._stack_fade.setEndValue(1.0)
+        self._stack_fade.setEasingCurve(QEasingCurve.Type.InQuad)
 
         self._ls = LoginScreen(self.st)
         self._rs = RegisterScreen(self.st)
@@ -1924,11 +1932,17 @@ class ONyXClient(QMainWindow):
         super().closeEvent(event)
 
     def _go(self,idx):
-        eff=QGraphicsOpacityEffect(self._stack); self._stack.setGraphicsEffect(eff)
-        self._fa=QPropertyAnimation(eff,b"opacity")
-        self._fa.setDuration(180); self._fa.setStartValue(0.0); self._fa.setEndValue(1.0)
-        self._fa.setEasingCurve(QEasingCurve.Type.InQuad)
-        self._stack.setCurrentIndex(idx); self._fa.start()
+        self._stack_fade.stop()
+        self._stack_effect.setOpacity(0.0)
+        self._stack.setCurrentIndex(idx)
+        current = self._stack.currentWidget()
+        if current is not None:
+            current.updateGeometry()
+            current.update()
+        self._stack.updateGeometry()
+        self._stack.update()
+        self._stack.repaint()
+        self._stack_fade.start()
 
     def _on_login(self):
         self._ds.refresh(); self._go(2); self._update_tray_state()
@@ -2000,6 +2014,8 @@ if __name__=="__main__":
         _fade.setEasingCurve(QEasingCurve.Type.InQuad)
         if not args.background or _main_win._tray is None:
             _main_win.show()
+            _main_win.raise_()
+            _main_win.activateWindow()
         _fade.start()
         _main_win._fade = _fade
     show_splash = not args.background
@@ -2008,7 +2024,7 @@ if __name__=="__main__":
         splash = SplashScreen()
         if not app_icon.isNull():
             splash.setWindowIcon(app_icon)
-        splash.finished.connect(_launch)
+        splash.finished.connect(lambda: QTimer.singleShot(0, _launch))
         screen = app.primaryScreen().geometry()
         splash.move((screen.width()-410)//2, (screen.height()-670)//2)
         splash.show()
