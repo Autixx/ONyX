@@ -100,12 +100,15 @@ class WgServiceManager:
         service.desired_config_json = self._serialize_service(service)
         db.add(service)
         db.commit()
+        from onx.services.transit_policy_service import transit_policy_manager
+        transit_policy_manager.sync_for_next_hop(db, "wg_service", service.id)
         if was_active:
             self.apply_service(db, service)
         db.refresh(service)
         return service
 
     def delete_service(self, db: Session, service: WgService) -> None:
+        service_id = service.id
         node = db.get(Node, service.node_id)
         if node is not None:
             try:
@@ -115,6 +118,8 @@ class WgServiceManager:
                 pass
         db.delete(service)
         db.commit()
+        from onx.services.transit_policy_service import transit_policy_manager
+        transit_policy_manager.sync_for_next_hop(db, "wg_service", service_id)
 
     def assign_peer(self, db: Session, service: WgService, peer: Peer, *, save_to_peer: bool = True) -> dict:
         _, server_public, _ = self._ensure_server_keypair(db, service)
@@ -193,6 +198,8 @@ class WgServiceManager:
         }
         db.add(service)
         db.commit()
+        from onx.services.transit_policy_service import transit_policy_manager
+        transit_policy_manager.sync_for_next_hop(db, "wg_service", service.id)
         db.refresh(service)
         return {"service": service, "config_path": config_path, "peer_count": len(peers)}
 

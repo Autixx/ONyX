@@ -216,12 +216,38 @@ class TransitPolicyManager:
         policy.desired_config_json = self._serialize_policy(policy)
         db.add(policy)
         db.commit()
+        self._refresh_policy_health(db, policy)
         db.refresh(policy)
         return {
             "policy": policy,
             "config_path": config_path,
             "chain_name": runtime_summary["chain_name"],
         }
+
+    def sync_for_next_hop(self, db: Session, kind: str, ref_id: str) -> None:
+        policies = list(
+            db.scalars(
+                select(TransitPolicy).where(
+                    TransitPolicy.next_hop_kind == kind,
+                    TransitPolicy.next_hop_ref_id == ref_id,
+                )
+            ).all()
+        )
+        for policy in policies:
+            self._refresh_policy_health(db, policy)
+            self._reapply_attached_xray_if_needed(db, self._resolve_attached_xray_service(db, policy))
+
+    def sync_for_xray(self, db: Session, service_id: str) -> None:
+        policies = list(
+            db.scalars(
+                select(TransitPolicy).where(
+                    TransitPolicy.ingress_service_kind == "xray_service",
+                    TransitPolicy.ingress_service_ref_id == service_id,
+                )
+            ).all()
+        )
+        for policy in policies:
+            self._refresh_policy_health(db, policy)
 
     def preview_policy(self, db: Session, policy: TransitPolicy) -> dict:
         config_path = f"{self._runtime.settings.onx_transit_conf_dir}/{policy.id}.json"
@@ -314,29 +340,10 @@ class TransitPolicyManager:
             ]
         )
 
-        xray_attachment = {
-            "attached": False,
-            "service_id": None,
-            "service_name": None,
-            "transport_mode": None,
-            "inbound_tag": None,
-            "transparent_port": None,
-            "route_path": None,
-        }
+        xray_attachment = self.describe_xray_attachment(db, policy)
         next_hop_attachment = self.describe_next_hop(db, policy)
         warnings: list[str] = []
-        xray_service = self._resolve_attached_xray_service(db, policy)
-        if xray_service is not None:
-            xray_attachment = {
-                "attached": True,
-                "service_id": xray_service.id,
-                "service_name": xray_service.name,
-                "transport_mode": xray_service.transport_mode.value,
-                "inbound_tag": f"transit-{policy.id}",
-                "transparent_port": policy.transparent_port,
-                "route_path": "dokodemo-door -> freedom -> kernel route",
-            }
-        else:
+        if not xray_attachment.get("available"):
             warnings.append("Transit policy is not attached to an active XRAY service. Rules will capture traffic, but XRAY will not terminate it.")
         if next_hop_attachment["attached"]:
             rules.extend(
@@ -378,6 +385,9 @@ class TransitPolicyManager:
             )
         elif policy.next_hop_kind and policy.next_hop_ref_id:
             warnings.append("Next-hop target is configured but not currently resolvable on this node.")
+            xray_attachment["route_path"] = "dokodemo-door -> blackhole (fail-closed)"
+        elif xray_attachment.get("available"):
+            xray_attachment["route_path"] = "dokodemo-door -> freedom -> kernel route"
         if not policy.enabled:
             warnings.append("Transit policy is disabled. Preview shows intended runtime, but apply will keep the unit stopped.")
         if not (policy.capture_protocols_json or []):
@@ -422,6 +432,32 @@ class TransitPolicyManager:
     def describe_next_hop(self, db: Session, policy: TransitPolicy) -> dict:
         return self._describe_next_hop(db, policy)
 
+    def describe_xray_attachment(self, db: Session, policy: TransitPolicy) -> dict:
+        service = self._resolve_attached_xray_service(db, policy)
+        if service is None:
+            return {
+                "attached": False,
+                "service_id": None,
+                "service_name": None,
+                "transport_mode": None,
+                "inbound_tag": None,
+                "transparent_port": None,
+                "route_path": None,
+                "available": False,
+                "state": None,
+            }
+        return {
+            "attached": service.state == XrayServiceState.ACTIVE,
+            "service_id": service.id,
+            "service_name": service.name,
+            "transport_mode": service.transport_mode.value,
+            "inbound_tag": f"transit-{policy.id}",
+            "transparent_port": policy.transparent_port,
+            "route_path": None,
+            "available": True,
+            "state": service.state.value,
+        }
+
     def _render_runtime_config(self, db: Session, policy: TransitPolicy) -> str:
         import json
 
@@ -447,6 +483,26 @@ class TransitPolicyManager:
     def _validate_attachments(self, db: Session, policy: TransitPolicy) -> None:
         self._resolve_attached_xray_service(db, policy)
         self._resolve_next_hop(db, policy)
+
+    def _refresh_policy_health(self, db: Session, policy: TransitPolicy) -> None:
+        health = dict(policy.health_summary_json or {})
+        next_hop = self.describe_next_hop(db, policy)
+        xray = self.describe_xray_attachment(db, policy)
+        if not policy.enabled:
+            status = "disabled"
+        elif policy.next_hop_kind and policy.next_hop_ref_id and not next_hop.get("attached"):
+            status = "degraded"
+        elif policy.ingress_service_kind == "xray_service" and policy.ingress_service_ref_id and not xray.get("attached"):
+            status = "degraded"
+        else:
+            status = "active" if policy.state == TransitPolicyState.ACTIVE else "planned"
+        health["status"] = status
+        health["next_hop"] = next_hop
+        health["xray_attachment"] = xray
+        health["health_checked_at"] = datetime.now(timezone.utc).isoformat()
+        policy.health_summary_json = health
+        db.add(policy)
+        db.commit()
 
     def _get_management_secret(self, db: Session, node: Node) -> str:
         secret_kind = NodeSecretKind.SSH_PASSWORD if node.auth_type == NodeAuthType.PASSWORD else NodeSecretKind.SSH_PRIVATE_KEY
@@ -549,19 +605,23 @@ class TransitPolicyManager:
         if resolved is None:
             return {
                 "attached": False,
+                "available": False,
                 "kind": policy.next_hop_kind,
                 "ref_id": policy.next_hop_ref_id,
                 "display_name": None,
+                "state": None,
                 "interface_name": None,
                 "source_ip": None,
                 "egress_table_id": None,
                 "egress_rule_priority": None,
             }
         return {
-            "attached": True,
+            "attached": bool(resolved["active"]),
+            "available": True,
             "kind": resolved["kind"],
             "ref_id": resolved["ref_id"],
             "display_name": resolved["display_name"],
+            "state": resolved["state"],
             "interface_name": resolved["interface_name"],
             "source_ip": resolved["source_ip"],
             "egress_table_id": policy.route_table_id + self._EGRESS_OFFSET,
@@ -594,6 +654,8 @@ class TransitPolicyManager:
                 "kind": kind,
                 "ref_id": service.id,
                 "display_name": service.name,
+                "state": service.state.value,
+                "active": service.state == AwgServiceState.ACTIVE,
                 "interface_name": service.interface_name,
                 "source_ip": str(ipaddress.ip_interface(service.server_address_v4).ip),
             }
@@ -610,6 +672,8 @@ class TransitPolicyManager:
                 "kind": kind,
                 "ref_id": service.id,
                 "display_name": service.name,
+                "state": service.state.value,
+                "active": service.state == WgServiceState.ACTIVE,
                 "interface_name": service.interface_name,
                 "source_ip": str(ipaddress.ip_interface(service.server_address_v4).ip),
             }
@@ -634,6 +698,8 @@ class TransitPolicyManager:
                 "kind": kind,
                 "ref_id": link.id,
                 "display_name": link.name,
+                "state": link.state.value,
+                "active": link.state == LinkState.ACTIVE,
                 "interface_name": endpoint.interface_name,
                 "source_ip": str(ipaddress.ip_interface(endpoint.address_v4).ip),
             }

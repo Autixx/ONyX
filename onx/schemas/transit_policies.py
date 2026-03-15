@@ -101,9 +101,11 @@ class TransitPolicyPreviewXrayAttachment(ONXBaseModel):
 
 class TransitPolicyPreviewNextHop(ONXBaseModel):
     attached: bool
+    available: bool = False
     kind: str | None = None
     ref_id: str | None = None
     display_name: str | None = None
+    state: str | None = None
     interface_name: str | None = None
     source_ip: str | None = None
     egress_table_id: int | None = None

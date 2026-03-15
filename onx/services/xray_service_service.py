@@ -84,12 +84,15 @@ class XrayServiceManager:
         service.desired_config_json = self._serialize_service(service)
         db.add(service)
         db.commit()
+        from onx.services.transit_policy_service import transit_policy_manager
+        transit_policy_manager.sync_for_xray(db, service.id)
         if was_active:
             self.apply_service(db, service)
         db.refresh(service)
         return service
 
     def delete_service(self, db: Session, service: XrayService) -> None:
+        service_id = service.id
         node = db.get(Node, service.node_id)
         if node is not None:
             try:
@@ -99,6 +102,8 @@ class XrayServiceManager:
                 pass
         db.delete(service)
         db.commit()
+        from onx.services.transit_policy_service import transit_policy_manager
+        transit_policy_manager.sync_for_xray(db, service_id)
 
     def assign_peer(self, db: Session, service: XrayService, peer: Peer, *, save_to_peer: bool = True) -> dict:
         config_text = self.render_peer_config(service, peer)
@@ -168,6 +173,8 @@ class XrayServiceManager:
         }
         db.add(service)
         db.commit()
+        from onx.services.transit_policy_service import transit_policy_manager
+        transit_policy_manager.sync_for_xray(db, service.id)
         db.refresh(service)
         return {
             "service": service,
@@ -233,7 +240,7 @@ class XrayServiceManager:
             }
             for policy in transit_policies
         ]
-        transit_outbounds = []
+        transit_outbounds = [{"tag": "blocked", "protocol": "blackhole"}]
         routing_rules = []
         for policy in transit_policies:
             next_hop = transit_policy_manager.describe_next_hop(db, policy)
@@ -247,6 +254,8 @@ class XrayServiceManager:
                         "sendThrough": next_hop["source_ip"],
                     }
                 )
+            elif policy.next_hop_kind and policy.next_hop_ref_id:
+                outbound_tag = "blocked"
             routing_rules.append(
                 {
                     "type": "field",

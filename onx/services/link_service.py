@@ -156,10 +156,13 @@ class LinkService:
 
         db.add(link)
         db.commit()
+        from onx.services.transit_policy_service import transit_policy_manager
+        transit_policy_manager.sync_for_next_hop(db, "link", link.id)
         db.refresh(link)
         return link
 
     def delete_link(self, db: Session, link: Link) -> None:
+        link_id = link.id
         active_job = db.scalar(
             select(Job).where(
                 Job.target_type == JobTargetType.LINK,
@@ -174,6 +177,8 @@ class LinkService:
             )
         db.delete(link)
         db.commit()
+        from onx.services.transit_policy_service import transit_policy_manager
+        transit_policy_manager.sync_for_next_hop(db, "link", link_id)
 
     def validate_link(self, db: Session, link: Link) -> dict:
         left_capabilities = list(
@@ -428,6 +433,8 @@ class LinkService:
         db.add(right_endpoint)
         db.add(link)
         db.commit()
+        from onx.services.transit_policy_service import transit_policy_manager
+        transit_policy_manager.sync_for_next_hop(db, "link", link.id)
         db.refresh(link)
         if progress_callback:
             progress_callback("completed")

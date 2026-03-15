@@ -3675,6 +3675,7 @@ function renderTransitPolicies(){
   }
   tb.innerHTML = TRANSIT_POLICIES.map(function(policy){
     var capture = (policy.capture_protocols_json || []).join('/') + ' -> ' + ((policy.capture_cidrs_json || []).join(', ') || '-');
+    var health = policy.health_summary_json || {};
     var xrayLabel = '-';
     if(policy.ingress_service_kind === 'xray_service'){
       var svc = xrayServiceById(policy.ingress_service_ref_id);
@@ -3688,7 +3689,7 @@ function renderTransitPolicies(){
       +'<td class="m">'+esc(String(policy.transparent_port))+' / '+esc(String(policy.firewall_mark))+'</td>'
       +'<td class="m">'+esc(xrayLabel)+'</td>'
       +'<td class="m">'+esc(transitNextHopLabel(policy))+'</td>'
-      +'<td>'+sp(policy.state)+'</td>'
+      +'<td>'+sp(health.status || policy.state)+'</td>'
       +'<td><div style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="event.stopPropagation();actionTransitPreview(\''+esc(policy.id)+'\')">PREVIEW</button>'
         +'<button class="btn sm pri" onclick="event.stopPropagation();actionTransitApply(\''+esc(policy.id)+'\')">APPLY</button>'
@@ -3858,11 +3859,13 @@ function showTransitPolicy(id){
   var xrayService = policy.ingress_service_kind === 'xray_service' ? xrayServiceById(policy.ingress_service_ref_id) : null;
   var health = policy.health_summary_json || {};
   var nextHop = health.next_hop || (policy.applied_config_json && policy.applied_config_json.next_hop) || null;
+  var xrayAttachment = health.xray_attachment || null;
   openDP('Transit ' + policy.name,
     rows([
       ['ID', policy.id],
       ['Node', nById(policy.node_id).name],
       ['State', policy.state || '-'],
+      ['Health', health.status || '-'],
       ['Enabled', policy.enabled ? 'yes' : 'no'],
       ['Ingress Interface', policy.ingress_interface || '-'],
       ['Transparent Port', String(policy.transparent_port || '-')],
@@ -3880,6 +3883,8 @@ function showTransitPolicy(id){
       ['Next Hop Source IP', nextHop && nextHop.source_ip ? nextHop.source_ip : '-'],
       ['Next Hop Table', nextHop && nextHop.egress_table_id != null ? String(nextHop.egress_table_id) : '-'],
       ['Next Hop Priority', nextHop && nextHop.egress_rule_priority != null ? String(nextHop.egress_rule_priority) : '-'],
+      ['XRAY Attached', xrayAttachment ? (xrayAttachment.attached ? 'yes' : 'no') : '-'],
+      ['XRAY State', xrayAttachment && xrayAttachment.state ? xrayAttachment.state : '-'],
       ['Chain', health.chain_name || ((policy.applied_config_json || {}).chain_name) || '-'],
       ['Config Path', health.config_path || ((policy.applied_config_json || {}).config_path) || '-'],
       ['Applied At', health.applied_at ? fmtDate(health.applied_at) : '-'],
