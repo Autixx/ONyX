@@ -1,0 +1,95 @@
+"""add openvpn cloak services
+
+Revision ID: 0022_add_openvpn_cloak_services
+Revises: 0021_add_wg_services
+Create Date: 2026-03-15 00:00:00.000000
+"""
+
+from alembic import op
+import sqlalchemy as sa
+
+
+revision = "0022_add_openvpn_cloak_services"
+down_revision = "0021_add_wg_services"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    service_state = sa.Enum("planned", "applying", "active", "failed", "deleted", name="openvpn_cloak_service_state")
+    service_state.create(op.get_bind(), checkfirst=True)
+
+    op.create_table(
+        "openvpn_cloak_services",
+        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("name", sa.String(length=128), nullable=False),
+        sa.Column("node_id", sa.String(length=36), nullable=False),
+        sa.Column("state", service_state, nullable=False),
+        sa.Column("openvpn_local_host", sa.String(length=255), nullable=False),
+        sa.Column("openvpn_local_port", sa.Integer(), nullable=False),
+        sa.Column("cloak_listen_host", sa.String(length=255), nullable=False),
+        sa.Column("cloak_listen_port", sa.Integer(), nullable=False),
+        sa.Column("public_host", sa.String(length=255), nullable=False),
+        sa.Column("public_port", sa.Integer(), nullable=True),
+        sa.Column("server_name", sa.String(length=255), nullable=True),
+        sa.Column("client_local_port", sa.Integer(), nullable=False),
+        sa.Column("server_network_v4", sa.String(length=64), nullable=False),
+        sa.Column("dns_server_v4", sa.String(length=64), nullable=True),
+        sa.Column("mtu", sa.Integer(), nullable=False),
+        sa.Column("client_allowed_ips_json", sa.JSON(), nullable=False),
+        sa.Column("cloak_public_key", sa.String(length=128), nullable=True),
+        sa.Column("desired_config_json", sa.JSON(), nullable=True),
+        sa.Column("applied_config_json", sa.JSON(), nullable=True),
+        sa.Column("health_summary_json", sa.JSON(), nullable=True),
+        sa.Column("last_error_text", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.ForeignKeyConstraint(["node_id"], ["nodes.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("name"),
+    )
+    op.create_index(op.f("ix_openvpn_cloak_services_id"), "openvpn_cloak_services", ["id"], unique=False)
+    op.create_index(op.f("ix_openvpn_cloak_services_name"), "openvpn_cloak_services", ["name"], unique=False)
+    op.create_index(op.f("ix_openvpn_cloak_services_node_id"), "openvpn_cloak_services", ["node_id"], unique=False)
+    op.create_index(op.f("ix_openvpn_cloak_services_state"), "openvpn_cloak_services", ["state"], unique=False)
+
+    op.add_column("peers", sa.Column("openvpn_cloak_service_id", sa.String(length=36), nullable=True))
+    op.add_column("peers", sa.Column("cloak_uid", sa.String(length=128), nullable=True))
+    op.create_index(op.f("ix_peers_openvpn_cloak_service_id"), "peers", ["openvpn_cloak_service_id"], unique=False)
+    op.create_foreign_key(None, "peers", "openvpn_cloak_services", ["openvpn_cloak_service_id"], ["id"], ondelete="SET NULL")
+
+    op.add_column("transport_packages", sa.Column("preferred_openvpn_cloak_service_id", sa.String(length=36), nullable=True))
+    op.create_index(
+        op.f("ix_transport_packages_preferred_openvpn_cloak_service_id"),
+        "transport_packages",
+        ["preferred_openvpn_cloak_service_id"],
+        unique=False,
+    )
+    op.create_foreign_key(
+        None,
+        "transport_packages",
+        "openvpn_cloak_services",
+        ["preferred_openvpn_cloak_service_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
+
+
+def downgrade() -> None:
+    op.drop_constraint(None, "transport_packages", type_="foreignkey")
+    op.drop_index(op.f("ix_transport_packages_preferred_openvpn_cloak_service_id"), table_name="transport_packages")
+    op.drop_column("transport_packages", "preferred_openvpn_cloak_service_id")
+
+    op.drop_constraint(None, "peers", type_="foreignkey")
+    op.drop_index(op.f("ix_peers_openvpn_cloak_service_id"), table_name="peers")
+    op.drop_column("peers", "cloak_uid")
+    op.drop_column("peers", "openvpn_cloak_service_id")
+
+    op.drop_index(op.f("ix_openvpn_cloak_services_state"), table_name="openvpn_cloak_services")
+    op.drop_index(op.f("ix_openvpn_cloak_services_node_id"), table_name="openvpn_cloak_services")
+    op.drop_index(op.f("ix_openvpn_cloak_services_name"), table_name="openvpn_cloak_services")
+    op.drop_index(op.f("ix_openvpn_cloak_services_id"), table_name="openvpn_cloak_services")
+    op.drop_table("openvpn_cloak_services")
+
+    service_state = sa.Enum("planned", "applying", "active", "failed", "deleted", name="openvpn_cloak_service_state")
+    service_state.drop(op.get_bind(), checkfirst=True)

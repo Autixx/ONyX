@@ -21,6 +21,7 @@ from onx.db.models.node import Node
 from onx.db.models.node_capability import NodeCapability
 from onx.db.models.node_secret import NodeSecret
 from onx.db.models.node_traffic_cycle import NodeTrafficCycle
+from onx.db.models.openvpn_cloak_service import OpenVpnCloakService
 from onx.db.models.plan import Plan
 from onx.db.models.peer_registry import PeerRegistry
 from onx.db.models.peer import Peer
@@ -46,6 +47,7 @@ __all__ = [
     "NodeSecret",
     "NodeCapability",
     "NodeTrafficCycle",
+    "OpenVpnCloakService",
     "User",
     "Plan",
     "Subscription",

@@ -41,6 +41,13 @@ class Peer(Base):
     )
     wg_public_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     wg_address_v4: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    openvpn_cloak_service_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("openvpn_cloak_services.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    cloak_uid: Mapped[str | None] = mapped_column(String(128), nullable=True)
     registered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

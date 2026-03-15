@@ -17,6 +17,8 @@ class PeerRead(ONXBaseModel):
     wg_service_id: str | None
     wg_public_key: str | None
     wg_address_v4: str | None
+    openvpn_cloak_service_id: str | None
+    cloak_uid: str | None
     registered_at: datetime
     config_expires_at: datetime | None
     last_ip: str | None
@@ -38,6 +40,8 @@ class PeerCreate(BaseModel):
     wg_service_id: str | None = None
     wg_public_key: str | None = Field(default=None, max_length=128)
     wg_address_v4: str | None = Field(default=None, max_length=64)
+    openvpn_cloak_service_id: str | None = None
+    cloak_uid: str | None = Field(default=None, max_length=128)
     registered_at: datetime | None = None
     config_expires_at: datetime | None = None
     last_ip: str | None = Field(default=None, max_length=255)
@@ -53,3 +57,4 @@ class PeerConfigUpdate(BaseModel):
     xray_service_id: str | None = None
     awg_service_id: str | None = None
     wg_service_id: str | None = None
+    openvpn_cloak_service_id: str | None = None

@@ -114,6 +114,45 @@ XRAY_UNIT_TEMPLATE = dedent(
     """
 )
 
+OPENVPN_UNIT_TEMPLATE = dedent(
+    """\
+    [Unit]
+    Description=ONX managed OpenVPN service %i
+    After=network-online.target
+    Wants=network-online.target
+    ConditionPathExists=__ONX_OPENVPN_CLOAK_CONF_DIR__/%i-server.conf
+
+    [Service]
+    Type=simple
+    ExecStart=/usr/sbin/openvpn --config __ONX_OPENVPN_CLOAK_CONF_DIR__/%i-server.conf
+    Restart=on-failure
+    RestartSec=3
+
+    [Install]
+    WantedBy=multi-user.target
+    """
+)
+
+CLOAK_UNIT_TEMPLATE = dedent(
+    """\
+    [Unit]
+    Description=ONX managed Cloak service %i
+    After=network-online.target onx-openvpn@%i.service
+    Wants=network-online.target
+    Requires=onx-openvpn@%i.service
+    ConditionPathExists=__ONX_OPENVPN_CLOAK_CONF_DIR__/%i-cloak.json
+
+    [Service]
+    Type=simple
+    ExecStart=/usr/local/bin/ck-server -c __ONX_OPENVPN_CLOAK_CONF_DIR__/%i-cloak.json
+    Restart=on-failure
+    RestartSec=3
+
+    [Install]
+    WantedBy=multi-user.target
+    """
+)
+
 NODE_AGENT_SCRIPT = dedent(
     """\
     #!/usr/bin/env bash
@@ -588,6 +627,15 @@ class InterfaceRuntimeService:
         if code != 0:
             raise RuntimeError(stderr or f"Failed to reload systemd for Xray runtime on node {node.name}")
 
+    def ensure_openvpn_cloak_runtime(self, node: Node, management_secret: str) -> None:
+        openvpn_unit = OPENVPN_UNIT_TEMPLATE.replace("__ONX_OPENVPN_CLOAK_CONF_DIR__", self._settings.onx_openvpn_cloak_conf_dir)
+        cloak_unit = CLOAK_UNIT_TEMPLATE.replace("__ONX_OPENVPN_CLOAK_CONF_DIR__", self._settings.onx_openvpn_cloak_conf_dir)
+        self._executor.write_file(node, management_secret, self._settings.onx_openvpn_unit_path, openvpn_unit)
+        self._executor.write_file(node, management_secret, self._settings.onx_cloak_unit_path, cloak_unit)
+        code, _, stderr = self._executor.run(node, management_secret, "sh -lc 'systemctl daemon-reload'")
+        if code != 0:
+            raise RuntimeError(stderr or f"Failed to reload systemd for OpenVPN+Cloak runtime on node {node.name}")
+
     def ensure_node_agent(
         self,
         node: Node,
@@ -749,4 +797,27 @@ class InterfaceRuntimeService:
             node,
             management_secret,
             f"sh -lc 'systemctl stop {unit_name} >/dev/null 2>&1 || true'",
+        )
+
+    def restart_openvpn_cloak_service(self, node: Node, management_secret: str, service_name: str) -> None:
+        openvpn_unit = f"onx-openvpn@{service_name}.service"
+        cloak_unit = f"onx-cloak@{service_name}.service"
+        command = (
+            "sh -lc "
+            f"'systemctl enable {openvpn_unit} >/dev/null 2>&1 || true; "
+            f"systemctl enable {cloak_unit} >/dev/null 2>&1 || true; "
+            f"systemctl restart {openvpn_unit}; "
+            f"systemctl restart {cloak_unit}'"
+        )
+        code, _, stderr = self._executor.run(node, management_secret, command)
+        if code != 0:
+            raise RuntimeError(stderr or f"Failed to restart OpenVPN+Cloak units for {service_name} on node {node.name}")
+
+    def stop_openvpn_cloak_service(self, node: Node, management_secret: str, service_name: str) -> None:
+        openvpn_unit = f"onx-openvpn@{service_name}.service"
+        cloak_unit = f"onx-cloak@{service_name}.service"
+        self._executor.run(
+            node,
+            management_secret,
+            f"sh -lc 'systemctl stop {cloak_unit} >/dev/null 2>&1 || true; systemctl stop {openvpn_unit} >/dev/null 2>&1 || true'",
         )

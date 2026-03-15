@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from onx.db.models.awg_service import AwgService, AwgServiceState
 from onx.db.models.node import Node, NodeStatus
+from onx.db.models.openvpn_cloak_service import OpenVpnCloakService, OpenVpnCloakServiceState
 from onx.db.models.peer import Peer
 from onx.db.models.subscription import Subscription, SubscriptionStatus
 from onx.db.models.transport_package import TransportPackage
@@ -15,7 +16,7 @@ from onx.db.models.wg_service import WgService, WgServiceState
 from onx.db.models.xray_service import XrayService, XrayServiceState
 from onx.schemas.transport_packages import DEFAULT_TRANSPORT_PRIORITY, SUPPORTED_TRANSPORT_TYPES
 from onx.services.awg_service_service import awg_service_manager
-from onx.services.bundle_service import bundle_service
+from onx.services.openvpn_cloak_service_service import openvpn_cloak_service_manager
 from onx.services.wg_service_service import wg_service_manager
 from onx.services.xray_service_service import xray_service_manager
 
@@ -50,6 +51,7 @@ class TransportPackageService:
         package.preferred_xray_service_id = payload.preferred_xray_service_id
         package.preferred_awg_service_id = payload.preferred_awg_service_id
         package.preferred_wg_service_id = payload.preferred_wg_service_id
+        package.preferred_openvpn_cloak_service_id = payload.preferred_openvpn_cloak_service_id
         package.enable_xray = payload.enable_xray
         package.enable_awg = payload.enable_awg
         package.enable_wg = payload.enable_wg
@@ -99,22 +101,8 @@ class TransportPackageService:
         wg_summary = self._reconcile_wg(db, user, package, subscription)
         summary["transports"]["wg"] = wg_summary
 
-        inventory = self._build_existing_inventory(db, user)
-        item = inventory.get("openvpn_cloak")
-        summary["transports"]["openvpn_cloak"] = {
-            "enabled": "openvpn_cloak" in self.enabled_transport_types(package),
-            "status": (
-                "ready_existing_profile"
-                if package.enable_openvpn_cloak and item is not None
-                else "disabled"
-                if not package.enable_openvpn_cloak
-                else "missing_profile"
-            ),
-            "peer_id": item["peer_id"] if item is not None else None,
-            "node_id": item["node_id"] if item is not None else None,
-            "expires_at": item["expires_at"] if item is not None else None,
-            "automation": "inventory_only",
-        }
+        openvpn_cloak_summary = self._reconcile_openvpn_cloak(db, user, package, subscription)
+        summary["transports"]["openvpn_cloak"] = openvpn_cloak_summary
 
         summary["status"] = "ok"
         package.last_reconciled_at = now
@@ -265,6 +253,44 @@ class TransportPackageService:
             "node_id": service.node_id,
         }
 
+    def _reconcile_openvpn_cloak(
+        self,
+        db: Session,
+        user: User,
+        package: TransportPackage,
+        subscription: Subscription | None,
+    ) -> dict:
+        if not package.enable_openvpn_cloak:
+            return {"enabled": False, "status": "disabled", "automation": "full"}
+        if subscription is None:
+            return {"enabled": True, "status": "no_active_subscription", "automation": "full"}
+        service = self._select_openvpn_cloak_service(db, package)
+        if service is None:
+            return {"enabled": True, "status": "missing_service", "automation": "full"}
+        peer = self._select_openvpn_cloak_peer(db, user, service.id)
+        if peer is None:
+            peer = Peer(
+                username=user.username,
+                email=user.email,
+                node_id=service.node_id,
+                config_expires_at=subscription.expires_at if subscription is not None else None,
+            )
+        else:
+            peer.node_id = service.node_id
+            if subscription is not None:
+                peer.config_expires_at = subscription.expires_at
+        result = openvpn_cloak_service_manager.assign_peer(db, service, peer, save_to_peer=True)
+        return {
+            "enabled": True,
+            "status": "ready",
+            "automation": "full",
+            "service_id": service.id,
+            "peer_id": result["peer_id"],
+            "cloak_uid": result["cloak_uid"],
+            "auto_applied": result.get("auto_applied", False),
+            "node_id": service.node_id,
+        }
+
     def _select_xray_service(self, db: Session, package: TransportPackage) -> XrayService | None:
         if package.preferred_xray_service_id:
             preferred = db.get(XrayService, package.preferred_xray_service_id)
@@ -319,6 +345,26 @@ class TransportPackageService:
                 return service
         return None
 
+    def _select_openvpn_cloak_service(self, db: Session, package: TransportPackage) -> OpenVpnCloakService | None:
+        if package.preferred_openvpn_cloak_service_id:
+            preferred = db.get(OpenVpnCloakService, package.preferred_openvpn_cloak_service_id)
+            if preferred is not None and preferred.state == OpenVpnCloakServiceState.ACTIVE:
+                node = db.get(Node, preferred.node_id)
+                if node is not None and node.status == NodeStatus.REACHABLE and node.traffic_suspended_at is None:
+                    return preferred
+        services = list(
+            db.scalars(
+                select(OpenVpnCloakService)
+                .where(OpenVpnCloakService.state == OpenVpnCloakServiceState.ACTIVE)
+                .order_by(OpenVpnCloakService.updated_at.desc())
+            ).all()
+        )
+        for service in services:
+            node = db.get(Node, service.node_id)
+            if node is not None and node.status == NodeStatus.REACHABLE and node.traffic_suspended_at is None:
+                return service
+        return None
+
     def _select_xray_peer(self, db: Session, user: User, service_id: str) -> Peer | None:
         return db.scalar(
             select(Peer)
@@ -355,33 +401,17 @@ class TransportPackageService:
             .order_by(Peer.created_at.desc())
         )
 
-    def _build_existing_inventory(self, db: Session, user: User) -> dict[str, dict]:
-        peers = list(
-            db.scalars(
-                select(Peer)
-                .where(
-                    Peer.is_active.is_(True),
-                    Peer.revoked_at.is_(None),
-                    Peer.config.is_not(None),
-                    or_(Peer.username == user.username, Peer.email == user.email),
-                )
-                .order_by(Peer.created_at.desc())
-            ).all()
+    def _select_openvpn_cloak_peer(self, db: Session, user: User, service_id: str) -> Peer | None:
+        return db.scalar(
+            select(Peer)
+            .where(
+                Peer.openvpn_cloak_service_id == service_id,
+                Peer.is_active.is_(True),
+                Peer.revoked_at.is_(None),
+                or_(Peer.username == user.username, Peer.email == user.email),
+            )
+            .order_by(Peer.created_at.desc())
         )
-        inventory: dict[str, dict] = {}
-        for peer in peers:
-            config_text = (peer.config or "").strip()
-            if not config_text:
-                continue
-            transport_type = bundle_service.detect_transport_type(config_text)
-            if transport_type is None or transport_type in inventory:
-                continue
-            inventory[transport_type] = {
-                "peer_id": peer.id,
-                "node_id": peer.node_id,
-                "expires_at": peer.config_expires_at.isoformat() if peer.config_expires_at else None,
-            }
-        return inventory
 
 
 transport_package_service = TransportPackageService()
