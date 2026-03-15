@@ -13,8 +13,10 @@ from onx.db.models.device import Device
 from onx.db.models.issued_bundle import IssuedBundle
 from onx.db.models.node import Node, NodeRole, NodeStatus
 from onx.db.models.peer import Peer
+from onx.db.models.transport_package import TransportPackage
 from onx.db.models.subscription import SubscriptionStatus
 from onx.db.models.user import User, UserStatus
+from onx.schemas.transport_packages import DEFAULT_TRANSPORT_PRIORITY
 from onx.services.client_device_service import client_device_service
 from onx.services.subscription_service import subscription_service
 
@@ -120,6 +122,7 @@ class BundleService:
             for index, node in enumerate(candidates)
         ]
         runtime_profiles = self._build_runtime_profiles(db, user=user)
+        transport_package = db.scalar(select(TransportPackage).where(TransportPackage.user_id == user.id))
         return {
             "bundle_id": f"bundle-{user.id[:8]}-{device.id[:8]}-{int(issued_at.timestamp())}",
             "bundle_format_version": "1",
@@ -152,6 +155,11 @@ class BundleService:
             "runtime": {
                 "profiles": runtime_profiles,
             },
+            "transport_package": {
+                "enabled_transports": self._enabled_transports(transport_package),
+                "priority_order": self._priority_order(transport_package),
+                "last_reconciled_at": transport_package.last_reconciled_at.isoformat() if transport_package and transport_package.last_reconciled_at else None,
+            },
             "policy": {
                 "hide_protocol": True,
                 "hide_topology": True,
@@ -159,6 +167,9 @@ class BundleService:
         }
 
     def _build_runtime_profiles(self, db: Session, *, user: User) -> list[dict]:
+        transport_package = db.scalar(select(TransportPackage).where(TransportPackage.user_id == user.id))
+        enabled_transports = set(self._enabled_transports(transport_package))
+        priority_order = self._priority_order(transport_package)
         peers = list(
             db.scalars(
                 select(Peer)
@@ -179,8 +190,10 @@ class BundleService:
             config_text = (peer.config or "").strip()
             if not config_text:
                 continue
-            transport_type = self._detect_transport_type(config_text)
+            transport_type = self.detect_transport_type(config_text)
             if transport_type is None:
+                continue
+            if enabled_transports and transport_type not in enabled_transports:
                 continue
             key = (transport_type, config_text)
             if key in seen:
@@ -206,10 +219,11 @@ class BundleService:
                 }
             )
 
+        profiles.sort(key=lambda item: (priority_order.index(item["type"]) if item["type"] in priority_order else len(priority_order), item["priority"]))
         return profiles
 
     @staticmethod
-    def _detect_transport_type(config_text: str) -> str | None:
+    def detect_transport_type(config_text: str) -> str | None:
         lower = config_text.lower()
         if "[interface]" in lower and "[peer]" in lower:
             awg_markers = ("jc =", "jmin =", "jmax =", "s1 =", "s2 =", "h1 =", "h2 =")
@@ -227,6 +241,35 @@ class BundleService:
         if "outbounds" not in parsed:
             return None
         return "xray"
+
+    @staticmethod
+    def _enabled_transports(transport_package: TransportPackage | None) -> list[str]:
+        if transport_package is None:
+            return ["xray", "awg", "wg", "openvpn_cloak"]
+        enabled: list[str] = []
+        if transport_package.enable_xray:
+            enabled.append("xray")
+        if transport_package.enable_awg:
+            enabled.append("awg")
+        if transport_package.enable_wg:
+            enabled.append("wg")
+        if transport_package.enable_openvpn_cloak:
+            enabled.append("openvpn_cloak")
+        return enabled
+
+    @staticmethod
+    def _priority_order(transport_package: TransportPackage | None) -> list[str]:
+        if transport_package is None or not transport_package.priority_order_json:
+            return list(DEFAULT_TRANSPORT_PRIORITY)
+        normalized: list[str] = []
+        for item in transport_package.priority_order_json:
+            value = str(item).strip().lower()
+            if value and value not in normalized:
+                normalized.append(value)
+        for fallback in DEFAULT_TRANSPORT_PRIORITY:
+            if fallback not in normalized:
+                normalized.append(fallback)
+        return normalized
 
 
 bundle_service = BundleService()

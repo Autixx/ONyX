@@ -1,0 +1,239 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session
+
+from onx.db.models.node import Node, NodeStatus
+from onx.db.models.peer import Peer
+from onx.db.models.subscription import Subscription, SubscriptionStatus
+from onx.db.models.transport_package import TransportPackage
+from onx.db.models.user import User, UserStatus
+from onx.db.models.xray_service import XrayService, XrayServiceState
+from onx.schemas.transport_packages import DEFAULT_TRANSPORT_PRIORITY, SUPPORTED_TRANSPORT_TYPES
+from onx.services.bundle_service import bundle_service
+from onx.services.xray_service_service import xray_service_manager
+
+
+class TransportPackageService:
+    def list_packages(self, db: Session) -> list[TransportPackage]:
+        return list(db.scalars(select(TransportPackage).order_by(TransportPackage.created_at.desc())).all())
+
+    def get_by_user(self, db: Session, user_id: str) -> TransportPackage | None:
+        return db.scalar(select(TransportPackage).where(TransportPackage.user_id == user_id))
+
+    def get_or_create_for_user(self, db: Session, user: User) -> TransportPackage:
+        package = self.get_by_user(db, user.id)
+        if package is not None:
+            if not package.priority_order_json:
+                package.priority_order_json = list(DEFAULT_TRANSPORT_PRIORITY)
+                db.add(package)
+                db.commit()
+                db.refresh(package)
+            return package
+        package = TransportPackage(
+            user_id=user.id,
+            priority_order_json=list(DEFAULT_TRANSPORT_PRIORITY),
+        )
+        db.add(package)
+        db.commit()
+        db.refresh(package)
+        return package
+
+    def upsert_for_user(self, db: Session, user: User, payload) -> TransportPackage:
+        package = self.get_or_create_for_user(db, user)
+        package.preferred_xray_service_id = payload.preferred_xray_service_id
+        package.enable_xray = payload.enable_xray
+        package.enable_awg = payload.enable_awg
+        package.enable_wg = payload.enable_wg
+        package.enable_openvpn_cloak = payload.enable_openvpn_cloak
+        package.priority_order_json = self._normalize_priority_order(payload.priority_order)
+        db.add(package)
+        db.commit()
+        db.refresh(package)
+        return package
+
+    def reconcile_for_user(self, db: Session, user: User, package: TransportPackage) -> dict:
+        now = datetime.now(timezone.utc)
+        summary: dict = {
+            "user_id": user.id,
+            "username": user.username,
+            "reconciled_at": now.isoformat(),
+            "user_status": user.status.value,
+            "enabled_transports": self.enabled_transport_types(package),
+            "transports": {},
+        }
+        subscription = db.scalar(
+            select(Subscription).where(
+                Subscription.user_id == user.id,
+                Subscription.status == SubscriptionStatus.ACTIVE,
+            )
+        )
+        summary["subscription"] = {
+            "active": subscription is not None,
+            "subscription_id": subscription.id if subscription is not None else None,
+            "expires_at": subscription.expires_at.isoformat() if subscription and subscription.expires_at else None,
+        }
+        if user.status != UserStatus.ACTIVE:
+            summary["status"] = "user_not_active"
+            package.last_reconciled_at = now
+            package.last_reconcile_summary_json = summary
+            db.add(package)
+            db.commit()
+            db.refresh(package)
+            return summary
+
+        xray_summary = self._reconcile_xray(db, user, package, subscription)
+        summary["transports"]["xray"] = xray_summary
+
+        inventory = self._build_existing_inventory(db, user)
+        for transport_type in ("awg", "wg", "openvpn_cloak"):
+            enabled = transport_type in self.enabled_transport_types(package)
+            item = inventory.get(transport_type)
+            summary["transports"][transport_type] = {
+                "enabled": enabled,
+                "status": (
+                    "ready_existing_profile"
+                    if enabled and item is not None
+                    else "disabled"
+                    if not enabled
+                    else "missing_profile"
+                ),
+                "peer_id": item["peer_id"] if item is not None else None,
+                "node_id": item["node_id"] if item is not None else None,
+                "expires_at": item["expires_at"] if item is not None else None,
+                "automation": "inventory_only",
+            }
+
+        summary["status"] = "ok"
+        package.last_reconciled_at = now
+        package.last_reconcile_summary_json = summary
+        db.add(package)
+        db.commit()
+        db.refresh(package)
+        return summary
+
+    def enabled_transport_types(self, package: TransportPackage) -> list[str]:
+        enabled = []
+        if package.enable_xray:
+            enabled.append("xray")
+        if package.enable_awg:
+            enabled.append("awg")
+        if package.enable_wg:
+            enabled.append("wg")
+        if package.enable_openvpn_cloak:
+            enabled.append("openvpn_cloak")
+        order = self._normalize_priority_order(package.priority_order_json or DEFAULT_TRANSPORT_PRIORITY)
+        return sorted(enabled, key=lambda item: order.index(item) if item in order else len(order))
+
+    @staticmethod
+    def _normalize_priority_order(value: list[str] | None) -> list[str]:
+        ordered: list[str] = []
+        for item in value or []:
+            normalized = str(item).strip().lower()
+            if normalized in SUPPORTED_TRANSPORT_TYPES and normalized not in ordered:
+                ordered.append(normalized)
+        for item in DEFAULT_TRANSPORT_PRIORITY:
+            if item not in ordered:
+                ordered.append(item)
+        return ordered
+
+    def _reconcile_xray(
+        self,
+        db: Session,
+        user: User,
+        package: TransportPackage,
+        subscription: Subscription | None,
+    ) -> dict:
+        if not package.enable_xray:
+            return {"enabled": False, "status": "disabled", "automation": "full"}
+        if subscription is None:
+            return {"enabled": True, "status": "no_active_subscription", "automation": "full"}
+        service = self._select_xray_service(db, package)
+        if service is None:
+            return {"enabled": True, "status": "missing_service", "automation": "full"}
+        peer = self._select_xray_peer(db, user, service.id)
+        if peer is None:
+            peer = Peer(
+                username=user.username,
+                email=user.email,
+                node_id=service.node_id,
+                config_expires_at=subscription.expires_at if subscription is not None else None,
+            )
+        else:
+            peer.node_id = service.node_id
+            if subscription is not None:
+                peer.config_expires_at = subscription.expires_at
+        result = xray_service_manager.assign_peer(db, service, peer, save_to_peer=True)
+        return {
+            "enabled": True,
+            "status": "ready",
+            "automation": "full",
+            "service_id": service.id,
+            "peer_id": result["peer_id"],
+            "client_id": result["client_id"],
+            "auto_applied": result.get("auto_applied", False),
+            "node_id": service.node_id,
+        }
+
+    def _select_xray_service(self, db: Session, package: TransportPackage) -> XrayService | None:
+        if package.preferred_xray_service_id:
+            preferred = db.get(XrayService, package.preferred_xray_service_id)
+            if preferred is not None and preferred.state == XrayServiceState.ACTIVE:
+                node = db.get(Node, preferred.node_id)
+                if node is not None and node.status == NodeStatus.REACHABLE and node.traffic_suspended_at is None:
+                    return preferred
+        services = list(
+            db.scalars(
+                select(XrayService).where(XrayService.state == XrayServiceState.ACTIVE).order_by(XrayService.updated_at.desc())
+            ).all()
+        )
+        for service in services:
+            node = db.get(Node, service.node_id)
+            if node is not None and node.status == NodeStatus.REACHABLE and node.traffic_suspended_at is None:
+                return service
+        return None
+
+    def _select_xray_peer(self, db: Session, user: User, service_id: str) -> Peer | None:
+        return db.scalar(
+            select(Peer)
+            .where(
+                Peer.xray_service_id == service_id,
+                Peer.is_active.is_(True),
+                Peer.revoked_at.is_(None),
+                or_(Peer.username == user.username, Peer.email == user.email),
+            )
+            .order_by(Peer.created_at.desc())
+        )
+
+    def _build_existing_inventory(self, db: Session, user: User) -> dict[str, dict]:
+        peers = list(
+            db.scalars(
+                select(Peer)
+                .where(
+                    Peer.is_active.is_(True),
+                    Peer.revoked_at.is_(None),
+                    Peer.config.is_not(None),
+                    or_(Peer.username == user.username, Peer.email == user.email),
+                )
+                .order_by(Peer.created_at.desc())
+            ).all()
+        )
+        inventory: dict[str, dict] = {}
+        for peer in peers:
+            config_text = (peer.config or "").strip()
+            if not config_text:
+                continue
+            transport_type = bundle_service.detect_transport_type(config_text)
+            if transport_type is None or transport_type in inventory:
+                continue
+            inventory[transport_type] = {
+                "peer_id": peer.id,
+                "node_id": peer.node_id,
+                "expires_at": peer.config_expires_at.isoformat() if peer.config_expires_at else None,
+            }
+        return inventory
+
+
+transport_package_service = TransportPackageService()
