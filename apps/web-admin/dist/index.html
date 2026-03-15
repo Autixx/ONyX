@@ -259,6 +259,7 @@ td.m{color:var(--t0);}
     <div class="nav-item" data-p="links"><span data-i18n="nav.links">Links</span> <span class="nbadge ok" id="lbn">0</span></div>
     <div class="nav-item" data-p="peers"><span data-i18n="nav.peers">Peers</span> <span class="nbadge ok" id="peersBadge" style="display:none">0</span></div>
     <div class="nav-item" data-p="xray"><span data-i18n="nav.xray">Xray Services</span></div>
+    <div class="nav-item" data-p="transit"><span data-i18n="nav.transit">Transit Policies</span></div>
     <div class="nav-item" data-p="awg"><span data-i18n="nav.awg">AWG Services</span></div>
     <div class="nav-item" data-p="wg"><span data-i18n="nav.wg">WG Services</span></div>
     <div class="nav-item" data-p="ovpn"><span data-i18n="nav.ovpn">OpenVPN+Cloak Services</span></div>
@@ -665,6 +666,34 @@ td.m{color:var(--t0);}
         </div>
       </div>
 
+      <!-- TRANSIT POLICIES -->
+      <div class="page" id="page-transit">
+        <div class="ph">
+          <span class="ptitle">Transit Policies</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="refreshTransitPolicies()">REFRESH</button>
+            <button class="btn pri" id="btnAddTransitPolicy">+ ADD TRANSIT POLICY</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Node</th>
+                <th>Ingress</th>
+                <th>Capture</th>
+                <th>TPROXY</th>
+                <th>XRAY</th>
+                <th>State</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="transittb"></tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- AWG SERVICES -->
       <div class="page" id="page-awg">
         <div class="ph">
@@ -790,6 +819,7 @@ var BALANCERS = [];
 var AUDIT_EVTS = [];
 var PEERS = [];
 var XRAY_SERVICES = [];
+var TRANSIT_POLICIES = [];
 var AWG_SERVICES = [];
 var WG_SERVICES = [];
 var OVPN_CLOAK_SERVICES = [];
@@ -812,6 +842,7 @@ function dnsPolicyById(id){ return DNS_P.find(function(p){ return p.id===id; }) 
 function geoPolicyById(id){ return GEO_P.find(function(p){ return p.id===id; }) || null; }
 function balancerById(id){ return BALANCERS.find(function(b){ return b.id===id; }) || null; }
 function xrayServiceById(id){ return XRAY_SERVICES.find(function(s){ return s.id===id; }) || null; }
+function transitPolicyById(id){ return TRANSIT_POLICIES.find(function(s){ return s.id===id; }) || null; }
 function awgServiceById(id){ return AWG_SERVICES.find(function(s){ return s.id===id; }) || null; }
 function wgServiceById(id){ return WG_SERVICES.find(function(s){ return s.id===id; }) || null; }
 function openvpnCloakServiceById(id){ return OVPN_CLOAK_SERVICES.find(function(s){ return s.id===id; }) || null; }
@@ -1544,6 +1575,7 @@ function connectWS(){
       if(type.indexOf('node.traffic.') === 0){ refreshNodes().catch(function(){}); refreshNodeTrafficSummary().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type.indexOf('registration.') === 0){ loadRegistrations().catch(function(){}); loadUsers().catch(function(){}); loadSubscriptions().catch(function(){}); }
       if(type.indexOf('peer.') === 0){ loadPeers().catch(function(){}); refreshXrayServices().catch(function(){}); refreshAwgServices().catch(function(){}); refreshWgServices().catch(function(){}); refreshOpenvpnCloakServices().catch(function(){}); }
+      if(type.indexOf('transit_policy.') === 0){ refreshTransitPolicies().catch(function(){}); refreshXrayServices().catch(function(){}); refreshAudit().catch(function(){}); }
       if(type.indexOf('awg_service.') === 0){ refreshAwgServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
       if(type.indexOf('wg_service.') === 0){ refreshWgServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
       if(type.indexOf('xray_service.') === 0){ refreshXrayServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
@@ -1708,6 +1740,7 @@ async function loadData(){
     refreshNodeTrafficSummary(),
     refreshLinks(),
     refreshXrayServices(),
+    refreshTransitPolicies(),
     refreshAwgServices(),
     refreshWgServices(),
     refreshOpenvpnCloakServices(),
@@ -3004,6 +3037,7 @@ function wireStaticButtons(){
   var addNodeBtn = document.getElementById('btnAddNode');
   var addLinkBtn = document.getElementById('btnAddLink');
   var addXrayBtn = document.getElementById('btnAddXrayService');
+  var addTransitBtn = document.getElementById('btnAddTransitPolicy');
   var addAwgBtn = document.getElementById('btnAddAwgService');
   var addWgBtn = document.getElementById('btnAddWgService');
   var addOpenvpnCloakBtn = document.getElementById('btnAddOpenvpnCloakService');
@@ -3021,6 +3055,7 @@ function wireStaticButtons(){
   if(addNodeBtn){ addNodeBtn.addEventListener('click', function(){ openNodeModal(); }); }
   if(addLinkBtn){ addLinkBtn.addEventListener('click', function(){ openLinkModal(); }); }
   if(addXrayBtn){ addXrayBtn.addEventListener('click', function(){ openXrayServiceModal(); }); }
+  if(addTransitBtn){ addTransitBtn.addEventListener('click', function(){ openTransitPolicyModal(); }); }
   if(addAwgBtn){ addAwgBtn.addEventListener('click', function(){ openAwgServiceModal(); }); }
   if(addWgBtn){ addWgBtn.addEventListener('click', function(){ openWgServiceModal(); }); }
   if(addOpenvpnCloakBtn){ addOpenvpnCloakBtn.addEventListener('click', function(){ openOpenvpnCloakServiceModal(); }); }
@@ -3057,6 +3092,14 @@ document.querySelectorAll('.nav-item').forEach(function(el){
       });
       loadPeers().catch(function(err){
         pushEv('peer.refresh.error', String(err && err.message ? err.message : err));
+      });
+    }
+    if(el.dataset.p==='transit'){
+      refreshTransitPolicies().catch(function(err){
+        pushEv('transit_policy.refresh.error', String(err && err.message ? err.message : err));
+      });
+      refreshXrayServices().catch(function(err){
+        pushEv('xray_service.refresh.error', String(err && err.message ? err.message : err));
       });
     }
     if(el.dataset.p==='ovpn'){
@@ -3320,6 +3363,18 @@ async function refreshXrayServices(){
     if(!XRAY_SERVICES.length) XRAY_SERVICES = [];
   }
   renderXrayServices();
+  renderTransitPolicies();
+}
+
+async function refreshTransitPolicies(){
+  try{
+    var data = await apiFetch(API_PREFIX + '/transit-policies');
+    TRANSIT_POLICIES = Array.isArray(data) ? data : [];
+  }catch(e){
+    if(!TRANSIT_POLICIES.length) TRANSIT_POLICIES = [];
+  }
+  renderTransitPolicies();
+  renderXrayServices();
 }
 
 async function refreshAwgServices(){
@@ -3438,6 +3493,12 @@ function openvpnCloakPeerCount(serviceId){
   }).length;
 }
 
+function transitServiceCount(serviceId){
+  return TRANSIT_POLICIES.filter(function(policy){
+    return policy.ingress_service_kind === 'xray_service' && policy.ingress_service_ref_id === serviceId;
+  }).length;
+}
+
 function renderXrayServices(){
   var tb = document.getElementById('xraytb');
   if(!tb) return;
@@ -3458,9 +3519,42 @@ function renderXrayServices(){
       +'<td>'+sp(service.state)+'</td>'
       +'<td><div style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="event.stopPropagation();actionXrayAssignPeer(\''+esc(service.id)+'\')">ASSIGN</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openTransitPolicyModal(null,\''+esc(service.id)+'\')">TRANSIT</button>'
         +'<button class="btn sm pri" onclick="event.stopPropagation();actionXrayApply(\''+esc(service.id)+'\')">APPLY</button>'
         +'<button class="btn sm" onclick="event.stopPropagation();openXrayServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
         +'<button class="btn sm red" onclick="event.stopPropagation();deleteXrayServiceFlow(\''+esc(service.id)+'\')">DEL</button>'
+      +'</div></td>'
+      +'</tr>';
+  }).join('');
+}
+
+function renderTransitPolicies(){
+  var tb = document.getElementById('transittb');
+  if(!tb) return;
+  if(!TRANSIT_POLICIES.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="8">No transit policies.</td></tr>';
+    return;
+  }
+  tb.innerHTML = TRANSIT_POLICIES.map(function(policy){
+    var capture = (policy.capture_protocols_json || []).join('/') + ' -> ' + ((policy.capture_cidrs_json || []).join(', ') || '-');
+    var xrayLabel = '-';
+    if(policy.ingress_service_kind === 'xray_service'){
+      var svc = xrayServiceById(policy.ingress_service_ref_id);
+      xrayLabel = svc ? svc.name : (policy.ingress_service_ref_id || '-');
+    }
+    return '<tr onclick="showTransitPolicy(\''+esc(policy.id)+'\')" style="cursor:pointer">'
+      +'<td class="m">'+esc(policy.name)+'</td>'
+      +'<td>'+esc(nById(policy.node_id).name)+'</td>'
+      +'<td class="m">'+esc(policy.ingress_interface || '-')+'</td>'
+      +'<td class="m">'+esc(capture)+'</td>'
+      +'<td class="m">'+esc(String(policy.transparent_port))+' / '+esc(String(policy.firewall_mark))+'</td>'
+      +'<td class="m">'+esc(xrayLabel)+'</td>'
+      +'<td>'+sp(policy.state)+'</td>'
+      +'<td><div style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionTransitPreview(\''+esc(policy.id)+'\')">PREVIEW</button>'
+        +'<button class="btn sm pri" onclick="event.stopPropagation();actionTransitApply(\''+esc(policy.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openTransitPolicyModal(\''+esc(policy.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();deleteTransitPolicyFlow(\''+esc(policy.id)+'\')">DEL</button>'
       +'</div></td>'
       +'</tr>';
   }).join('');
@@ -3592,6 +3686,7 @@ function showXrayService(id){
       ['Server Name', service.server_name || '-'],
       ['Path', service.xhttp_path || '/'],
       ['TLS', service.tls_enabled ? 'yes' : 'no'],
+      ['Transit Policies', String(transitServiceCount(service.id))],
       ['Config Path', health.config_path || '-'],
       ['Applied At', health.applied_at ? fmtDate(health.applied_at) : '-'],
       ['Peer Count', String(health.peer_count != null ? health.peer_count : assignedPeers.length)],
@@ -3601,9 +3696,46 @@ function showXrayService(id){
     + '<div style="margin-top:8px;">' + peerRows + '</div>'
     + '<div class="dp-actions">'
       +'<button class="btn" onclick="actionXrayAssignPeer(\''+esc(service.id)+'\')">ASSIGN PEER</button>'
+      +'<button class="btn" onclick="openTransitPolicyModal(null,\''+esc(service.id)+'\')">CREATE TRANSIT</button>'
       +'<button class="btn pri" onclick="actionXrayApply(\''+esc(service.id)+'\')">APPLY</button>'
       +'<button class="btn" onclick="openXrayServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteXrayServiceFlow(\''+esc(service.id)+'\')">DELETE</button>'
+    +'</div>'
+  );
+}
+
+function showTransitPolicy(id){
+  var policy = transitPolicyById(id);
+  if(!policy) return;
+  var xrayService = policy.ingress_service_kind === 'xray_service' ? xrayServiceById(policy.ingress_service_ref_id) : null;
+  var health = policy.health_summary_json || {};
+  openDP('Transit ' + policy.name,
+    rows([
+      ['ID', policy.id],
+      ['Node', nById(policy.node_id).name],
+      ['State', policy.state || '-'],
+      ['Enabled', policy.enabled ? 'yes' : 'no'],
+      ['Ingress Interface', policy.ingress_interface || '-'],
+      ['Transparent Port', String(policy.transparent_port || '-')],
+      ['Firewall Mark', String(policy.firewall_mark || '-')],
+      ['Route Table', String(policy.route_table_id || '-')],
+      ['Rule Priority', String(policy.rule_priority || '-')],
+      ['Capture Protocols', (policy.capture_protocols_json || []).join(', ') || '-'],
+      ['Capture CIDRs', (policy.capture_cidrs_json || []).join(', ') || '-'],
+      ['Excluded CIDRs', (policy.excluded_cidrs_json || []).join(', ') || '-'],
+      ['Bypass IPv4', (policy.management_bypass_ipv4_json || []).join(', ') || '-'],
+      ['Bypass TCP Ports', (policy.management_bypass_tcp_ports_json || []).join(', ') || '-'],
+      ['XRAY Service', xrayService ? xrayService.name : (policy.ingress_service_ref_id || '-')],
+      ['Chain', health.chain_name || ((policy.applied_config_json || {}).chain_name) || '-'],
+      ['Config Path', health.config_path || ((policy.applied_config_json || {}).config_path) || '-'],
+      ['Applied At', health.applied_at ? fmtDate(health.applied_at) : '-'],
+      ['Last Error', policy.last_error_text || '-']
+    ])
+    +'<div class="dp-actions">'
+      +'<button class="btn" onclick="actionTransitPreview(\''+esc(policy.id)+'\')">PREVIEW</button>'
+      +'<button class="btn pri" onclick="actionTransitApply(\''+esc(policy.id)+'\')">APPLY</button>'
+      +'<button class="btn" onclick="openTransitPolicyModal(\''+esc(policy.id)+'\')">EDIT</button>'
+      +'<button class="btn red" onclick="deleteTransitPolicyFlow(\''+esc(policy.id)+'\')">DELETE</button>'
     +'</div>'
   );
 }
@@ -3901,6 +4033,152 @@ async function submitXrayAssignPeer(serviceId, fd){
     showXrayService(serviceId);
   }catch(err){
     pushEv('xray_service.error', 'assign peer failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+function openTransitPolicyModal(policyId, presetXrayServiceId){
+  var policy = policyId ? transitPolicyById(policyId) : null;
+  var presetXray = presetXrayServiceId ? xrayServiceById(presetXrayServiceId) : null;
+  var defaultNodeId = policy ? policy.node_id : (presetXray ? presetXray.node_id : (NODES[0] ? NODES[0].id : ''));
+  var nodeOptions = NODES.map(function(node){ return {value:node.id, label:node.name}; });
+  var xrayOptions = [{value:'', label:'None'}].concat(XRAY_SERVICES.map(function(service){
+    return {value:service.id, label:service.name + ' — ' + nById(service.node_id).name};
+  }));
+  var body = '<form id="transitPolicyForm"><div class="modal-grid">'
+    +formInput('Name', 'name', policy ? policy.name : (presetXray ? (presetXray.name + '-transit') : ''), {required:true})
+    +formSelect('Node', 'node_id', defaultNodeId, nodeOptions, {help:'Managed node where TPROXY runtime will live.'})
+    +formInput('Ingress interface', 'ingress_interface', policy ? policy.ingress_interface : 'eth0', {required:true})
+    +formCheckbox('Enabled', 'enabled', policy ? !!policy.enabled : true, {caption:'Keep transit policy active after save'})
+    +formInput('Transparent port', 'transparent_port', policy ? String(policy.transparent_port) : '15001', {type:'number', required:true})
+    +formInput('Firewall mark', 'firewall_mark', policy && policy.firewall_mark != null ? String(policy.firewall_mark) : '', {type:'number', placeholder:'auto'})
+    +formInput('Route table', 'route_table_id', policy && policy.route_table_id != null ? String(policy.route_table_id) : '', {type:'number', placeholder:'auto'})
+    +formInput('Rule priority', 'rule_priority', policy && policy.rule_priority != null ? String(policy.rule_priority) : '', {type:'number', placeholder:'auto'})
+    +formSelect('XRAY Service', 'ingress_service_ref_id', policy ? (policy.ingress_service_ref_id || '') : (presetXrayServiceId || ''), xrayOptions, {help:'Optional XRAY service that will receive transparent traffic.'})
+    +formInput('Ingress kind', 'ingress_service_kind', policy ? (policy.ingress_service_kind || '') : (presetXrayServiceId ? 'xray_service' : ''), {readonly:!!presetXrayServiceId, placeholder:'xray_service'})
+    +formInput('Next hop kind', 'next_hop_kind', policy ? (policy.next_hop_kind || '') : '', {placeholder:'reserved for next stage'})
+    +formInput('Next hop ref', 'next_hop_ref_id', policy ? (policy.next_hop_ref_id || '') : '', {placeholder:'reserved for next stage'})
+    +formTextarea('Capture protocols', 'capture_protocols_json', policy ? (policy.capture_protocols_json || []).join(', ') : 'tcp, udp', {help:'Comma-separated. Current foundation supports tcp, udp.'})
+    +formTextarea('Capture CIDRs', 'capture_cidrs_json', policy ? (policy.capture_cidrs_json || []).join(', ') : '0.0.0.0/0', {help:'Destination CIDRs to transparently capture.'})
+    +formTextarea('Excluded CIDRs', 'excluded_cidrs_json', policy ? (policy.excluded_cidrs_json || []).join(', ') : '', {help:'Excluded destination CIDRs.'})
+    +formTextarea('Bypass IPv4', 'management_bypass_ipv4_json', policy ? (policy.management_bypass_ipv4_json || []).join(', ') : '', {help:'Extra management subnets to bypass before TPROXY.'})
+    +formTextarea('Bypass TCP ports', 'management_bypass_tcp_ports_json', policy ? (policy.management_bypass_tcp_ports_json || []).join(', ') : '', {help:'Local TCP ports protected from capture. Empty keeps auto defaults.'})
+    +'</div></form>';
+  openModal(policy ? 'Edit Transit Policy' : 'Create Transit Policy', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:'Save', className:'btn', onClick:function(){ document.getElementById('transitPolicyForm').requestSubmit(); }},
+      {label:'Save + Apply', className:'btn pri', onClick:function(){ document.getElementById('transitApplyAfterSave').value = '1'; document.getElementById('transitPolicyForm').requestSubmit(); }}
+    ]
+  });
+  var hidden = document.createElement('input');
+  hidden.type = 'hidden';
+  hidden.name = 'apply_after_save';
+  hidden.id = 'transitApplyAfterSave';
+  hidden.value = '0';
+  document.getElementById('transitPolicyForm').appendChild(hidden);
+  bindModalForm('transitPolicyForm', function(fd){ saveTransitPolicyForm(fd, policyId); });
+}
+
+async function saveTransitPolicyForm(fd, policyId){
+  try{
+    var ingressRefId = String(fd.get('ingress_service_ref_id') || '').trim() || null;
+    var ingressKind = String(fd.get('ingress_service_kind') || '').trim() || null;
+    var body = {
+      name: String(fd.get('name') || '').trim(),
+      node_id: String(fd.get('node_id') || '').trim(),
+      ingress_interface: String(fd.get('ingress_interface') || '').trim(),
+      enabled: checked(fd, 'enabled'),
+      transparent_port: Number(fd.get('transparent_port') || 15001),
+      firewall_mark: String(fd.get('firewall_mark') || '').trim() ? Number(fd.get('firewall_mark')) : null,
+      route_table_id: String(fd.get('route_table_id') || '').trim() ? Number(fd.get('route_table_id')) : null,
+      rule_priority: String(fd.get('rule_priority') || '').trim() ? Number(fd.get('rule_priority')) : null,
+      ingress_service_kind: ingressRefId ? (ingressKind || 'xray_service') : null,
+      ingress_service_ref_id: ingressRefId,
+      next_hop_kind: String(fd.get('next_hop_kind') || '').trim() || null,
+      next_hop_ref_id: String(fd.get('next_hop_ref_id') || '').trim() || null,
+      capture_protocols_json: parseCsvList(fd.get('capture_protocols_json')),
+      capture_cidrs_json: parseCsvList(fd.get('capture_cidrs_json')),
+      excluded_cidrs_json: parseCsvList(fd.get('excluded_cidrs_json')),
+      management_bypass_ipv4_json: parseCsvList(fd.get('management_bypass_ipv4_json')),
+      management_bypass_tcp_ports_json: parseCsvList(fd.get('management_bypass_tcp_ports_json')).map(function(x){ return Number(x); }).filter(function(x){ return !isNaN(x); })
+    };
+    var saved;
+    if(policyId){
+      saved = await apiFetch(API_PREFIX + '/transit-policies/' + encodeURIComponent(policyId), { method:'PATCH', body:body });
+      pushEv('transit_policy.updated', 'Transit policy updated: ' + body.name);
+    } else {
+      saved = await apiFetch(API_PREFIX + '/transit-policies', { method:'POST', body:body });
+      pushEv('transit_policy.created', 'Transit policy created: ' + body.name);
+    }
+    if(String(fd.get('apply_after_save') || '0') === '1' && saved && saved.id){
+      await apiFetch(API_PREFIX + '/transit-policies/' + encodeURIComponent(saved.id) + '/apply', { method:'POST', body:{} });
+      pushEv('transit_policy.applied', 'Transit policy applied: ' + body.name);
+    }
+    closeModal();
+    await Promise.all([refreshTransitPolicies(), refreshXrayServices()]);
+  }catch(err){
+    pushEv('transit_policy.error', 'save failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function deleteTransitPolicyFlow(policyId){
+  var policy = transitPolicyById(policyId);
+  if(!confirm('Delete transit policy ' + (policy ? policy.name : policyId) + '?')) return;
+  try{
+    await apiFetch(API_PREFIX + '/transit-policies/' + encodeURIComponent(policyId), { method:'DELETE' });
+    pushEv('transit_policy.deleted', 'Transit policy deleted: ' + (policy ? policy.name : policyId));
+    await Promise.all([refreshTransitPolicies(), refreshXrayServices()]);
+    closeDP();
+  }catch(err){
+    pushEv('transit_policy.error', 'delete failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function actionTransitApply(policyId){
+  try{
+    var policy = transitPolicyById(policyId);
+    var applied = await apiFetch(API_PREFIX + '/transit-policies/' + encodeURIComponent(policyId) + '/apply', { method:'POST', body:{} });
+    pushEv('transit_policy.applied', 'Transit policy applied: ' + ((applied && applied.name) || (policy && policy.name) || policyId));
+    await Promise.all([refreshTransitPolicies(), refreshXrayServices()]);
+    if(policy){ showTransitPolicy(policyId); }
+  }catch(err){
+    pushEv('transit_policy.error', 'apply failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function actionTransitPreview(policyId){
+  try{
+    var preview = await apiFetch(API_PREFIX + '/transit-policies/' + encodeURIComponent(policyId) + '/preview');
+    var rulesHtml = (preview.rules || []).map(function(rule){
+      return '<div class="drow"><span class="dk">'+esc(rule.kind + (rule.chain ? ' / ' + rule.chain : ''))+'</span><span class="dv">'+esc(rule.summary)+'</span></div>'
+        + '<div class="jlog" style="margin-top:6px;margin-bottom:8px;">'+esc(rule.command)+'</div>';
+    }).join('');
+    var attachment = preview.xray_attachment || {};
+    var warnings = (preview.warnings || []).map(function(w){
+      return '<div class="drow"><span class="dk">Warning</span><span class="dv">'+esc(w)+'</span></div>';
+    }).join('');
+    openModal('Transit Preview — ' + preview.policy_name,
+      '<div class="modal-grid one">'
+        + rows([
+          ['Unit', preview.unit_name],
+          ['Config Path', preview.config_path],
+          ['Chain', preview.chain_name],
+          ['XRAY Attached', attachment.attached ? 'yes' : 'no'],
+          ['XRAY Service', attachment.service_name || '-'],
+          ['Inbound Tag', attachment.inbound_tag || '-'],
+          ['Route Path', attachment.route_path || '-']
+        ])
+        + (warnings ? '<div class="stitle">Warnings</div><div style="margin-top:8px;">'+warnings+'</div>' : '')
+        + '<div class="stitle">Managed Rules</div><div style="margin-top:8px;">'+rulesHtml+'</div>'
+      + '</div>',
+      {buttons:[{label:'Close', className:'btn', onClick:closeModal}]}
+    );
+  }catch(err){
+    pushEv('transit_policy.error', 'preview failed: ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
   }
 }
@@ -4346,6 +4624,7 @@ var I18N = {
     'nav.jobs':            'Jobs',
     'nav.peers':           'Peers',
     'nav.xray':            'Xray Services',
+    'nav.transit':         'Transit Policies',
     'nav.awg':             'AWG Services',
     'nav.wg':              'WG Services',
     'nav.ovpn':            'OpenVPN+Cloak Services',
@@ -4394,6 +4673,7 @@ var I18N = {
     'nav.jobs':            'Задачи',
     'nav.peers':           'Пиры',
     'nav.xray':            'XRAY Сервисы',
+    'nav.transit':         'Transit Policies',
     'nav.awg':             'AWG Сервисы',
     'nav.wg':              'WG Сервисы',
     'nav.ovpn':            'OpenVPN+Cloak Сервисы',
