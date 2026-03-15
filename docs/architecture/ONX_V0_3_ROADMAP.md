@@ -43,6 +43,87 @@ As of the current alpha, ONX already has:
 
 The next work must not destabilize this baseline.
 
+## Next Backend Track: XRAY Transit Automation
+
+The next transport-control-plane track should be the automation of the already proven manual path:
+
+```text
+CLIENT <-> XRAY ingress
+       <-> XRAY daemon on GATE
+       <-> dokodemo-door + TPROXY
+       <-> kernel policy routing / fwmark
+       <-> AWG site-to-site
+       <-> remote egress node
+       <-> Internet
+```
+
+This is not a new standalone transport.
+
+It is a control-plane automation layer that binds:
+
+- ingress services
+- kernel routing policy
+- inter-node transport
+- remote egress
+
+### Why This Comes Next
+
+- the packet path has already been validated manually
+- ONX already contains the needed bricks:
+  - `XRAY services`
+  - `AWG links/services`
+  - `route policies`
+  - `fwmark` and route-table application
+- the missing part is automation glue, not basic transport capability
+
+### Concrete Deliverables
+
+1. `TransitPolicy` model and API
+- one ingress service bound to one next-hop transport target
+- first supported pair:
+  - `XRAY ingress -> AWG link`
+
+2. managed `TPROXY` runtime layer
+- node-side runtime rendering and apply
+- `iptables mangle`
+- `TPROXY`
+- `ip rule`
+- `ip route add local`
+- rollback and delete paths
+
+3. `XRAY transit mode`
+- separate from current access-service mode
+- renders `dokodemo-door` + outbound mapping
+- keeps `VLESS + xHTTP` ingress intact
+
+4. health / reconcile
+- detect drift after ingress, route-policy, or AWG changes
+- expose degraded state if next hop becomes invalid
+
+5. admin UI
+- create transit policy
+- select ingress service
+- select next hop
+- apply
+- inspect state / health / last error
+
+### Strict Scope Boundary
+
+Do not expand this first track into:
+
+- general multi-hop graph programming
+- OpenVPN transit
+- arbitrary Xray routing editor
+- per-user transit overrides
+- mixed failover matrix on day one
+
+The first target is intentionally narrow:
+
+- `XRAY ingress`
+- `TPROXY transit capture`
+- `AWG next hop`
+- remote default egress
+
 ## Main Rule for v0.3
 
 Do not jump straight into payments or a heavy GUI client.

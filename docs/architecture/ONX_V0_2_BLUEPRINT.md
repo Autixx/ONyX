@@ -17,7 +17,7 @@ This document defines the first implementation slice of ONX:
 - first REST endpoints
 - first delivery milestones
 
-This document assumes the terms defined in [ONX_TECHNICAL_DESIGN.md](q:/MyVeryOwnAwgStS/docs/architecture/ONX_TECHNICAL_DESIGN.md).
+This document assumes the terms defined in [ONX_TECHNICAL_DESIGN.md](/q/ONyX_export/docs/architecture/ONX_TECHNICAL_DESIGN.md).
 
 ## Implementation Strategy
 
@@ -1202,6 +1202,138 @@ Beyond the original milestone sequence, the current alpha backend already includ
 - retention scheduler and manual cleanup API
 - control-plane state export/import
 - native Ubuntu install/update scripts with TLS helpers
+
+## Heterogeneous Ingress-to-Transit Layer
+
+The current alpha already has most of the primitives required for mixed-protocol traffic flow:
+
+- ingress services:
+  - `XRAY service`
+  - `AWG service`
+  - `WG service`
+  - `OpenVPN+Cloak service`
+- inter-node transport:
+  - `AWG links`
+- policy routing primitives:
+  - `route policies`
+  - `firewall_mark`
+  - `ip rule` / `ip route` application on managed nodes
+
+What is still missing is the glue layer that turns these pieces into an automated packet path:
+
+```text
+CLIENT <-> ingress transport service on GATE
+       <-> ingress daemon
+       <-> TPROXY / fwmark / policy routing
+       <-> inter-node transport or local egress
+       <-> Internet
+```
+
+### Existing Manual Pattern to Productize
+
+The target automated pattern is the same one already proven operationally by hand:
+
+- client enters via `XRAY`
+- `XRAY` uses `dokodemo-door` + `tproxy`
+- kernel marks and routes the packet
+- packet moves into `AWG` site-to-site transport
+- remote node performs egress
+
+This must become a first-class ONX workflow rather than an operator-only manual composition.
+
+### Required New ONX Layer
+
+The next architecture layer should be a generic `Ingress -> Transit` binding model.
+
+It must not be implemented as transport-specific ad hoc logic inside one `XRAY service`.
+
+Instead, ONX should add:
+
+1. `Transit Policy`
+- binds one ingress service to one next-hop transport target
+- defines whether traffic exits:
+  - locally
+  - via `AWG` link
+  - via future `WG` link
+  - via future userspace egress transport
+
+2. `TPROXY Runtime Profile`
+- declarative managed runtime for:
+  - `iptables -t mangle`
+  - `TPROXY`
+  - `ip rule`
+  - `ip route add local`
+  - `fwmark`
+- must support:
+  - apply
+  - re-apply
+  - rollback
+  - remove
+
+3. `XRAY Transit Renderer`
+- adds the `dokodemo-door` + `tproxy` server-side config path
+- renders:
+  - transit inbound
+  - routing rules
+  - outbound tag mapping
+- keeps the current `VLESS + xHTTP` access-service path separate from transit mode
+
+4. `Ingress Attachment State`
+- stores which ingress service is attached to which transit policy
+- stores applied runtime summary and health
+- allows automatic reconcile after service or route changes
+
+5. `Health and Failover`
+- if next hop becomes unavailable:
+  - active transit policy must surface degraded state
+  - failover path may re-attach to balancer-selected alternative later
+
+### First Implementation Target
+
+The first automated heterogeneous path should be:
+
+- ingress: `XRAY VLESS + xHTTP`
+- transit capture: `dokodemo-door + TPROXY`
+- next hop: `AWG` site-to-site
+- egress: remote node default egress
+
+This path is the right first implementation because:
+
+- it matches already proven manual operations
+- `XRAY` and `AWG` are already the most mature non-identical transport pairing in ONX
+- it exercises:
+  - userspace ingress
+  - kernel policy routing
+  - inter-node transport
+  - remote egress separation
+
+### Recommended Sequencing
+
+1. add `TransitPolicy` storage and API
+2. add node runtime installer for `TPROXY` support assets
+3. add `XRAY transit mode` renderer with `dokodemo-door`
+4. add apply/reconcile/rollback flow
+5. add web UI for:
+  - transit policy list
+  - bind ingress to next hop
+  - apply
+  - status
+6. only after this works, generalize the same model for:
+  - `OpenVPN+Cloak -> AWG`
+  - `XRAY -> WG`
+  - future mixed egress paths
+
+### Explicit Non-Goals for the First Transit Slice
+
+The first slice should not attempt:
+
+- full generic service graph editing
+- arbitrary multi-hop chains of more than one transit step
+- all Xray transport modes at once
+- per-user path programming inside the transit layer
+- OpenVPN transit in the same first implementation
+
+The goal is to automate the already proven `XRAY -> AWG` path first, then widen the matrix.
 
 ## Immediate Next Work Item
 
