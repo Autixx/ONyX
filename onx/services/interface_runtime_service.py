@@ -219,6 +219,15 @@ TRANSIT_RUNNER_SCRIPT = dedent(
             if result.returncode != 0:
                 break
 
+    def remove_source_rule(source_ip: str, table_id: int, priority: int) -> None:
+        while True:
+            result = run(
+                [IP_BIN, "rule", "del", "from", f"{source_ip}/32", "table", str(table_id), "priority", str(priority)],
+                check=False,
+            )
+            if result.returncode != 0:
+                break
+
     def apply(config: dict) -> None:
         chain_name = config["chain_name"]
         ingress_interface = config["ingress_interface"]
@@ -226,6 +235,7 @@ TRANSIT_RUNNER_SCRIPT = dedent(
         firewall_mark = int(config["firewall_mark"])
         route_table_id = int(config["route_table_id"])
         rule_priority = int(config["rule_priority"])
+        next_hop = dict(config.get("next_hop_runtime_json") or {})
         capture_protocols = list(config.get("capture_protocols_json") or [])
         capture_cidrs = list(config.get("capture_cidrs_json") or [])
         excluded_cidrs = list(config.get("excluded_cidrs_json") or [])
@@ -265,6 +275,26 @@ TRANSIT_RUNNER_SCRIPT = dedent(
         remove_ip_rule(firewall_mark, route_table_id, rule_priority)
         run([IP_BIN, "rule", "add", "fwmark", str(firewall_mark), "table", str(route_table_id), "priority", str(rule_priority)])
         run([IP_BIN, "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", str(route_table_id)])
+        if next_hop.get("attached"):
+            source_ip = str(next_hop["source_ip"])
+            egress_table_id = int(next_hop["egress_table_id"])
+            egress_rule_priority = int(next_hop["egress_rule_priority"])
+            interface_name = str(next_hop["interface_name"])
+            remove_source_rule(source_ip, egress_table_id, egress_rule_priority)
+            run(
+                [
+                    IP_BIN,
+                    "rule",
+                    "add",
+                    "from",
+                    f"{source_ip}/32",
+                    "table",
+                    str(egress_table_id),
+                    "priority",
+                    str(egress_rule_priority),
+                ]
+            )
+            run([IP_BIN, "route", "replace", "default", "dev", interface_name, "table", str(egress_table_id)])
 
     def cleanup(config: dict) -> None:
         chain_name = config["chain_name"]
@@ -272,10 +302,17 @@ TRANSIT_RUNNER_SCRIPT = dedent(
         firewall_mark = int(config["firewall_mark"])
         route_table_id = int(config["route_table_id"])
         rule_priority = int(config["rule_priority"])
+        next_hop = dict(config.get("next_hop_runtime_json") or {})
         remove_prerouting_jump(ingress_interface, chain_name)
         drop_chain(chain_name)
         remove_ip_rule(firewall_mark, route_table_id, rule_priority)
         run([IP_BIN, "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", str(route_table_id)], check=False)
+        if next_hop.get("attached"):
+            source_ip = str(next_hop["source_ip"])
+            egress_table_id = int(next_hop["egress_table_id"])
+            egress_rule_priority = int(next_hop["egress_rule_priority"])
+            remove_source_rule(source_ip, egress_table_id, egress_rule_priority)
+            run([IP_BIN, "route", "del", "default", "dev", str(next_hop["interface_name"]), "table", str(egress_table_id)], check=False)
 
     def status(config: dict) -> None:
         chain_name = config["chain_name"]

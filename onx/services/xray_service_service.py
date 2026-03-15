@@ -176,6 +176,8 @@ class XrayServiceManager:
         }
 
     def render_server_config(self, db: Session, service: XrayService) -> dict:
+        from onx.services.transit_policy_service import transit_policy_manager
+
         clients = [
             {
                 "id": self._client_uuid(service, peer),
@@ -231,18 +233,31 @@ class XrayServiceManager:
             }
             for policy in transit_policies
         ]
-        routing_rules = [
-            {
-                "type": "field",
-                "inboundTag": [f"transit-{policy.id}"],
-                "outboundTag": "direct",
-            }
-            for policy in transit_policies
-        ]
+        transit_outbounds = []
+        routing_rules = []
+        for policy in transit_policies:
+            next_hop = transit_policy_manager.describe_next_hop(db, policy)
+            outbound_tag = "direct"
+            if next_hop.get("attached") and next_hop.get("source_ip"):
+                outbound_tag = f"transit-out-{policy.id}"
+                transit_outbounds.append(
+                    {
+                        "tag": outbound_tag,
+                        "protocol": "freedom",
+                        "sendThrough": next_hop["source_ip"],
+                    }
+                )
+            routing_rules.append(
+                {
+                    "type": "field",
+                    "inboundTag": [f"transit-{policy.id}"],
+                    "outboundTag": outbound_tag,
+                }
+            )
         payload = {
             "log": {"loglevel": "warning"},
             "inbounds": [inbound, *transit_inbounds],
-            "outbounds": [{"tag": "direct", "protocol": "freedom"}],
+            "outbounds": [{"tag": "direct", "protocol": "freedom"}, *transit_outbounds],
         }
         if routing_rules:
             payload["routing"] = {"rules": routing_rules}

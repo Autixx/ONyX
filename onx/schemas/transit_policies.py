@@ -99,6 +99,17 @@ class TransitPolicyPreviewXrayAttachment(ONXBaseModel):
     route_path: str | None = None
 
 
+class TransitPolicyPreviewNextHop(ONXBaseModel):
+    attached: bool
+    kind: str | None = None
+    ref_id: str | None = None
+    display_name: str | None = None
+    interface_name: str | None = None
+    source_ip: str | None = None
+    egress_table_id: int | None = None
+    egress_rule_priority: int | None = None
+
+
 class TransitPolicyPreview(ONXBaseModel):
     policy_id: str
     policy_name: str
@@ -109,4 +120,5 @@ class TransitPolicyPreview(ONXBaseModel):
     chain_name: str
     rules: list[TransitPolicyPreviewRule]
     xray_attachment: TransitPolicyPreviewXrayAttachment
+    next_hop_attachment: TransitPolicyPreviewNextHop
     warnings: list[str]
