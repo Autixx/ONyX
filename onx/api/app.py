@@ -35,6 +35,7 @@ from onx.api.routers.route_policies import router as route_policies_router
 from onx.api.routers.subscriptions import router as subscriptions_router
 from onx.api.routers.topology import router as topology_router
 from onx.api.routers.transport_packages import router as transport_packages_router
+from onx.api.routers.wg_services import router as wg_services_router
 from onx.api.routers.users import router as users_router
 from onx.api.routers.xray_services import router as xray_services_router
 from onx.api.spa import SPAStaticFiles
@@ -118,6 +119,7 @@ def create_app() -> FastAPI:
     app.include_router(peer_traffic_router, prefix=settings.api_prefix)
     app.include_router(peers_router, prefix=settings.api_prefix)
     app.include_router(awg_services_router, prefix=settings.api_prefix)
+    app.include_router(wg_services_router, prefix=settings.api_prefix)
     app.include_router(xray_services_router, prefix=settings.api_prefix)
     app.include_router(registrations_router, prefix=settings.api_prefix)
     app.include_router(links_router, prefix=settings.api_prefix)

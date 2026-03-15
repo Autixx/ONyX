@@ -30,6 +30,12 @@ class TransportPackage(Base):
         nullable=True,
         index=True,
     )
+    preferred_wg_service_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("wg_services.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     enable_xray: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     enable_awg: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     enable_wg: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

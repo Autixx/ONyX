@@ -259,6 +259,8 @@ td.m{color:var(--t0);}
     <div class="nav-item" data-p="links"><span data-i18n="nav.links">Links</span> <span class="nbadge ok" id="lbn">0</span></div>
     <div class="nav-item" data-p="peers"><span data-i18n="nav.peers">Peers</span> <span class="nbadge ok" id="peersBadge" style="display:none">0</span></div>
     <div class="nav-item" data-p="xray"><span data-i18n="nav.xray">Xray Services</span></div>
+    <div class="nav-item" data-p="awg"><span data-i18n="nav.awg">AWG Services</span></div>
+    <div class="nav-item" data-p="wg"><span data-i18n="nav.wg">WG Services</span></div>
     <div class="nav-item" data-p="policies"><span data-i18n="nav.policies">Policies</span></div>
     <div class="nav-item" data-p="jobs"><span data-i18n="nav.jobs">Jobs</span> <span class="nbadge err" id="jbn" style="display:none">0</span></div>
     <div class="nav-item" data-p="registrations"><span data-i18n="nav.registrations">Registrations</span> <span class="nbadge ok" id="regBadge" style="display:none">0</span></div>
@@ -649,6 +651,62 @@ td.m{color:var(--t0);}
         </div>
       </div>
 
+      <!-- AWG SERVICES -->
+      <div class="page" id="page-awg">
+        <div class="ph">
+          <span class="ptitle">AWG Services</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="refreshAwgServices()">REFRESH</button>
+            <button class="btn pri" id="btnAddAwgService">+ ADD AWG SERVICE</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Node</th>
+                <th>Interface</th>
+                <th>Public Endpoint</th>
+                <th>Address</th>
+                <th>Peers</th>
+                <th>State</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="awgtb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- WG SERVICES -->
+      <div class="page" id="page-wg">
+        <div class="ph">
+          <span class="ptitle">WG Services</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="refreshWgServices()">REFRESH</button>
+            <button class="btn pri" id="btnAddWgService">+ ADD WG SERVICE</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Node</th>
+                <th>Interface</th>
+                <th>Public Endpoint</th>
+                <th>Address</th>
+                <th>Peers</th>
+                <th>State</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="wgtb"></tbody>
+          </table>
+        </div>
+      </div>
+
     </div><!-- /main -->
   </div><!-- /layout -->
 </div><!-- /appWrap -->
@@ -689,6 +747,8 @@ var BALANCERS = [];
 var AUDIT_EVTS = [];
 var PEERS = [];
 var XRAY_SERVICES = [];
+var AWG_SERVICES = [];
+var WG_SERVICES = [];
 var USERS = [];
 var PLANS = [];
 var SUBSCRIPTIONS = [];
@@ -707,6 +767,8 @@ function dnsPolicyById(id){ return DNS_P.find(function(p){ return p.id===id; }) 
 function geoPolicyById(id){ return GEO_P.find(function(p){ return p.id===id; }) || null; }
 function balancerById(id){ return BALANCERS.find(function(b){ return b.id===id; }) || null; }
 function xrayServiceById(id){ return XRAY_SERVICES.find(function(s){ return s.id===id; }) || null; }
+function awgServiceById(id){ return AWG_SERVICES.find(function(s){ return s.id===id; }) || null; }
+function wgServiceById(id){ return WG_SERVICES.find(function(s){ return s.id===id; }) || null; }
 function userById(id){ return USERS.find(function(u){ return u.id===id; }) || null; }
 function planById(id){ return PLANS.find(function(p){ return p.id===id; }) || null; }
 function subscriptionById(id){ return SUBSCRIPTIONS.find(function(s){ return s.id===id; }) || null; }
@@ -1434,7 +1496,9 @@ function connectWS(){
       if(type.indexOf('node.') === 0){ refreshNodes().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type.indexOf('node.traffic.') === 0){ refreshNodes().catch(function(){}); refreshNodeTrafficSummary().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type.indexOf('registration.') === 0){ loadRegistrations().catch(function(){}); loadUsers().catch(function(){}); loadSubscriptions().catch(function(){}); }
-      if(type.indexOf('peer.') === 0){ loadPeers().catch(function(){}); refreshXrayServices().catch(function(){}); }
+      if(type.indexOf('peer.') === 0){ loadPeers().catch(function(){}); refreshXrayServices().catch(function(){}); refreshAwgServices().catch(function(){}); refreshWgServices().catch(function(){}); }
+      if(type.indexOf('awg_service.') === 0){ refreshAwgServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
+      if(type.indexOf('wg_service.') === 0){ refreshWgServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
       if(type.indexOf('xray_service.') === 0){ refreshXrayServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
       if(type.indexOf('user.') === 0){ loadUsers().catch(function(){}); }
       if(type.indexOf('subscription.') === 0){ loadSubscriptions().catch(function(){}); }
@@ -1595,6 +1659,8 @@ async function loadData(){
     refreshNodeTrafficSummary(),
     refreshLinks(),
     refreshXrayServices(),
+    refreshAwgServices(),
+    refreshWgServices(),
     refreshPolicies(),
     refreshJobs(),
     refreshAudit(),
@@ -2888,6 +2954,8 @@ function wireStaticButtons(){
   var addNodeBtn = document.getElementById('btnAddNode');
   var addLinkBtn = document.getElementById('btnAddLink');
   var addXrayBtn = document.getElementById('btnAddXrayService');
+  var addAwgBtn = document.getElementById('btnAddAwgService');
+  var addWgBtn = document.getElementById('btnAddWgService');
   var addRouteBtn = document.getElementById('btnAddRoutePolicy');
   var addDNSBtn = document.getElementById('btnAddDNSPolicy');
   var addGeoBtn = document.getElementById('btnAddGeoPolicy');
@@ -2902,6 +2970,8 @@ function wireStaticButtons(){
   if(addNodeBtn){ addNodeBtn.addEventListener('click', function(){ openNodeModal(); }); }
   if(addLinkBtn){ addLinkBtn.addEventListener('click', function(){ openLinkModal(); }); }
   if(addXrayBtn){ addXrayBtn.addEventListener('click', function(){ openXrayServiceModal(); }); }
+  if(addAwgBtn){ addAwgBtn.addEventListener('click', function(){ openAwgServiceModal(); }); }
+  if(addWgBtn){ addWgBtn.addEventListener('click', function(){ openWgServiceModal(); }); }
   if(addRouteBtn){ addRouteBtn.addEventListener('click', function(){ openRoutePolicyModal(); }); }
   if(addDNSBtn){ addDNSBtn.addEventListener('click', function(){ openDNSPolicyModal(); }); }
   if(addGeoBtn){ addGeoBtn.addEventListener('click', function(){ openGeoPolicyModal(); }); }
@@ -3177,6 +3247,8 @@ async function loadPeers(){
   renderPeers();
   updatePeersBadge();
   renderXrayServices();
+  renderAwgServices();
+  renderWgServices();
 }
 
 async function refreshXrayServices(){
@@ -3187,6 +3259,26 @@ async function refreshXrayServices(){
     if(!XRAY_SERVICES.length) XRAY_SERVICES = [];
   }
   renderXrayServices();
+}
+
+async function refreshAwgServices(){
+  try{
+    var data = await apiFetch(API_PREFIX + '/awg-services');
+    AWG_SERVICES = Array.isArray(data) ? data : [];
+  }catch(e){
+    if(!AWG_SERVICES.length) AWG_SERVICES = [];
+  }
+  renderAwgServices();
+}
+
+async function refreshWgServices(){
+  try{
+    var data = await apiFetch(API_PREFIX + '/wg-services');
+    WG_SERVICES = Array.isArray(data) ? data : [];
+  }catch(e){
+    if(!WG_SERVICES.length) WG_SERVICES = [];
+  }
+  renderWgServices();
 }
 
 function updatePeersBadge(){
@@ -3257,6 +3349,18 @@ function xrayPeerCount(serviceId){
   }).length;
 }
 
+function awgPeerCount(serviceId){
+  return PEERS.filter(function(peer){
+    return peer.awg_service_id === serviceId && peer.is_active !== false && !peer.revoked_at;
+  }).length;
+}
+
+function wgPeerCount(serviceId){
+  return PEERS.filter(function(peer){
+    return peer.wg_service_id === serviceId && peer.is_active !== false && !peer.revoked_at;
+  }).length;
+}
+
 function renderXrayServices(){
   var tb = document.getElementById('xraytb');
   if(!tb) return;
@@ -3280,6 +3384,60 @@ function renderXrayServices(){
         +'<button class="btn sm pri" onclick="event.stopPropagation();actionXrayApply(\''+esc(service.id)+'\')">APPLY</button>'
         +'<button class="btn sm" onclick="event.stopPropagation();openXrayServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
         +'<button class="btn sm red" onclick="event.stopPropagation();deleteXrayServiceFlow(\''+esc(service.id)+'\')">DEL</button>'
+      +'</div></td>'
+      +'</tr>';
+  }).join('');
+}
+
+function renderAwgServices(){
+  var tb = document.getElementById('awgtb');
+  if(!tb) return;
+  if(!AWG_SERVICES.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="8">No AWG services.</td></tr>';
+    return;
+  }
+  tb.innerHTML = AWG_SERVICES.map(function(service){
+    var publicEndpoint = service.public_host + ':' + String(service.public_port || service.listen_port);
+    return '<tr onclick="showAwgService(\''+esc(service.id)+'\')" style="cursor:pointer">'
+      +'<td class="m">'+esc(service.name)+'</td>'
+      +'<td>'+esc(nById(service.node_id).name)+'</td>'
+      +'<td class="m">'+esc(service.interface_name)+'</td>'
+      +'<td class="m">'+esc(publicEndpoint)+'</td>'
+      +'<td class="m">'+esc(service.server_address_v4 || '-')+'</td>'
+      +'<td>'+esc(String(awgPeerCount(service.id)))+'</td>'
+      +'<td>'+sp(service.state)+'</td>'
+      +'<td><div style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionAwgAssignPeer(\''+esc(service.id)+'\')">ASSIGN</button>'
+        +'<button class="btn sm pri" onclick="event.stopPropagation();actionAwgApply(\''+esc(service.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openAwgServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();deleteAwgServiceFlow(\''+esc(service.id)+'\')">DEL</button>'
+      +'</div></td>'
+      +'</tr>';
+  }).join('');
+}
+
+function renderWgServices(){
+  var tb = document.getElementById('wgtb');
+  if(!tb) return;
+  if(!WG_SERVICES.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="8">No WG services.</td></tr>';
+    return;
+  }
+  tb.innerHTML = WG_SERVICES.map(function(service){
+    var publicEndpoint = service.public_host + ':' + String(service.public_port || service.listen_port);
+    return '<tr onclick="showWgService(\''+esc(service.id)+'\')" style="cursor:pointer">'
+      +'<td class="m">'+esc(service.name)+'</td>'
+      +'<td>'+esc(nById(service.node_id).name)+'</td>'
+      +'<td class="m">'+esc(service.interface_name)+'</td>'
+      +'<td class="m">'+esc(publicEndpoint)+'</td>'
+      +'<td class="m">'+esc(service.server_address_v4 || '-')+'</td>'
+      +'<td>'+esc(String(wgPeerCount(service.id)))+'</td>'
+      +'<td>'+sp(service.state)+'</td>'
+      +'<td><div style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionWgAssignPeer(\''+esc(service.id)+'\')">ASSIGN</button>'
+        +'<button class="btn sm pri" onclick="event.stopPropagation();actionWgApply(\''+esc(service.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openWgServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();deleteWgServiceFlow(\''+esc(service.id)+'\')">DEL</button>'
       +'</div></td>'
       +'</tr>';
   }).join('');
@@ -3339,6 +3497,80 @@ function showXrayService(id){
       +'<button class="btn pri" onclick="actionXrayApply(\''+esc(service.id)+'\')">APPLY</button>'
       +'<button class="btn" onclick="openXrayServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteXrayServiceFlow(\''+esc(service.id)+'\')">DELETE</button>'
+    +'</div>'
+  );
+}
+
+function showAwgService(id){
+  var service = awgServiceById(id);
+  if(!service) return;
+  var assignedPeers = PEERS.filter(function(peer){ return peer.awg_service_id === service.id && peer.is_active !== false && !peer.revoked_at; });
+  var peerRows = assignedPeers.length ? assignedPeers.map(function(peer){
+    return '<div class="drow"><span class="dk">'+esc(peer.username || peer.email || peer.id)+'</span><span class="dv">'+esc((peer.awg_address_v4 || '-') + ' / ' + (peer.email || '-'))+'</span></div>';
+  }).join('') : '<div class="drow"><span class="dk">No peers</span><span class="dv">-</span></div>';
+  var health = service.health_summary_json || {};
+  openDP('AWG ' + service.name,
+    rows([
+      ['ID', service.id],
+      ['Node', nById(service.node_id).name],
+      ['State', service.state || '-'],
+      ['Interface', service.interface_name || '-'],
+      ['Listen', (service.listen_host || '0.0.0.0') + ':' + String(service.listen_port || '-')],
+      ['Public', service.public_host + ':' + String(service.public_port || service.listen_port)],
+      ['Server Address', service.server_address_v4 || '-'],
+      ['DNS', service.dns_server_v4 || '-'],
+      ['MTU', String(service.mtu || '-')],
+      ['Keepalive', String(service.persistent_keepalive || '-')],
+      ['Config Path', health.config_path || '-'],
+      ['Applied At', health.applied_at ? fmtDate(health.applied_at) : '-'],
+      ['Peer Count', String(health.peer_count != null ? health.peer_count : assignedPeers.length)],
+      ['Server Public Key', service.server_public_key || '-'],
+      ['Last Error', service.last_error_text || '-']
+    ])
+    + '<div class="stitle">Assigned Peers</div>'
+    + '<div style="margin-top:8px;">' + peerRows + '</div>'
+    + '<div class="dp-actions">'
+      +'<button class="btn" onclick="actionAwgAssignPeer(\''+esc(service.id)+'\')">ASSIGN PEER</button>'
+      +'<button class="btn pri" onclick="actionAwgApply(\''+esc(service.id)+'\')">APPLY</button>'
+      +'<button class="btn" onclick="openAwgServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
+      +'<button class="btn red" onclick="deleteAwgServiceFlow(\''+esc(service.id)+'\')">DELETE</button>'
+    +'</div>'
+  );
+}
+
+function showWgService(id){
+  var service = wgServiceById(id);
+  if(!service) return;
+  var assignedPeers = PEERS.filter(function(peer){ return peer.wg_service_id === service.id && peer.is_active !== false && !peer.revoked_at; });
+  var peerRows = assignedPeers.length ? assignedPeers.map(function(peer){
+    return '<div class="drow"><span class="dk">'+esc(peer.username || peer.email || peer.id)+'</span><span class="dv">'+esc((peer.wg_address_v4 || '-') + ' / ' + (peer.email || '-'))+'</span></div>';
+  }).join('') : '<div class="drow"><span class="dk">No peers</span><span class="dv">-</span></div>';
+  var health = service.health_summary_json || {};
+  openDP('WG ' + service.name,
+    rows([
+      ['ID', service.id],
+      ['Node', nById(service.node_id).name],
+      ['State', service.state || '-'],
+      ['Interface', service.interface_name || '-'],
+      ['Listen', (service.listen_host || '0.0.0.0') + ':' + String(service.listen_port || '-')],
+      ['Public', service.public_host + ':' + String(service.public_port || service.listen_port)],
+      ['Server Address', service.server_address_v4 || '-'],
+      ['DNS', service.dns_server_v4 || '-'],
+      ['MTU', String(service.mtu || '-')],
+      ['Keepalive', String(service.persistent_keepalive || '-')],
+      ['Config Path', health.config_path || '-'],
+      ['Applied At', health.applied_at ? fmtDate(health.applied_at) : '-'],
+      ['Peer Count', String(health.peer_count != null ? health.peer_count : assignedPeers.length)],
+      ['Server Public Key', service.server_public_key || '-'],
+      ['Last Error', service.last_error_text || '-']
+    ])
+    + '<div class="stitle">Assigned Peers</div>'
+    + '<div style="margin-top:8px;">' + peerRows + '</div>'
+    + '<div class="dp-actions">'
+      +'<button class="btn" onclick="actionWgAssignPeer(\''+esc(service.id)+'\')">ASSIGN PEER</button>'
+      +'<button class="btn pri" onclick="actionWgApply(\''+esc(service.id)+'\')">APPLY</button>'
+      +'<button class="btn" onclick="openWgServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
+      +'<button class="btn red" onclick="deleteWgServiceFlow(\''+esc(service.id)+'\')">DELETE</button>'
     +'</div>'
   );
 }
@@ -3524,6 +3756,265 @@ async function submitXrayAssignPeer(serviceId, fd){
   }
 }
 
+function parseCsvList(text){
+  return String(text || '').split(',').map(function(item){ return item.trim(); }).filter(Boolean);
+}
+
+function openAwgServiceModal(serviceId){
+  var service = serviceId ? awgServiceById(serviceId) : null;
+  var nodeOptions = NODES.map(function(node){ return {value:node.id, label:node.name}; });
+  var obfJson = service && service.awg_obfuscation_json ? JSON.stringify(service.awg_obfuscation_json, null, 2) : JSON.stringify({jc:4,jmin:40,jmax:120,s1:20,s2:40,s3:80,s4:120,h1:10101,h2:20202,h3:30303,h4:40404}, null, 2);
+  var body = '<form id="awgServiceForm"><div class="modal-grid">'
+    +formInput('Name', 'name', service ? service.name : '', {required:true})
+    +formSelect('Node', 'node_id', service ? service.node_id : (NODES[0] ? NODES[0].id : ''), nodeOptions, {help:'Managed node where AWG will run.'})
+    +formInput('Interface', 'interface_name', service ? service.interface_name : 'awg0', {required:true})
+    +formInput('Listen port', 'listen_port', service ? String(service.listen_port) : '51820', {type:'number', required:true})
+    +formInput('Public host', 'public_host', service ? service.public_host : '', {required:true})
+    +formInput('Public port', 'public_port', service && service.public_port != null ? String(service.public_port) : '', {type:'number'})
+    +formInput('Server address', 'server_address_v4', service ? service.server_address_v4 : '10.250.0.1/24', {required:true})
+    +formInput('DNS server', 'dns_server_v4', service ? (service.dns_server_v4 || '') : '')
+    +formInput('MTU', 'mtu', service ? String(service.mtu) : '1420', {type:'number'})
+    +formInput('Keepalive', 'persistent_keepalive', service ? String(service.persistent_keepalive) : '25', {type:'number'})
+    +formTextarea('Client allowed IPs', 'client_allowed_ips_json', service ? (service.client_allowed_ips_json || []).join(', ') : '0.0.0.0/0, ::/0', {help:'Comma-separated CIDRs.'})
+    +formTextarea('Obfuscation JSON', 'awg_obfuscation_json', obfJson, {help:'Raw AWG obfuscation parameters.'})
+    +'</div></form>';
+  openModal(service ? 'Edit AWG Service' : 'Create AWG Service', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:service ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('awgServiceForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('awgServiceForm', function(fd){ saveAwgServiceForm(fd, serviceId); });
+}
+
+async function saveAwgServiceForm(fd, serviceId){
+  try{
+    var body = {
+      name: String(fd.get('name') || '').trim(),
+      node_id: String(fd.get('node_id') || '').trim(),
+      interface_name: String(fd.get('interface_name') || 'awg0').trim(),
+      listen_host: '0.0.0.0',
+      listen_port: Number(fd.get('listen_port') || 51820),
+      public_host: String(fd.get('public_host') || '').trim(),
+      public_port: String(fd.get('public_port') || '').trim() ? Number(fd.get('public_port')) : null,
+      server_address_v4: String(fd.get('server_address_v4') || '').trim(),
+      dns_server_v4: String(fd.get('dns_server_v4') || '').trim() || null,
+      mtu: Number(fd.get('mtu') || 1420),
+      persistent_keepalive: Number(fd.get('persistent_keepalive') || 25),
+      client_allowed_ips_json: parseCsvList(fd.get('client_allowed_ips_json')),
+      awg_obfuscation_json: JSON.parse(String(fd.get('awg_obfuscation_json') || '{}'))
+    };
+    if(serviceId){
+      await apiFetch(API_PREFIX + '/awg-services/' + encodeURIComponent(serviceId), { method:'PATCH', body:body });
+      pushEv('awg_service.updated', 'AWG service updated: ' + body.name);
+    } else {
+      await apiFetch(API_PREFIX + '/awg-services', { method:'POST', body:body });
+      pushEv('awg_service.created', 'AWG service created: ' + body.name);
+    }
+    closeModal();
+    await refreshAwgServices();
+  }catch(err){
+    pushEv('awg_service.error', 'save failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function deleteAwgServiceFlow(serviceId){
+  var service = awgServiceById(serviceId);
+  if(!confirm('Delete AWG service ' + (service ? service.name : serviceId) + '?')) return;
+  try{
+    await apiFetch(API_PREFIX + '/awg-services/' + encodeURIComponent(serviceId), { method:'DELETE' });
+    pushEv('awg_service.deleted', 'AWG service deleted: ' + (service ? service.name : serviceId));
+    await refreshAwgServices();
+    closeDP();
+  }catch(err){
+    pushEv('awg_service.error', 'delete failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function actionAwgApply(serviceId){
+  try{
+    var service = awgServiceById(serviceId);
+    var applied = await apiFetch(API_PREFIX + '/awg-services/' + encodeURIComponent(serviceId) + '/apply', { method:'POST', body:{} });
+    pushEv('awg_service.applied', 'AWG service applied: ' + ((applied && applied.name) || (service && service.name) || serviceId));
+    await Promise.all([refreshAwgServices(), loadPeers()]);
+    if(service){ showAwgService(serviceId); }
+  }catch(err){
+    pushEv('awg_service.error', 'apply failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function actionAwgAssignPeer(serviceId){
+  var service = awgServiceById(serviceId);
+  if(!service) return;
+  if(!PEERS.length){ await loadPeers(); }
+  var peerOptions = PEERS.filter(function(peer){ return peer.is_active !== false && !peer.revoked_at; }).map(function(peer){
+    return {value: peer.id, label: (peer.username || peer.email || peer.id) + ' — ' + (peer.email || 'no-email')};
+  });
+  if(!peerOptions.length){ alert('No active peers available.'); return; }
+  var body = '<form id="awgAssignPeerForm"><div class="modal-grid">'
+    +formSelect('Peer', 'peer_id', peerOptions[0].value, peerOptions, {full:true})
+    +formCheckbox('Save config to peer', 'save_to_peer', true, {caption:'Persist generated client config to peer record', full:true})
+    +'</div></form>';
+  openModal('Assign Peer — ' + service.name, body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:'Assign', className:'btn pri', onClick:function(){ document.getElementById('awgAssignPeerForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('awgAssignPeerForm', function(fd){ submitAwgAssignPeer(serviceId, fd); });
+}
+
+async function submitAwgAssignPeer(serviceId, fd){
+  try{
+    var result = await apiFetch(API_PREFIX + '/awg-services/' + encodeURIComponent(serviceId) + '/assign-peer', {
+      method:'POST',
+      body:{
+        peer_id: String(fd.get('peer_id') || '').trim(),
+        save_to_peer: checked(fd, 'save_to_peer')
+      }
+    });
+    closeModal();
+    await Promise.all([refreshAwgServices(), loadPeers()]);
+    pushEv(
+      result.auto_applied ? 'awg_service.peer_assigned.auto' : 'awg_service.peer_assigned',
+      'peer assigned to AWG service' + (result.auto_applied ? ' and service re-applied automatically' : '')
+    );
+    showAwgService(serviceId);
+  }catch(err){
+    pushEv('awg_service.error', 'assign peer failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+function openWgServiceModal(serviceId){
+  var service = serviceId ? wgServiceById(serviceId) : null;
+  var nodeOptions = NODES.map(function(node){ return {value:node.id, label:node.name}; });
+  var body = '<form id="wgServiceForm"><div class="modal-grid">'
+    +formInput('Name', 'name', service ? service.name : '', {required:true})
+    +formSelect('Node', 'node_id', service ? service.node_id : (NODES[0] ? NODES[0].id : ''), nodeOptions, {help:'Managed node where WG will run.'})
+    +formInput('Interface', 'interface_name', service ? service.interface_name : 'wg0', {required:true})
+    +formInput('Listen port', 'listen_port', service ? String(service.listen_port) : '51820', {type:'number', required:true})
+    +formInput('Public host', 'public_host', service ? service.public_host : '', {required:true})
+    +formInput('Public port', 'public_port', service && service.public_port != null ? String(service.public_port) : '', {type:'number'})
+    +formInput('Server address', 'server_address_v4', service ? service.server_address_v4 : '10.251.0.1/24', {required:true})
+    +formInput('DNS server', 'dns_server_v4', service ? (service.dns_server_v4 || '') : '')
+    +formInput('MTU', 'mtu', service ? String(service.mtu) : '1420', {type:'number'})
+    +formInput('Keepalive', 'persistent_keepalive', service ? String(service.persistent_keepalive) : '25', {type:'number'})
+    +formTextarea('Client allowed IPs', 'client_allowed_ips_json', service ? (service.client_allowed_ips_json || []).join(', ') : '0.0.0.0/0, ::/0', {help:'Comma-separated CIDRs.'})
+    +'</div></form>';
+  openModal(service ? 'Edit WG Service' : 'Create WG Service', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:service ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('wgServiceForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('wgServiceForm', function(fd){ saveWgServiceForm(fd, serviceId); });
+}
+
+async function saveWgServiceForm(fd, serviceId){
+  try{
+    var body = {
+      name: String(fd.get('name') || '').trim(),
+      node_id: String(fd.get('node_id') || '').trim(),
+      interface_name: String(fd.get('interface_name') || 'wg0').trim(),
+      listen_host: '0.0.0.0',
+      listen_port: Number(fd.get('listen_port') || 51820),
+      public_host: String(fd.get('public_host') || '').trim(),
+      public_port: String(fd.get('public_port') || '').trim() ? Number(fd.get('public_port')) : null,
+      server_address_v4: String(fd.get('server_address_v4') || '').trim(),
+      dns_server_v4: String(fd.get('dns_server_v4') || '').trim() || null,
+      mtu: Number(fd.get('mtu') || 1420),
+      persistent_keepalive: Number(fd.get('persistent_keepalive') || 25),
+      client_allowed_ips_json: parseCsvList(fd.get('client_allowed_ips_json'))
+    };
+    if(serviceId){
+      await apiFetch(API_PREFIX + '/wg-services/' + encodeURIComponent(serviceId), { method:'PATCH', body:body });
+      pushEv('wg_service.updated', 'WG service updated: ' + body.name);
+    } else {
+      await apiFetch(API_PREFIX + '/wg-services', { method:'POST', body:body });
+      pushEv('wg_service.created', 'WG service created: ' + body.name);
+    }
+    closeModal();
+    await refreshWgServices();
+  }catch(err){
+    pushEv('wg_service.error', 'save failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function deleteWgServiceFlow(serviceId){
+  var service = wgServiceById(serviceId);
+  if(!confirm('Delete WG service ' + (service ? service.name : serviceId) + '?')) return;
+  try{
+    await apiFetch(API_PREFIX + '/wg-services/' + encodeURIComponent(serviceId), { method:'DELETE' });
+    pushEv('wg_service.deleted', 'WG service deleted: ' + (service ? service.name : serviceId));
+    await refreshWgServices();
+    closeDP();
+  }catch(err){
+    pushEv('wg_service.error', 'delete failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function actionWgApply(serviceId){
+  try{
+    var service = wgServiceById(serviceId);
+    var applied = await apiFetch(API_PREFIX + '/wg-services/' + encodeURIComponent(serviceId) + '/apply', { method:'POST', body:{} });
+    pushEv('wg_service.applied', 'WG service applied: ' + ((applied && applied.name) || (service && service.name) || serviceId));
+    await Promise.all([refreshWgServices(), loadPeers()]);
+    if(service){ showWgService(serviceId); }
+  }catch(err){
+    pushEv('wg_service.error', 'apply failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function actionWgAssignPeer(serviceId){
+  var service = wgServiceById(serviceId);
+  if(!service) return;
+  if(!PEERS.length){ await loadPeers(); }
+  var peerOptions = PEERS.filter(function(peer){ return peer.is_active !== false && !peer.revoked_at; }).map(function(peer){
+    return {value: peer.id, label: (peer.username || peer.email || peer.id) + ' — ' + (peer.email || 'no-email')};
+  });
+  if(!peerOptions.length){ alert('No active peers available.'); return; }
+  var body = '<form id="wgAssignPeerForm"><div class="modal-grid">'
+    +formSelect('Peer', 'peer_id', peerOptions[0].value, peerOptions, {full:true})
+    +formCheckbox('Save config to peer', 'save_to_peer', true, {caption:'Persist generated client config to peer record', full:true})
+    +'</div></form>';
+  openModal('Assign Peer — ' + service.name, body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:'Assign', className:'btn pri', onClick:function(){ document.getElementById('wgAssignPeerForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('wgAssignPeerForm', function(fd){ submitWgAssignPeer(serviceId, fd); });
+}
+
+async function submitWgAssignPeer(serviceId, fd){
+  try{
+    var result = await apiFetch(API_PREFIX + '/wg-services/' + encodeURIComponent(serviceId) + '/assign-peer', {
+      method:'POST',
+      body:{
+        peer_id: String(fd.get('peer_id') || '').trim(),
+        save_to_peer: checked(fd, 'save_to_peer')
+      }
+    });
+    closeModal();
+    await Promise.all([refreshWgServices(), loadPeers()]);
+    pushEv(
+      result.auto_applied ? 'wg_service.peer_assigned.auto' : 'wg_service.peer_assigned',
+      'peer assigned to WG service' + (result.auto_applied ? ' and service re-applied automatically' : '')
+    );
+    showWgService(serviceId);
+  }catch(err){
+    pushEv('wg_service.error', 'assign peer failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
 // Wire peer search/filter
 (function(){
   var ps = document.getElementById('peerSearch');
@@ -3574,7 +4065,9 @@ var I18N = {
     'nav.policies':        'Policies',
     'nav.jobs':            'Jobs',
     'nav.peers':           'Peers',
-    'nav.xray':           'Xray Services',
+    'nav.xray':            'Xray Services',
+    'nav.awg':             'AWG Services',
+    'nav.wg':              'WG Services',
     'nav.registrations':   'Registrations',
     'nav.audit':           'Audit / Access',
     'nav.topology':        'Topology',
@@ -3619,7 +4112,9 @@ var I18N = {
     'nav.policies':        'Политики',
     'nav.jobs':            'Задачи',
     'nav.peers':           'Пиры',
-    'nav.xray':           'XRAY Сервисы',
+    'nav.xray':            'XRAY Сервисы',
+    'nav.awg':             'AWG Сервисы',
+    'nav.wg':              'WG Сервисы',
     'nav.registrations':   'Регистрации',
     'nav.audit':           'Аудит / Доступ',
     'nav.topology':        'Топология',

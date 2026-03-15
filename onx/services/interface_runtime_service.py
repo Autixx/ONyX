@@ -14,28 +14,54 @@ RUNNER_SCRIPT = dedent(
 
     ACTION="${1:-}"
     IFACE="${2:-}"
-    CONF_DIR="${ONX_AWG_CONF_DIR:-__ONX_CONF_DIR__}"
+    CONF_DIR="${ONX_LINK_CONF_DIR:-__ONX_CONF_DIR__}"
     CONF_PATH="${CONF_DIR}/${IFACE}.conf"
+    QUICK_BIN=""
+    SHOW_BIN=""
+
+    select_driver() {
+      if [[ ! -f "${CONF_PATH}" ]]; then
+        echo "missing interface config: ${CONF_PATH}" >&2
+        exit 1
+      fi
+      if grep -Eiq '^[[:space:]]*(Jc|Jmin|Jmax|S1|S2|S3|S4|H1|H2|H3|H4)[[:space:]]*=' "${CONF_PATH}"; then
+        QUICK_BIN="awg-quick"
+        SHOW_BIN="awg"
+      else
+        QUICK_BIN="wg-quick"
+        SHOW_BIN="wg"
+      fi
+      command -v "${QUICK_BIN}" >/dev/null 2>&1 || {
+        echo "missing runtime binary: ${QUICK_BIN}" >&2
+        exit 1
+      }
+      command -v "${SHOW_BIN}" >/dev/null 2>&1 || {
+        echo "missing runtime binary: ${SHOW_BIN}" >&2
+        exit 1
+      }
+    }
 
     if [[ -z "${ACTION}" || -z "${IFACE}" ]]; then
       echo "usage: onx-link-runner <up|down|reload|status> <iface>" >&2
       exit 2
     fi
 
+    select_driver
+
     case "${ACTION}" in
       up)
-        awg-quick down "${IFACE}" >/dev/null 2>&1 || true
-        awg-quick up "${CONF_PATH}"
+        "${QUICK_BIN}" down "${IFACE}" >/dev/null 2>&1 || true
+        "${QUICK_BIN}" up "${CONF_PATH}"
         ;;
       down)
-        awg-quick down "${IFACE}" >/dev/null 2>&1 || true
+        "${QUICK_BIN}" down "${IFACE}" >/dev/null 2>&1 || true
         ;;
       reload)
-        awg-quick down "${IFACE}" >/dev/null 2>&1 || true
-        awg-quick up "${CONF_PATH}"
+        "${QUICK_BIN}" down "${IFACE}" >/dev/null 2>&1 || true
+        "${QUICK_BIN}" up "${CONF_PATH}"
         ;;
       status)
-        awg show "${IFACE}"
+        "${SHOW_BIN}" show "${IFACE}"
         ;;
       *)
         echo "unsupported action: ${ACTION}" >&2
@@ -48,7 +74,7 @@ RUNNER_SCRIPT = dedent(
 UNIT_TEMPLATE = dedent(
     """\
     [Unit]
-    Description=ONX managed AWG interface %i
+    Description=ONX managed WG/AWG interface %i
     After=network-online.target
     Wants=network-online.target
     ConditionPathExists=__ONX_CONF_DIR__/%i.conf
@@ -386,6 +412,43 @@ AWG_INSTALL_SCRIPT = dedent(
     """
 )
 
+WG_INSTALL_SCRIPT = dedent(
+    """\
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    export DEBIAN_FRONTEND=noninteractive
+    export PATH="/usr/local/bin:/usr/bin:/bin:${PATH}"
+    SUDO=""
+
+    fail() {
+      echo "$*" >&2
+      exit 1
+    }
+
+    setup_privilege() {
+      if [[ "$(id -u)" -eq 0 ]]; then
+        return
+      fi
+      if ! command -v sudo >/dev/null 2>&1; then
+        fail "[wg] Remote package install requires root or passwordless sudo."
+      fi
+      SUDO="sudo"
+    }
+
+    install_wg_stack() {
+      ${SUDO} apt-get update
+      ${SUDO} apt-get install -y ca-certificates curl wireguard-tools iptables ipset resolvconf
+      command -v wg >/dev/null 2>&1 || fail "[wg] Install failed: wg not found."
+      command -v wg-quick >/dev/null 2>&1 || fail "[wg] Install failed: wg-quick not found."
+      command -v systemctl >/dev/null 2>&1 || fail "[wg] Install failed: systemctl not found."
+    }
+
+    setup_privilege
+    install_wg_stack
+    """
+)
+
 OPENVPN_CLOAK_INSTALL_SCRIPT = dedent(
     """\
     #!/usr/bin/env bash
@@ -591,6 +654,21 @@ class InterfaceRuntimeService:
         )
         if code != 0:
             raise RuntimeError(stderr or stdout or f"Failed to install AWG stack on node {node.name}")
+        return {
+            "installed": True,
+            "stdout": stdout,
+        }
+
+    def ensure_wg_stack(self, node: Node, management_secret: str) -> dict:
+        remote_script_path = "/tmp/onx-install-wg-stack.sh"
+        self._executor.write_file(node, management_secret, remote_script_path, WG_INSTALL_SCRIPT)
+        code, stdout, stderr = self._executor.run(
+            node,
+            management_secret,
+            f"sh -lc 'chmod 700 \"{remote_script_path}\" && \"{remote_script_path}\"; rm -f \"{remote_script_path}\"'",
+        )
+        if code != 0:
+            raise RuntimeError(stderr or stdout or f"Failed to install WG stack on node {node.name}")
         return {
             "installed": True,
             "stdout": stdout,

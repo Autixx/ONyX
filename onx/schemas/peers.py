@@ -14,6 +14,9 @@ class PeerRead(ONXBaseModel):
     awg_service_id: str | None
     awg_public_key: str | None
     awg_address_v4: str | None
+    wg_service_id: str | None
+    wg_public_key: str | None
+    wg_address_v4: str | None
     registered_at: datetime
     config_expires_at: datetime | None
     last_ip: str | None
@@ -32,6 +35,9 @@ class PeerCreate(BaseModel):
     awg_service_id: str | None = None
     awg_public_key: str | None = Field(default=None, max_length=128)
     awg_address_v4: str | None = Field(default=None, max_length=64)
+    wg_service_id: str | None = None
+    wg_public_key: str | None = Field(default=None, max_length=128)
+    wg_address_v4: str | None = Field(default=None, max_length=64)
     registered_at: datetime | None = None
     config_expires_at: datetime | None = None
     last_ip: str | None = Field(default=None, max_length=255)
@@ -46,3 +52,4 @@ class PeerConfigUpdate(BaseModel):
     config: str | None = None
     xray_service_id: str | None = None
     awg_service_id: str | None = None
+    wg_service_id: str | None = None

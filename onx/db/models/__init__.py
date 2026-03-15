@@ -4,6 +4,7 @@ from onx.db.models.access_rule import AccessRule
 from onx.db.models.client_auth_session import ClientAuthSession
 from onx.db.models.admin_session import AdminSession
 from onx.db.models.admin_user import AdminUser
+from onx.db.models.awg_service import AwgService
 from onx.db.models.device import Device
 from onx.db.models.event_log import EventLog
 from onx.db.models.balancer import Balancer
@@ -31,6 +32,7 @@ from onx.db.models.route_policy import RoutePolicy
 from onx.db.models.subscription import Subscription
 from onx.db.models.transport_package import TransportPackage
 from onx.db.models.user import User
+from onx.db.models.wg_service import WgService
 from onx.db.models.xray_service import XrayService
 
 __all__ = [
@@ -38,6 +40,7 @@ __all__ = [
     "AdminUser",
     "AdminSession",
     "ClientAuthSession",
+    "AwgService",
     "Device",
     "Node",
     "NodeSecret",
@@ -65,5 +68,6 @@ __all__ = [
     "Job",
     "JobLock",
     "EventLog",
+    "WgService",
     "XrayService",
 ]

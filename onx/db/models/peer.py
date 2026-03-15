@@ -33,6 +33,14 @@ class Peer(Base):
     )
     awg_public_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     awg_address_v4: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    wg_service_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("wg_services.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    wg_public_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    wg_address_v4: Mapped[str | None] = mapped_column(String(64), nullable=True)
     registered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

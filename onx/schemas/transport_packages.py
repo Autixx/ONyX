@@ -14,6 +14,7 @@ class TransportPackageRead(ONXBaseModel):
     user_id: str
     preferred_xray_service_id: str | None
     preferred_awg_service_id: str | None
+    preferred_wg_service_id: str | None
     enable_xray: bool
     enable_awg: bool
     enable_wg: bool
@@ -30,6 +31,7 @@ class TransportPackageUpsert(BaseModel):
 
     preferred_xray_service_id: str | None = None
     preferred_awg_service_id: str | None = None
+    preferred_wg_service_id: str | None = None
     enable_xray: bool = True
     enable_awg: bool = True
     enable_wg: bool = True
