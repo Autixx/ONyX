@@ -254,7 +254,7 @@ class XrayServiceManager:
                         "sendThrough": next_hop["source_ip"],
                     }
                 )
-            elif policy.next_hop_kind and policy.next_hop_ref_id:
+            elif policy.next_hop_candidates_json or (policy.next_hop_kind and policy.next_hop_ref_id):
                 outbound_tag = "blocked"
             routing_rules.append(
                 {

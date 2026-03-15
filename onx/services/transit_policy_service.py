@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import re
+from collections.abc import Sequence
 from datetime import datetime, timezone
 
 from sqlalchemy import or_, select
@@ -53,6 +54,11 @@ class TransitPolicyManager:
             payload.route_table_id,
             payload.rule_priority,
         )
+        next_hop_candidates = self._normalize_next_hop_candidates(
+            payload.next_hop_candidates_json,
+            legacy_kind=payload.next_hop_kind,
+            legacy_ref_id=payload.next_hop_ref_id,
+        )
         policy = TransitPolicy(
             name=payload.name,
             node_id=node.id,
@@ -64,8 +70,9 @@ class TransitPolicyManager:
             rule_priority=priority,
             ingress_service_kind=payload.ingress_service_kind,
             ingress_service_ref_id=payload.ingress_service_ref_id,
-            next_hop_kind=payload.next_hop_kind,
-            next_hop_ref_id=payload.next_hop_ref_id,
+            next_hop_kind=next_hop_candidates[0]["kind"] if next_hop_candidates else None,
+            next_hop_ref_id=next_hop_candidates[0]["ref_id"] if next_hop_candidates else None,
+            next_hop_candidates_json=next_hop_candidates,
             capture_protocols_json=self._normalize_protocols(payload.capture_protocols_json),
             capture_cidrs_json=self._normalize_cidrs(payload.capture_cidrs_json),
             excluded_cidrs_json=self._normalize_cidrs(payload.excluded_cidrs_json),
@@ -106,12 +113,22 @@ class TransitPolicyManager:
             "transparent_port",
             "ingress_service_kind",
             "ingress_service_ref_id",
-            "next_hop_kind",
-            "next_hop_ref_id",
         ):
             value = getattr(payload, field_name)
             if value is not None:
                 setattr(policy, field_name, value)
+        if (
+            payload.next_hop_candidates_json is not None
+            or payload.next_hop_kind is not None
+            or payload.next_hop_ref_id is not None
+        ):
+            next_hop_candidates = self._normalize_next_hop_candidates(
+                payload.next_hop_candidates_json if payload.next_hop_candidates_json is not None else policy.next_hop_candidates_json,
+                legacy_kind=payload.next_hop_kind if payload.next_hop_kind is not None else policy.next_hop_kind,
+                legacy_ref_id=payload.next_hop_ref_id if payload.next_hop_ref_id is not None else policy.next_hop_ref_id,
+            )
+            policy.next_hop_candidates_json = next_hop_candidates
+            self._apply_primary_next_hop_alias(policy)
         if payload.ingress_interface is not None:
             policy.ingress_interface = self._normalize_interface_name(payload.ingress_interface)
         if payload.firewall_mark is not None:
@@ -204,6 +221,7 @@ class TransitPolicyManager:
             "route_table_id": policy.route_table_id,
             "rule_priority": policy.rule_priority,
             "next_hop": self.describe_next_hop(db, policy),
+            "next_hop_candidates": self.describe_next_hop_candidates(db, policy),
         }
         policy.state = TransitPolicyState.ACTIVE if policy.enabled else TransitPolicyState.PLANNED
         policy.last_error_text = None
@@ -225,17 +243,19 @@ class TransitPolicyManager:
         }
 
     def sync_for_next_hop(self, db: Session, kind: str, ref_id: str) -> None:
-        policies = list(
-            db.scalars(
-                select(TransitPolicy).where(
-                    TransitPolicy.next_hop_kind == kind,
-                    TransitPolicy.next_hop_ref_id == ref_id,
-                )
-            ).all()
-        )
+        policies = [
+            policy
+            for policy in self.list_policies(db)
+            if self._policy_references_next_hop(policy, kind, ref_id)
+        ]
         for policy in policies:
+            previous_signature = self._active_next_hop_signature(policy.health_summary_json)
             self._refresh_policy_health(db, policy)
-            self._reapply_attached_xray_if_needed(db, self._resolve_attached_xray_service(db, policy))
+            current_signature = self._active_next_hop_signature(policy.health_summary_json)
+            if policy.state == TransitPolicyState.ACTIVE and previous_signature != current_signature:
+                self.apply_policy(db, policy)
+            else:
+                self._reapply_attached_xray_if_needed(db, self._resolve_attached_xray_service(db, policy))
 
     def sync_for_xray(self, db: Session, service_id: str) -> None:
         policies = list(
@@ -342,6 +362,7 @@ class TransitPolicyManager:
 
         xray_attachment = self.describe_xray_attachment(db, policy)
         next_hop_attachment = self.describe_next_hop(db, policy)
+        next_hop_candidates = self.describe_next_hop_candidates(db, policy)
         warnings: list[str] = []
         if not xray_attachment.get("available"):
             warnings.append("Transit policy is not attached to an active XRAY service. Rules will capture traffic, but XRAY will not terminate it.")
@@ -383,7 +404,7 @@ class TransitPolicyManager:
                 + f") -> ip rule from {next_hop_attachment['source_ip']}/32"
                 + f" -> dev {next_hop_attachment['interface_name']}"
             )
-        elif policy.next_hop_kind and policy.next_hop_ref_id:
+        elif self._policy_candidate_specs(policy):
             warnings.append("Next-hop target is configured but not currently resolvable on this node.")
             xray_attachment["route_path"] = "dokodemo-door -> blackhole (fail-closed)"
         elif xray_attachment.get("available"):
@@ -403,6 +424,7 @@ class TransitPolicyManager:
             "rules": rules,
             "xray_attachment": xray_attachment,
             "next_hop_attachment": next_hop_attachment,
+            "next_hop_candidates": next_hop_candidates,
             "warnings": warnings,
         }
 
@@ -421,6 +443,7 @@ class TransitPolicyManager:
             "ingress_service_ref_id": policy.ingress_service_ref_id,
             "next_hop_kind": policy.next_hop_kind,
             "next_hop_ref_id": policy.next_hop_ref_id,
+            "next_hop_candidates_json": list(policy.next_hop_candidates_json or []),
             "capture_protocols_json": list(policy.capture_protocols_json or []),
             "capture_cidrs_json": list(policy.capture_cidrs_json or []),
             "excluded_cidrs_json": list(policy.excluded_cidrs_json or []),
@@ -431,6 +454,12 @@ class TransitPolicyManager:
 
     def describe_next_hop(self, db: Session, policy: TransitPolicy) -> dict:
         return self._describe_next_hop(db, policy)
+
+    def describe_next_hop_candidates(self, db: Session, policy: TransitPolicy) -> list[dict]:
+        rendered: list[dict] = []
+        for index, candidate in enumerate(self._policy_candidate_specs(policy)):
+            rendered.append(self._describe_next_hop_candidate(db, policy, candidate, index=index))
+        return rendered
 
     def describe_xray_attachment(self, db: Session, policy: TransitPolicy) -> dict:
         service = self._resolve_attached_xray_service(db, policy)
@@ -482,15 +511,17 @@ class TransitPolicyManager:
 
     def _validate_attachments(self, db: Session, policy: TransitPolicy) -> None:
         self._resolve_attached_xray_service(db, policy)
-        self._resolve_next_hop(db, policy)
+        for candidate in self._policy_candidate_specs(policy):
+            self._resolve_next_hop_candidate(db, policy, candidate, allow_inactive=True)
 
     def _refresh_policy_health(self, db: Session, policy: TransitPolicy) -> None:
         health = dict(policy.health_summary_json or {})
         next_hop = self.describe_next_hop(db, policy)
+        next_hop_candidates = self.describe_next_hop_candidates(db, policy)
         xray = self.describe_xray_attachment(db, policy)
         if not policy.enabled:
             status = "disabled"
-        elif policy.next_hop_kind and policy.next_hop_ref_id and not next_hop.get("attached"):
+        elif self._policy_candidate_specs(policy) and not next_hop.get("attached"):
             status = "degraded"
         elif policy.ingress_service_kind == "xray_service" and policy.ingress_service_ref_id and not xray.get("attached"):
             status = "degraded"
@@ -498,6 +529,7 @@ class TransitPolicyManager:
             status = "active" if policy.state == TransitPolicyState.ACTIVE else "planned"
         health["status"] = status
         health["next_hop"] = next_hop
+        health["next_hop_candidates"] = next_hop_candidates
         health["xray_attachment"] = xray
         health["health_checked_at"] = datetime.now(timezone.utc).isoformat()
         policy.health_summary_json = health
@@ -601,13 +633,51 @@ class TransitPolicyManager:
         return rendered
 
     def _describe_next_hop(self, db: Session, policy: TransitPolicy) -> dict:
-        resolved = self._resolve_next_hop(db, policy, allow_inactive=True)
+        candidate = self._resolve_active_next_hop(db, policy)
+        if candidate is None:
+            candidates = self.describe_next_hop_candidates(db, policy)
+            if candidates:
+                first = dict(candidates[0])
+                first["attached"] = False
+                return first
+            return {
+                "attached": False,
+                "available": False,
+                "candidate_index": None,
+                "kind": policy.next_hop_kind,
+                "ref_id": policy.next_hop_ref_id,
+                "display_name": None,
+                "state": None,
+                "interface_name": None,
+                "source_ip": None,
+                "egress_table_id": None,
+                "egress_rule_priority": None,
+            }
+        resolved = candidate
+        index = int(resolved.get("candidate_index", 0))
+        return {
+            "attached": bool(resolved["active"]),
+            "available": True,
+            "candidate_index": index,
+            "kind": resolved["kind"],
+            "ref_id": resolved["ref_id"],
+            "display_name": resolved["display_name"],
+            "state": resolved["state"],
+            "interface_name": resolved["interface_name"],
+            "source_ip": resolved["source_ip"],
+            "egress_table_id": policy.route_table_id + self._EGRESS_OFFSET + index,
+            "egress_rule_priority": policy.rule_priority + self._EGRESS_OFFSET + index,
+        }
+
+    def _describe_next_hop_candidate(self, db: Session, policy: TransitPolicy, candidate: dict, *, index: int) -> dict:
+        resolved = self._resolve_next_hop_candidate(db, policy, candidate, allow_inactive=True)
         if resolved is None:
             return {
                 "attached": False,
                 "available": False,
-                "kind": policy.next_hop_kind,
-                "ref_id": policy.next_hop_ref_id,
+                "candidate_index": index,
+                "kind": candidate.get("kind"),
+                "ref_id": candidate.get("ref_id"),
                 "display_name": None,
                 "state": None,
                 "interface_name": None,
@@ -618,30 +688,43 @@ class TransitPolicyManager:
         return {
             "attached": bool(resolved["active"]),
             "available": True,
+            "candidate_index": index,
             "kind": resolved["kind"],
             "ref_id": resolved["ref_id"],
             "display_name": resolved["display_name"],
             "state": resolved["state"],
             "interface_name": resolved["interface_name"],
             "source_ip": resolved["source_ip"],
-            "egress_table_id": policy.route_table_id + self._EGRESS_OFFSET,
-            "egress_rule_priority": policy.rule_priority + self._EGRESS_OFFSET,
+            "egress_table_id": policy.route_table_id + self._EGRESS_OFFSET + index,
+            "egress_rule_priority": policy.rule_priority + self._EGRESS_OFFSET + index,
         }
 
-    def _resolve_next_hop(
+    def _resolve_active_next_hop(
         self,
         db: Session,
         policy: TransitPolicy,
+    ) -> dict | None:
+        for index, candidate in enumerate(self._policy_candidate_specs(policy)):
+            resolved = self._resolve_next_hop_candidate(db, policy, candidate, allow_inactive=True)
+            if resolved is not None and resolved["active"]:
+                resolved["candidate_index"] = index
+                return resolved
+        return None
+
+    def _resolve_next_hop_candidate(
+        self,
+        db: Session,
+        policy: TransitPolicy,
+        candidate: dict,
         *,
         allow_inactive: bool = False,
     ) -> dict | None:
-        kind = str(policy.next_hop_kind or "").strip().lower()
-        ref_id = str(policy.next_hop_ref_id or "").strip()
+        kind = str(candidate.get("kind") or "").strip().lower()
+        ref_id = str(candidate.get("ref_id") or "").strip()
         if not kind and not ref_id:
             return None
         if not kind or not ref_id:
-            raise ValueError("next_hop_kind and next_hop_ref_id must be provided together.")
-
+            raise ValueError("next_hop candidate requires both kind and ref_id.")
         if kind == "awg_service":
             service = db.get(AwgService, ref_id)
             if service is None:
@@ -705,6 +788,76 @@ class TransitPolicyManager:
             }
 
         raise ValueError("next_hop_kind must be one of: awg_service, wg_service, link.")
+
+    @staticmethod
+    def _policy_candidate_specs(policy: TransitPolicy) -> list[dict[str, str]]:
+        candidates = [dict(item) for item in list(policy.next_hop_candidates_json or []) if isinstance(item, dict)]
+        if candidates:
+            return candidates
+        kind = str(policy.next_hop_kind or "").strip()
+        ref_id = str(policy.next_hop_ref_id or "").strip()
+        if kind and ref_id:
+            return [{"kind": kind, "ref_id": ref_id}]
+        return []
+
+    def _normalize_next_hop_candidates(
+        self,
+        values: Sequence | None,
+        *,
+        legacy_kind: str | None,
+        legacy_ref_id: str | None,
+    ) -> list[dict[str, str]]:
+        normalized: list[dict[str, str]] = []
+        for item in list(values or []):
+            if item is None:
+                continue
+            raw_kind = item.get("kind") if isinstance(item, dict) else getattr(item, "kind", None)
+            raw_ref_id = item.get("ref_id") if isinstance(item, dict) else getattr(item, "ref_id", None)
+            kind = str(raw_kind or "").strip().lower()
+            ref_id = str(raw_ref_id or "").strip()
+            if not kind and not ref_id:
+                continue
+            if not kind or not ref_id:
+                raise ValueError("Each next-hop candidate requires both kind and ref_id.")
+            if kind not in {"awg_service", "wg_service", "link"}:
+                raise ValueError("next_hop_candidates_json kind must be one of: awg_service, wg_service, link.")
+            if not any(existing["kind"] == kind and existing["ref_id"] == ref_id for existing in normalized):
+                normalized.append({"kind": kind, "ref_id": ref_id})
+        legacy_kind_value = str(legacy_kind or "").strip().lower()
+        legacy_ref_id_value = str(legacy_ref_id or "").strip()
+        if legacy_kind_value or legacy_ref_id_value:
+            if not legacy_kind_value or not legacy_ref_id_value:
+                raise ValueError("next_hop_kind and next_hop_ref_id must be provided together.")
+            if not normalized:
+                normalized.append({"kind": legacy_kind_value, "ref_id": legacy_ref_id_value})
+        return normalized
+
+    @staticmethod
+    def _apply_primary_next_hop_alias(policy: TransitPolicy) -> None:
+        candidates = [dict(item) for item in list(policy.next_hop_candidates_json or []) if isinstance(item, dict)]
+        primary = candidates[0] if candidates else None
+        policy.next_hop_kind = primary.get("kind") if primary else None
+        policy.next_hop_ref_id = primary.get("ref_id") if primary else None
+
+    def _policy_references_next_hop(self, policy: TransitPolicy, kind: str, ref_id: str) -> bool:
+        return any(
+            candidate.get("kind") == kind and candidate.get("ref_id") == ref_id
+            for candidate in self._policy_candidate_specs(policy)
+        )
+
+    @staticmethod
+    def _active_next_hop_signature(health: dict | None) -> str | None:
+        if not isinstance(health, dict):
+            return None
+        next_hop = health.get("next_hop")
+        if not isinstance(next_hop, dict):
+            return None
+        kind = str(next_hop.get("kind") or "").strip()
+        ref_id = str(next_hop.get("ref_id") or "").strip()
+        source_ip = str(next_hop.get("source_ip") or "").strip()
+        if not kind or not ref_id or not source_ip or not next_hop.get("attached"):
+            return None
+        return f"{kind}:{ref_id}:{source_ip}"
 
     @staticmethod
     def _chain_name(policy_id: str) -> str:

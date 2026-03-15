@@ -3582,21 +3582,88 @@ function transitNextHopOptions(kind, nodeId){
   return opts;
 }
 
+function transitNextHopOptionsHtml(kind, nodeId, currentValue){
+  return transitNextHopOptions(kind, nodeId).map(function(opt){
+    return '<option value="'+esc(opt.value)+'" '+(String(opt.value)===String(currentValue) ? 'selected' : '')+'>'+esc(opt.label)+'</option>';
+  }).join('');
+}
+
+function transitCandidatePayload(prefix, fd){
+  var kind = String(fd.get(prefix + '_kind') || '').trim() || null;
+  var refId = String(fd.get(prefix + '_ref_id') || '').trim() || null;
+  if(!kind && !refId) return null;
+  if(!kind || !refId) throw new Error('Next hop candidate requires both kind and target.');
+  return {kind:kind, ref_id:refId};
+}
+
+function transitCandidateListFromForm(fd){
+  var seen = {};
+  return ['primary_next_hop', 'standby_next_hop', 'backup_next_hop'].map(function(prefix){
+    return transitCandidatePayload(prefix, fd);
+  }).filter(Boolean).filter(function(item){
+    var key = item.kind + '|' + item.ref_id;
+    if(seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+}
+
+function transitCandidateSpecs(policy){
+  if(!policy) return [];
+  var specs = Array.isArray(policy.next_hop_candidates_json)
+    ? policy.next_hop_candidates_json.filter(function(item){ return item && item.kind && item.ref_id; })
+    : [];
+  if(!specs.length && policy.next_hop_kind && policy.next_hop_ref_id){
+    specs = [{kind:policy.next_hop_kind, ref_id:policy.next_hop_ref_id}];
+  }
+  return specs;
+}
+
+function transitResolveNextHopLabel(kind, refId){
+  if(!kind || !refId) return '-';
+  if(kind === 'awg_service'){
+    var awg = awgServiceById(refId);
+    return awg ? ('AWG / ' + awg.name + ' / ' + (awg.interface_name || '-')) : ('AWG / ' + refId);
+  }
+  if(kind === 'wg_service'){
+    var wg = wgServiceById(refId);
+    return wg ? ('WG / ' + wg.name + ' / ' + (wg.interface_name || '-')) : ('WG / ' + refId);
+  }
+  if(kind === 'link'){
+    var link = LINKS.find(function(item){ return item.id === refId; });
+    return link ? ('LINK / ' + link.name + ' / ' + (link.driver_name || '-')) : ('LINK / ' + refId);
+  }
+  return String(kind) + ' / ' + String(refId);
+}
+
 function transitNextHopLabel(policy){
-  if(!policy || !policy.next_hop_kind || !policy.next_hop_ref_id) return '-';
-  if(policy.next_hop_kind === 'awg_service'){
-    var awg = awgServiceById(policy.next_hop_ref_id);
-    return awg ? ('AWG / ' + awg.name + ' / ' + (awg.interface_name || '-')) : ('AWG / ' + policy.next_hop_ref_id);
+  var health = policy && policy.health_summary_json ? policy.health_summary_json : {};
+  var active = health.next_hop || null;
+  if(active && active.kind && active.ref_id){
+    return transitResolveNextHopLabel(active.kind, active.ref_id);
   }
-  if(policy.next_hop_kind === 'wg_service'){
-    var wg = wgServiceById(policy.next_hop_ref_id);
-    return wg ? ('WG / ' + wg.name + ' / ' + (wg.interface_name || '-')) : ('WG / ' + policy.next_hop_ref_id);
-  }
-  if(policy.next_hop_kind === 'link'){
-    var link = LINKS.find(function(item){ return item.id === policy.next_hop_ref_id; });
-    return link ? ('LINK / ' + link.name + ' / ' + (link.driver_name || '-')) : ('LINK / ' + policy.next_hop_ref_id);
-  }
-  return (policy.next_hop_kind || '-') + ' / ' + (policy.next_hop_ref_id || '-');
+  var specs = transitCandidateSpecs(policy);
+  if(!specs.length) return '-';
+  return transitResolveNextHopLabel(specs[0].kind, specs[0].ref_id);
+}
+
+function transitNextHopChainLabel(policy){
+  var specs = transitCandidateSpecs(policy);
+  if(!specs.length) return '-';
+  return specs.map(function(item){ return transitResolveNextHopLabel(item.kind, item.ref_id); }).join(' -> ');
+}
+
+function transitStandbyNextHopLabel(policy){
+  var specs = transitCandidateSpecs(policy).slice(1);
+  if(!specs.length) return '-';
+  return specs.map(function(item){ return transitResolveNextHopLabel(item.kind, item.ref_id); }).join(' | ');
+}
+
+function transitNextHopSummary(policy){
+  var specs = transitCandidateSpecs(policy);
+  if(!specs.length) return '-';
+  var active = transitNextHopLabel(policy);
+  return specs.length > 1 ? (active + ' +' + String(specs.length - 1) + ' standby') : active;
 }
 
 function renderPolicyTransitHub(){
@@ -3621,9 +3688,9 @@ function renderPolicyTransitHub(){
       return policy.ingress_service_kind === 'xray_service' && policy.ingress_service_ref_id;
     }).length;
     var nextHopKinds = TRANSIT_POLICIES.reduce(function(acc, policy){
-      if(policy.next_hop_kind){
-        acc[policy.next_hop_kind] = (acc[policy.next_hop_kind] || 0) + 1;
-      }
+      transitCandidateSpecs(policy).forEach(function(candidate){
+        acc[candidate.kind] = (acc[candidate.kind] || 0) + 1;
+      });
       return acc;
     }, {});
     summaryEl.innerHTML = rows([
@@ -3688,7 +3755,7 @@ function renderTransitPolicies(){
       +'<td class="m">'+esc(capture)+'</td>'
       +'<td class="m">'+esc(String(policy.transparent_port))+' / '+esc(String(policy.firewall_mark))+'</td>'
       +'<td class="m">'+esc(xrayLabel)+'</td>'
-      +'<td class="m">'+esc(transitNextHopLabel(policy))+'</td>'
+      +'<td class="m">'+esc(transitNextHopSummary(policy))+'</td>'
       +'<td>'+sp(health.status || policy.state)+'</td>'
       +'<td><div style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="event.stopPropagation();actionTransitPreview(\''+esc(policy.id)+'\')">PREVIEW</button>'
@@ -3838,7 +3905,7 @@ function showXrayService(id){
     + '<div style="margin-top:8px;">'
       + (transitPoliciesForXray(service.id).length
           ? transitPoliciesForXray(service.id).map(function(policy){
-              return '<div class="drow"><span class="dk">'+esc(policy.name)+'</span><span class="dv">'+esc(transitNextHopLabel(policy))+' / '+esc(policy.state || '-')+'</span></div>';
+              return '<div class="drow"><span class="dk">'+esc(policy.name)+'</span><span class="dv">'+esc(transitNextHopSummary(policy))+' / '+esc(policy.state || '-')+'</span></div>';
             }).join('')
           : '<div class="drow"><span class="dk">No transit policies</span><span class="dv">-</span></div>')
     + '</div>'
@@ -3878,7 +3945,9 @@ function showTransitPolicy(id){
       ['Bypass IPv4', (policy.management_bypass_ipv4_json || []).join(', ') || '-'],
       ['Bypass TCP Ports', (policy.management_bypass_tcp_ports_json || []).join(', ') || '-'],
       ['XRAY Service', xrayService ? xrayService.name : (policy.ingress_service_ref_id || '-')],
-      ['Next Hop', transitNextHopLabel(policy)],
+      ['Active Next Hop', transitNextHopLabel(policy)],
+      ['Next Hop Chain', transitNextHopChainLabel(policy)],
+      ['Standby Next Hops', transitStandbyNextHopLabel(policy)],
       ['Next Hop Interface', nextHop && nextHop.interface_name ? nextHop.interface_name : '-'],
       ['Next Hop Source IP', nextHop && nextHop.source_ip ? nextHop.source_ip : '-'],
       ['Next Hop Table', nextHop && nextHop.egress_table_id != null ? String(nextHop.egress_table_id) : '-'],
@@ -4200,18 +4269,15 @@ function openXrayTransitWizard(serviceId){
   var service = xrayServiceById(serviceId);
   if(!service) return;
   var policies = transitPoliciesForXray(serviceId);
-  var nextHopKind = '';
-  var nextHopRefId = '';
   var nextHopKindOptions = [
     {value:'', label:'Select next hop'},
     {value:'awg_service', label:'AWG Service'},
     {value:'wg_service', label:'WG Service'},
     {value:'link', label:'Link'},
   ];
-  var nextHopRefOptions = transitNextHopOptions(nextHopKind, service.node_id);
   var attachedHtml = policies.length
     ? policies.map(function(policy){
-        return '<div class="drow"><span class="dk">'+esc(policy.name)+'</span><span class="dv">'+esc(transitNextHopLabel(policy))+' / '+esc(policy.state || '-')+'</span></div>';
+        return '<div class="drow"><span class="dk">'+esc(policy.name)+'</span><span class="dv">'+esc(transitNextHopSummary(policy))+' / '+esc(policy.state || '-')+'</span></div>';
       }).join('')
     : '<div class="drow"><span class="dk">No transit policies</span><span class="dv">This XRAY service is not yet attached to a next hop.</span></div>';
   var body = '<form id="xrayTransitWizardForm"><div class="modal-grid">'
@@ -4219,8 +4285,12 @@ function openXrayTransitWizard(serviceId){
     +formInput('Policy name', 'name', service.name + '-transit-' + String(policies.length + 1), {required:true})
     +formInput('Ingress interface', 'ingress_interface', 'eth0', {required:true})
     +formInput('Transparent port', 'transparent_port', '15001', {type:'number', required:true})
-    +formSelect('Next hop kind', 'next_hop_kind', nextHopKind, nextHopKindOptions, {help:'Choose where XRAY transparent outbound should leave the node.'})
-    +formSelect('Next hop target', 'next_hop_ref_id', nextHopRefId, nextHopRefOptions, {help:'Only same-node services or attached links are listed.'})
+    +formSelect('Primary next hop', 'primary_next_hop_kind', '', nextHopKindOptions, {help:'First live target used for egress.'})
+    +formSelect('Primary target', 'primary_next_hop_ref_id', '', transitNextHopOptions('', service.node_id), {help:'Only same-node services or attached links are listed.'})
+    +formSelect('Standby next hop', 'standby_next_hop_kind', '', nextHopKindOptions, {help:'Optional failover target if primary becomes unavailable.'})
+    +formSelect('Standby target', 'standby_next_hop_ref_id', '', transitNextHopOptions('', service.node_id), {help:'Optional first backup path.'})
+    +formSelect('Backup next hop', 'backup_next_hop_kind', '', nextHopKindOptions, {help:'Optional second backup path.'})
+    +formSelect('Backup target', 'backup_next_hop_ref_id', '', transitNextHopOptions('', service.node_id), {help:'Optional second backup path.'})
     +formTextarea('Capture protocols', 'capture_protocols_json', 'tcp, udp', {help:'Default capture set for transparent traffic.'})
     +formTextarea('Capture CIDRs', 'capture_cidrs_json', '0.0.0.0/0', {help:'Default route capture. Narrow this later if needed.'})
     +formTextarea('Excluded CIDRs', 'excluded_cidrs_json', '', {help:'Optional exclusions before XRAY transparent capture.'})
@@ -4241,22 +4311,20 @@ function openXrayTransitWizard(serviceId){
   hidden.id = 'xrayTransitWizardApplyAfterSave';
   hidden.value = '0';
   document.getElementById('xrayTransitWizardForm').appendChild(hidden);
-  function refreshXrayTransitWizardTargets(){
-    var kindEl = document.getElementById('next_hop_kind');
-    var refEl = document.getElementById('next_hop_ref_id');
+  function refreshXrayTransitWizardTargets(prefix){
+    var kindEl = document.getElementById(prefix + '_kind');
+    var refEl = document.getElementById(prefix + '_ref_id');
     if(!kindEl || !refEl) return;
     var currentValue = refEl.value;
-    var options = transitNextHopOptions(kindEl.value, service.node_id);
-    refEl.innerHTML = options.map(function(opt){
-      return '<option value="'+esc(opt.value)+'" '+(String(opt.value)===String(currentValue) ? 'selected' : '')+'>'+esc(opt.label)+'</option>';
-    }).join('');
-    var stillExists = options.some(function(opt){ return String(opt.value) === String(currentValue); });
-    if(!stillExists && options.length){
-      refEl.value = options[0].value;
+    refEl.innerHTML = transitNextHopOptionsHtml(kindEl.value, service.node_id, currentValue);
+    if(!transitNextHopOptions(kindEl.value, service.node_id).some(function(opt){ return String(opt.value) === String(currentValue); })){
+      refEl.value = '';
     }
   }
-  var kindEl = document.getElementById('next_hop_kind');
-  if(kindEl){ kindEl.addEventListener('change', refreshXrayTransitWizardTargets); }
+  ['primary_next_hop','standby_next_hop','backup_next_hop'].forEach(function(prefix){
+    var kindEl = document.getElementById(prefix + '_kind');
+    if(kindEl){ kindEl.addEventListener('change', function(){ refreshXrayTransitWizardTargets(prefix); }); }
+  });
   bindModalForm('xrayTransitWizardForm', function(fd){ submitXrayTransitWizard(serviceId, fd); });
 }
 
@@ -4275,16 +4343,17 @@ async function submitXrayTransitWizard(serviceId, fd){
       rule_priority: null,
       ingress_service_kind: 'xray_service',
       ingress_service_ref_id: service.id,
-      next_hop_kind: String(fd.get('next_hop_kind') || '').trim() || null,
-      next_hop_ref_id: String(fd.get('next_hop_ref_id') || '').trim() || null,
+      next_hop_candidates_json: transitCandidateListFromForm(fd),
       capture_protocols_json: parseCsvList(fd.get('capture_protocols_json')),
       capture_cidrs_json: parseCsvList(fd.get('capture_cidrs_json')),
       excluded_cidrs_json: parseCsvList(fd.get('excluded_cidrs_json')),
       management_bypass_ipv4_json: parseCsvList(fd.get('management_bypass_ipv4_json')),
       management_bypass_tcp_ports_json: parseCsvList(fd.get('management_bypass_tcp_ports_json')).map(function(x){ return Number(x); }).filter(function(x){ return !isNaN(x); })
     };
-    if(!body.next_hop_kind || !body.next_hop_ref_id){
-      throw new Error('Next hop must be selected.');
+    body.next_hop_kind = body.next_hop_candidates_json.length ? body.next_hop_candidates_json[0].kind : null;
+    body.next_hop_ref_id = body.next_hop_candidates_json.length ? body.next_hop_candidates_json[0].ref_id : null;
+    if(!body.next_hop_candidates_json.length){
+      throw new Error('At least one next hop must be selected.');
     }
     var saved = await apiFetch(API_PREFIX + '/transit-policies', { method:'POST', body:body });
     pushEv('transit_policy.created', 'Transit policy created from XRAY wizard: ' + body.name);
@@ -4306,8 +4375,10 @@ function openTransitPolicyModal(policyId, presetXrayServiceId){
   var presetXray = presetXrayServiceId ? xrayServiceById(presetXrayServiceId) : null;
   var defaultNodeId = policy ? policy.node_id : (presetXray ? presetXray.node_id : (NODES[0] ? NODES[0].id : ''));
   var nodeOptions = NODES.map(function(node){ return {value:node.id, label:node.name}; });
-  var nextHopKind = policy ? (policy.next_hop_kind || '') : '';
-  var nextHopRefId = policy ? (policy.next_hop_ref_id || '') : '';
+  var candidates = transitCandidateSpecs(policy);
+  var primaryCandidate = candidates[0] || {};
+  var standbyCandidate = candidates[1] || {};
+  var backupCandidate = candidates[2] || {};
   var xrayOptions = [{value:'', label:'None'}].concat(XRAY_SERVICES.map(function(service){
     return {value:service.id, label:service.name + ' — ' + nById(service.node_id).name};
   }));
@@ -4317,7 +4388,6 @@ function openTransitPolicyModal(policyId, presetXrayServiceId){
     {value:'wg_service', label:'WG Service'},
     {value:'link', label:'Link'},
   ];
-  var nextHopRefOptions = transitNextHopOptions(nextHopKind, defaultNodeId);
   var body = '<form id="transitPolicyForm"><div class="modal-grid">'
     +formInput('Name', 'name', policy ? policy.name : (presetXray ? (presetXray.name + '-transit') : ''), {required:true})
     +formSelect('Node', 'node_id', defaultNodeId, nodeOptions, {help:'Managed node where TPROXY runtime will live.'})
@@ -4329,8 +4399,12 @@ function openTransitPolicyModal(policyId, presetXrayServiceId){
     +formInput('Rule priority', 'rule_priority', policy && policy.rule_priority != null ? String(policy.rule_priority) : '', {type:'number', placeholder:'auto'})
     +formSelect('XRAY Service', 'ingress_service_ref_id', policy ? (policy.ingress_service_ref_id || '') : (presetXrayServiceId || ''), xrayOptions, {help:'Optional XRAY service that will receive transparent traffic.'})
     +formInput('Ingress kind', 'ingress_service_kind', policy ? (policy.ingress_service_kind || '') : (presetXrayServiceId ? 'xray_service' : ''), {readonly:!!presetXrayServiceId, placeholder:'xray_service'})
-    +formSelect('Next hop kind', 'next_hop_kind', nextHopKind, nextHopKindOptions, {help:'Kernel egress target for XRAY transparent outbound.'})
-    +formSelect('Next hop target', 'next_hop_ref_id', nextHopRefId, nextHopRefOptions, {help:'Same-node AWG/WG service or attached link.'})
+    +formSelect('Primary next hop', 'primary_next_hop_kind', primaryCandidate.kind || '', nextHopKindOptions, {help:'Preferred kernel egress target for XRAY transparent outbound.'})
+    +formSelect('Primary target', 'primary_next_hop_ref_id', primaryCandidate.ref_id || '', transitNextHopOptions(primaryCandidate.kind || '', defaultNodeId), {help:'Same-node AWG/WG service or attached link.'})
+    +formSelect('Standby next hop', 'standby_next_hop_kind', standbyCandidate.kind || '', nextHopKindOptions, {help:'Optional first failover target.'})
+    +formSelect('Standby target', 'standby_next_hop_ref_id', standbyCandidate.ref_id || '', transitNextHopOptions(standbyCandidate.kind || '', defaultNodeId), {help:'Optional first backup path.'})
+    +formSelect('Backup next hop', 'backup_next_hop_kind', backupCandidate.kind || '', nextHopKindOptions, {help:'Optional second failover target.'})
+    +formSelect('Backup target', 'backup_next_hop_ref_id', backupCandidate.ref_id || '', transitNextHopOptions(backupCandidate.kind || '', defaultNodeId), {help:'Optional second backup path.'})
     +formTextarea('Capture protocols', 'capture_protocols_json', policy ? (policy.capture_protocols_json || []).join(', ') : 'tcp, udp', {help:'Comma-separated. Current foundation supports tcp, udp.'})
     +formTextarea('Capture CIDRs', 'capture_cidrs_json', policy ? (policy.capture_cidrs_json || []).join(', ') : '0.0.0.0/0', {help:'Destination CIDRs to transparently capture.'})
     +formTextarea('Excluded CIDRs', 'excluded_cidrs_json', policy ? (policy.excluded_cidrs_json || []).join(', ') : '', {help:'Excluded destination CIDRs.'})
@@ -4350,25 +4424,29 @@ function openTransitPolicyModal(policyId, presetXrayServiceId){
   hidden.id = 'transitApplyAfterSave';
   hidden.value = '0';
   document.getElementById('transitPolicyForm').appendChild(hidden);
-  function refreshTransitNextHopTargets(){
+  function refreshTransitNextHopTargets(prefix){
     var nodeEl = document.getElementById('node_id');
-    var kindEl = document.getElementById('next_hop_kind');
-    var refEl = document.getElementById('next_hop_ref_id');
+    var kindEl = document.getElementById(prefix + '_kind');
+    var refEl = document.getElementById(prefix + '_ref_id');
     if(!nodeEl || !kindEl || !refEl) return;
     var currentValue = refEl.value;
     var options = transitNextHopOptions(kindEl.value, nodeEl.value);
-    refEl.innerHTML = options.map(function(opt){
-      return '<option value="'+esc(opt.value)+'" '+(String(opt.value)===String(currentValue) ? 'selected' : '')+'>'+esc(opt.label)+'</option>';
-    }).join('');
+    refEl.innerHTML = transitNextHopOptionsHtml(kindEl.value, nodeEl.value, currentValue);
     var stillExists = options.some(function(opt){ return String(opt.value) === String(currentValue); });
     if(!stillExists && options.length){
-      refEl.value = options[0].value;
+      refEl.value = '';
     }
   }
   var nodeEl = document.getElementById('node_id');
-  var kindEl = document.getElementById('next_hop_kind');
-  if(nodeEl){ nodeEl.addEventListener('change', refreshTransitNextHopTargets); }
-  if(kindEl){ kindEl.addEventListener('change', refreshTransitNextHopTargets); }
+  if(nodeEl){
+    nodeEl.addEventListener('change', function(){
+      ['primary_next_hop','standby_next_hop','backup_next_hop'].forEach(refreshTransitNextHopTargets);
+    });
+  }
+  ['primary_next_hop','standby_next_hop','backup_next_hop'].forEach(function(prefix){
+    var kindEl = document.getElementById(prefix + '_kind');
+    if(kindEl){ kindEl.addEventListener('change', function(){ refreshTransitNextHopTargets(prefix); }); }
+  });
   bindModalForm('transitPolicyForm', function(fd){ saveTransitPolicyForm(fd, policyId); });
 }
 
@@ -4387,14 +4465,15 @@ async function saveTransitPolicyForm(fd, policyId){
       rule_priority: String(fd.get('rule_priority') || '').trim() ? Number(fd.get('rule_priority')) : null,
       ingress_service_kind: ingressRefId ? (ingressKind || 'xray_service') : null,
       ingress_service_ref_id: ingressRefId,
-      next_hop_kind: String(fd.get('next_hop_kind') || '').trim() || null,
-      next_hop_ref_id: String(fd.get('next_hop_ref_id') || '').trim() || null,
+      next_hop_candidates_json: transitCandidateListFromForm(fd),
       capture_protocols_json: parseCsvList(fd.get('capture_protocols_json')),
       capture_cidrs_json: parseCsvList(fd.get('capture_cidrs_json')),
       excluded_cidrs_json: parseCsvList(fd.get('excluded_cidrs_json')),
       management_bypass_ipv4_json: parseCsvList(fd.get('management_bypass_ipv4_json')),
       management_bypass_tcp_ports_json: parseCsvList(fd.get('management_bypass_tcp_ports_json')).map(function(x){ return Number(x); }).filter(function(x){ return !isNaN(x); })
     };
+    body.next_hop_kind = body.next_hop_candidates_json.length ? body.next_hop_candidates_json[0].kind : null;
+    body.next_hop_ref_id = body.next_hop_candidates_json.length ? body.next_hop_candidates_json[0].ref_id : null;
     var saved;
     if(policyId){
       saved = await apiFetch(API_PREFIX + '/transit-policies/' + encodeURIComponent(policyId), { method:'PATCH', body:body });
@@ -4451,6 +4530,10 @@ async function actionTransitPreview(policyId){
     }).join('');
     var attachment = preview.xray_attachment || {};
     var nextHop = preview.next_hop_attachment || {};
+    var candidates = (preview.next_hop_candidates || []).map(function(item){
+      var state = item.attached ? 'active' : (item.available ? (item.state || 'standby') : 'unavailable');
+      return '<div class="drow"><span class="dk">#'+esc(String((item.candidate_index || 0) + 1))+'</span><span class="dv">'+esc(transitResolveNextHopLabel(item.kind, item.ref_id))+' / '+esc(state)+'</span></div>';
+    }).join('');
     var warnings = (preview.warnings || []).map(function(w){
       return '<div class="drow"><span class="dk">Warning</span><span class="dv">'+esc(w)+'</span></div>';
     }).join('');
@@ -4464,12 +4547,13 @@ async function actionTransitPreview(policyId){
           ['XRAY Service', attachment.service_name || '-'],
           ['Inbound Tag', attachment.inbound_tag || '-'],
           ['Route Path', attachment.route_path || '-'],
-          ['Next Hop', nextHop.display_name || '-'],
+          ['Active Next Hop', nextHop.display_name || '-'],
           ['Next Hop Interface', nextHop.interface_name || '-'],
           ['Next Hop Source IP', nextHop.source_ip || '-'],
           ['Next Hop Table', nextHop.egress_table_id != null ? String(nextHop.egress_table_id) : '-'],
           ['Next Hop Priority', nextHop.egress_rule_priority != null ? String(nextHop.egress_rule_priority) : '-']
         ])
+        + (candidates ? '<div class="stitle">Failover Chain</div><div style="margin-top:8px;">'+candidates+'</div>' : '')
         + (warnings ? '<div class="stitle">Warnings</div><div style="margin-top:8px;">'+warnings+'</div>' : '')
         + '<div class="stitle">Managed Rules</div><div style="margin-top:8px;">'+rulesHtml+'</div>'
       + '</div>',

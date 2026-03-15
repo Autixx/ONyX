@@ -44,6 +44,7 @@ class TransitPolicy(Base):
     ingress_service_ref_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     next_hop_kind: Mapped[str | None] = mapped_column(String(64), nullable=True)
     next_hop_ref_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    next_hop_candidates_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     capture_protocols_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     capture_cidrs_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     excluded_cidrs_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)

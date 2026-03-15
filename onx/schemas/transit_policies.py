@@ -9,6 +9,11 @@ DEFAULT_CAPTURE_PROTOCOLS = ["tcp", "udp"]
 DEFAULT_CAPTURE_CIDRS = ["0.0.0.0/0"]
 
 
+class TransitPolicyNextHopCandidate(ONXBaseModel):
+    kind: str
+    ref_id: str
+
+
 class TransitPolicyRead(ONXBaseModel):
     id: str
     name: str
@@ -24,6 +29,7 @@ class TransitPolicyRead(ONXBaseModel):
     ingress_service_ref_id: str | None
     next_hop_kind: str | None
     next_hop_ref_id: str | None
+    next_hop_candidates_json: list[TransitPolicyNextHopCandidate]
     capture_protocols_json: list[str]
     capture_cidrs_json: list[str]
     excluded_cidrs_json: list[str]
@@ -52,6 +58,7 @@ class TransitPolicyCreate(BaseModel):
     ingress_service_ref_id: str | None = Field(default=None, max_length=64)
     next_hop_kind: str | None = Field(default=None, max_length=64)
     next_hop_ref_id: str | None = Field(default=None, max_length=64)
+    next_hop_candidates_json: list[TransitPolicyNextHopCandidate] = Field(default_factory=list)
     capture_protocols_json: list[str] = Field(default_factory=lambda: list(DEFAULT_CAPTURE_PROTOCOLS))
     capture_cidrs_json: list[str] = Field(default_factory=lambda: list(DEFAULT_CAPTURE_CIDRS))
     excluded_cidrs_json: list[str] = Field(default_factory=list)
@@ -74,6 +81,7 @@ class TransitPolicyUpdate(BaseModel):
     ingress_service_ref_id: str | None = Field(default=None, max_length=64)
     next_hop_kind: str | None = Field(default=None, max_length=64)
     next_hop_ref_id: str | None = Field(default=None, max_length=64)
+    next_hop_candidates_json: list[TransitPolicyNextHopCandidate] | None = None
     capture_protocols_json: list[str] | None = None
     capture_cidrs_json: list[str] | None = None
     excluded_cidrs_json: list[str] | None = None
@@ -102,6 +110,7 @@ class TransitPolicyPreviewXrayAttachment(ONXBaseModel):
 class TransitPolicyPreviewNextHop(ONXBaseModel):
     attached: bool
     available: bool = False
+    candidate_index: int | None = None
     kind: str | None = None
     ref_id: str | None = None
     display_name: str | None = None
@@ -123,4 +132,5 @@ class TransitPolicyPreview(ONXBaseModel):
     rules: list[TransitPolicyPreviewRule]
     xray_attachment: TransitPolicyPreviewXrayAttachment
     next_hop_attachment: TransitPolicyPreviewNextHop
+    next_hop_candidates: list[TransitPolicyPreviewNextHop]
     warnings: list[str]
