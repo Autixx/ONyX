@@ -3500,6 +3500,12 @@ function transitServiceCount(serviceId){
   }).length;
 }
 
+function transitPoliciesForXray(serviceId){
+  return TRANSIT_POLICIES.filter(function(policy){
+    return policy.ingress_service_kind === 'xray_service' && policy.ingress_service_ref_id === serviceId;
+  });
+}
+
 function transitNextHopOptions(kind, nodeId){
   var opts = [{value:'', label:'None'}];
   if(kind === 'awg_service'){
@@ -3557,7 +3563,7 @@ function renderXrayServices(){
       +'<td>'+sp(service.state)+'</td>'
       +'<td><div style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="event.stopPropagation();actionXrayAssignPeer(\''+esc(service.id)+'\')">ASSIGN</button>'
-        +'<button class="btn sm" onclick="event.stopPropagation();openTransitPolicyModal(null,\''+esc(service.id)+'\')">TRANSIT</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openXrayTransitWizard(\''+esc(service.id)+'\')">GUIDE</button>'
         +'<button class="btn sm pri" onclick="event.stopPropagation();actionXrayApply(\''+esc(service.id)+'\')">APPLY</button>'
         +'<button class="btn sm" onclick="event.stopPropagation();openXrayServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
         +'<button class="btn sm red" onclick="event.stopPropagation();deleteXrayServiceFlow(\''+esc(service.id)+'\')">DEL</button>'
@@ -3733,9 +3739,18 @@ function showXrayService(id){
     ])
     + '<div class="stitle">Assigned Peers</div>'
     + '<div style="margin-top:8px;">' + peerRows + '</div>'
+    + '<div class="stitle">Transit Policies</div>'
+    + '<div style="margin-top:8px;">'
+      + (transitPoliciesForXray(service.id).length
+          ? transitPoliciesForXray(service.id).map(function(policy){
+              return '<div class="drow"><span class="dk">'+esc(policy.name)+'</span><span class="dv">'+esc(transitNextHopLabel(policy))+' / '+esc(policy.state || '-')+'</span></div>';
+            }).join('')
+          : '<div class="drow"><span class="dk">No transit policies</span><span class="dv">-</span></div>')
+    + '</div>'
     + '<div class="dp-actions">'
       +'<button class="btn" onclick="actionXrayAssignPeer(\''+esc(service.id)+'\')">ASSIGN PEER</button>'
-      +'<button class="btn" onclick="openTransitPolicyModal(null,\''+esc(service.id)+'\')">CREATE TRANSIT</button>'
+      +'<button class="btn" onclick="openXrayTransitWizard(\''+esc(service.id)+'\')">ATTACH NEXT HOP</button>'
+      +'<button class="btn" onclick="openTransitPolicyModal(null,\''+esc(service.id)+'\')">ADVANCED TRANSIT</button>'
       +'<button class="btn pri" onclick="actionXrayApply(\''+esc(service.id)+'\')">APPLY</button>'
       +'<button class="btn" onclick="openXrayServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteXrayServiceFlow(\''+esc(service.id)+'\')">DELETE</button>'
@@ -4078,6 +4093,111 @@ async function submitXrayAssignPeer(serviceId, fd){
     showXrayService(serviceId);
   }catch(err){
     pushEv('xray_service.error', 'assign peer failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+function openXrayTransitWizard(serviceId){
+  var service = xrayServiceById(serviceId);
+  if(!service) return;
+  var policies = transitPoliciesForXray(serviceId);
+  var nextHopKind = '';
+  var nextHopRefId = '';
+  var nextHopKindOptions = [
+    {value:'', label:'Select next hop'},
+    {value:'awg_service', label:'AWG Service'},
+    {value:'wg_service', label:'WG Service'},
+    {value:'link', label:'Link'},
+  ];
+  var nextHopRefOptions = transitNextHopOptions(nextHopKind, service.node_id);
+  var attachedHtml = policies.length
+    ? policies.map(function(policy){
+        return '<div class="drow"><span class="dk">'+esc(policy.name)+'</span><span class="dv">'+esc(transitNextHopLabel(policy))+' / '+esc(policy.state || '-')+'</span></div>';
+      }).join('')
+    : '<div class="drow"><span class="dk">No transit policies</span><span class="dv">This XRAY service is not yet attached to a next hop.</span></div>';
+  var body = '<form id="xrayTransitWizardForm"><div class="modal-grid">'
+    +'<div class="mf-row full"><div class="mf-help">This wizard creates a transit policy already attached to XRAY service <strong>'+esc(service.name)+'</strong> on node <strong>'+esc(nById(service.node_id).name)+'</strong>.</div></div>'
+    +formInput('Policy name', 'name', service.name + '-transit-' + String(policies.length + 1), {required:true})
+    +formInput('Ingress interface', 'ingress_interface', 'eth0', {required:true})
+    +formInput('Transparent port', 'transparent_port', '15001', {type:'number', required:true})
+    +formSelect('Next hop kind', 'next_hop_kind', nextHopKind, nextHopKindOptions, {help:'Choose where XRAY transparent outbound should leave the node.'})
+    +formSelect('Next hop target', 'next_hop_ref_id', nextHopRefId, nextHopRefOptions, {help:'Only same-node services or attached links are listed.'})
+    +formTextarea('Capture protocols', 'capture_protocols_json', 'tcp, udp', {help:'Default capture set for transparent traffic.'})
+    +formTextarea('Capture CIDRs', 'capture_cidrs_json', '0.0.0.0/0', {help:'Default route capture. Narrow this later if needed.'})
+    +formTextarea('Excluded CIDRs', 'excluded_cidrs_json', '', {help:'Optional exclusions before XRAY transparent capture.'})
+    +formTextarea('Bypass IPv4', 'management_bypass_ipv4_json', '', {help:'Optional management subnets to bypass.'})
+    +formTextarea('Bypass TCP ports', 'management_bypass_tcp_ports_json', '', {help:'Optional extra local TCP ports to protect.'})
+    +'</div><div class="stitle">Existing Transit Policies</div><div style="margin-top:8px;">'+attachedHtml+'</div></form>';
+  openModal('Attach Next Hop — ' + service.name, body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:'Create', className:'btn', onClick:function(){ document.getElementById('xrayTransitWizardApplyAfterSave').value = '0'; document.getElementById('xrayTransitWizardForm').requestSubmit(); }},
+      {label:'Create + Apply', className:'btn pri', onClick:function(){ document.getElementById('xrayTransitWizardApplyAfterSave').value = '1'; document.getElementById('xrayTransitWizardForm').requestSubmit(); }},
+      {label:'Advanced', className:'btn', onClick:function(){ closeModal(); openTransitPolicyModal(null, service.id); }}
+    ]
+  });
+  var hidden = document.createElement('input');
+  hidden.type = 'hidden';
+  hidden.name = 'apply_after_save';
+  hidden.id = 'xrayTransitWizardApplyAfterSave';
+  hidden.value = '0';
+  document.getElementById('xrayTransitWizardForm').appendChild(hidden);
+  function refreshXrayTransitWizardTargets(){
+    var kindEl = document.getElementById('next_hop_kind');
+    var refEl = document.getElementById('next_hop_ref_id');
+    if(!kindEl || !refEl) return;
+    var currentValue = refEl.value;
+    var options = transitNextHopOptions(kindEl.value, service.node_id);
+    refEl.innerHTML = options.map(function(opt){
+      return '<option value="'+esc(opt.value)+'" '+(String(opt.value)===String(currentValue) ? 'selected' : '')+'>'+esc(opt.label)+'</option>';
+    }).join('');
+    var stillExists = options.some(function(opt){ return String(opt.value) === String(currentValue); });
+    if(!stillExists && options.length){
+      refEl.value = options[0].value;
+    }
+  }
+  var kindEl = document.getElementById('next_hop_kind');
+  if(kindEl){ kindEl.addEventListener('change', refreshXrayTransitWizardTargets); }
+  bindModalForm('xrayTransitWizardForm', function(fd){ submitXrayTransitWizard(serviceId, fd); });
+}
+
+async function submitXrayTransitWizard(serviceId, fd){
+  var service = xrayServiceById(serviceId);
+  if(!service) return;
+  try{
+    var body = {
+      name: String(fd.get('name') || '').trim(),
+      node_id: service.node_id,
+      ingress_interface: String(fd.get('ingress_interface') || '').trim(),
+      enabled: true,
+      transparent_port: Number(fd.get('transparent_port') || 15001),
+      firewall_mark: null,
+      route_table_id: null,
+      rule_priority: null,
+      ingress_service_kind: 'xray_service',
+      ingress_service_ref_id: service.id,
+      next_hop_kind: String(fd.get('next_hop_kind') || '').trim() || null,
+      next_hop_ref_id: String(fd.get('next_hop_ref_id') || '').trim() || null,
+      capture_protocols_json: parseCsvList(fd.get('capture_protocols_json')),
+      capture_cidrs_json: parseCsvList(fd.get('capture_cidrs_json')),
+      excluded_cidrs_json: parseCsvList(fd.get('excluded_cidrs_json')),
+      management_bypass_ipv4_json: parseCsvList(fd.get('management_bypass_ipv4_json')),
+      management_bypass_tcp_ports_json: parseCsvList(fd.get('management_bypass_tcp_ports_json')).map(function(x){ return Number(x); }).filter(function(x){ return !isNaN(x); })
+    };
+    if(!body.next_hop_kind || !body.next_hop_ref_id){
+      throw new Error('Next hop must be selected.');
+    }
+    var saved = await apiFetch(API_PREFIX + '/transit-policies', { method:'POST', body:body });
+    pushEv('transit_policy.created', 'Transit policy created from XRAY wizard: ' + body.name);
+    if(String(fd.get('apply_after_save') || '0') === '1' && saved && saved.id){
+      await apiFetch(API_PREFIX + '/transit-policies/' + encodeURIComponent(saved.id) + '/apply', { method:'POST', body:{} });
+      pushEv('transit_policy.applied', 'Transit policy applied: ' + body.name);
+    }
+    closeModal();
+    await Promise.all([refreshTransitPolicies(), refreshXrayServices()]);
+    showXrayService(serviceId);
+  }catch(err){
+    pushEv('transit_policy.error', 'XRAY transit wizard failed: ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
   }
 }
