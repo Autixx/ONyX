@@ -365,6 +365,117 @@ AWG_INSTALL_SCRIPT = dedent(
     """
 )
 
+OPENVPN_CLOAK_INSTALL_SCRIPT = dedent(
+    """\
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    CLOAK_VERSION="__CLOAK_VERSION__"
+    CLOAK_RELEASE_BASE_URL="__CLOAK_RELEASE_BASE_URL__"
+
+    export DEBIAN_FRONTEND=noninteractive
+    export PATH="/usr/local/bin:/usr/bin:/bin:${PATH}"
+    SUDO=""
+
+    fail() {
+      echo "$*" >&2
+      exit 1
+    }
+
+    setup_privilege() {
+      if [[ "$(id -u)" -eq 0 ]]; then
+        return
+      fi
+      if ! command -v sudo >/dev/null 2>&1; then
+        fail "[openvpn_cloak] Remote package install requires root or passwordless sudo."
+      fi
+      SUDO="sudo"
+    }
+
+    detect_arch() {
+      case "$(uname -m)" in
+        x86_64|amd64) echo "amd64" ;;
+        aarch64|arm64) echo "arm64" ;;
+        *)
+          fail "[openvpn_cloak] Unsupported CPU architecture: $(uname -m)"
+          ;;
+      esac
+    }
+
+    install_openvpn_cloak_stack() {
+      local arch url tmp_file
+
+      ${SUDO} apt-get update
+      ${SUDO} apt-get install -y ca-certificates curl openvpn
+
+      if command -v ck-server >/dev/null 2>&1; then
+        echo "[openvpn_cloak] ck-server already installed."
+      else
+        arch="$(detect_arch)"
+        url="${CLOAK_RELEASE_BASE_URL}/v${CLOAK_VERSION}/ck-server-linux-${arch}-v${CLOAK_VERSION}"
+        tmp_file="/tmp/ck-server-${arch}-${CLOAK_VERSION}"
+        echo "[openvpn_cloak] Downloading ${url}"
+        curl -fsSL "${url}" -o "${tmp_file}"
+        ${SUDO} install -m 0755 "${tmp_file}" /usr/local/bin/ck-server
+        rm -f "${tmp_file}"
+      fi
+
+      command -v openvpn >/dev/null 2>&1 || fail "[openvpn_cloak] Install failed: openvpn not found."
+      command -v ck-server >/dev/null 2>&1 || fail "[openvpn_cloak] Install failed: ck-server not found."
+      command -v systemctl >/dev/null 2>&1 || fail "[openvpn_cloak] Install failed: systemctl not found."
+    }
+
+    setup_privilege
+    install_openvpn_cloak_stack
+    """
+)
+
+XRAY_INSTALL_SCRIPT = dedent(
+    """\
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    XRAY_INSTALL_SCRIPT_URL="__XRAY_INSTALL_SCRIPT_URL__"
+
+    export DEBIAN_FRONTEND=noninteractive
+    export PATH="/usr/local/bin:/usr/bin:/bin:${PATH}"
+    SUDO=""
+
+    fail() {
+      echo "$*" >&2
+      exit 1
+    }
+
+    setup_privilege() {
+      if [[ "$(id -u)" -eq 0 ]]; then
+        return
+      fi
+      if ! command -v sudo >/dev/null 2>&1; then
+        fail "[xray] Remote package install requires root or passwordless sudo."
+      fi
+      SUDO="sudo"
+    }
+
+    install_xray_stack() {
+      ${SUDO} apt-get update
+      ${SUDO} apt-get install -y ca-certificates curl bash
+
+      if command -v xray >/dev/null 2>&1; then
+        echo "[xray] xray already installed."
+      else
+        echo "[xray] Installing via ${XRAY_INSTALL_SCRIPT_URL}"
+        bash -c "$(curl -fsSL "${XRAY_INSTALL_SCRIPT_URL}")" @ install --without-geodata -u root
+      fi
+
+      command -v xray >/dev/null 2>&1 || fail "[xray] Install failed: xray not found."
+      command -v systemctl >/dev/null 2>&1 || fail "[xray] Install failed: systemctl not found."
+    }
+
+    setup_privilege
+    install_xray_stack
+    """
+)
+
 
 class InterfaceRuntimeService:
     def __init__(self, executor: SSHExecutor) -> None:
@@ -452,6 +563,45 @@ class InterfaceRuntimeService:
         )
         if code != 0:
             raise RuntimeError(stderr or stdout or f"Failed to install AWG stack on node {node.name}")
+        return {
+            "installed": True,
+            "stdout": stdout,
+        }
+
+    def ensure_openvpn_cloak_stack(self, node: Node, management_secret: str) -> dict:
+        script_content = (
+            OPENVPN_CLOAK_INSTALL_SCRIPT
+            .replace("__CLOAK_VERSION__", self._settings.onx_cloak_version)
+            .replace("__CLOAK_RELEASE_BASE_URL__", self._settings.onx_cloak_release_base_url.rstrip("/"))
+        )
+        remote_script_path = "/tmp/onx-install-openvpn-cloak-stack.sh"
+        self._executor.write_file(node, management_secret, remote_script_path, script_content)
+        code, stdout, stderr = self._executor.run(
+            node,
+            management_secret,
+            f"sh -lc 'chmod 700 \"{remote_script_path}\" && \"{remote_script_path}\"; rm -f \"{remote_script_path}\"'",
+        )
+        if code != 0:
+            raise RuntimeError(stderr or stdout or f"Failed to install OpenVPN+Cloak stack on node {node.name}")
+        return {
+            "installed": True,
+            "stdout": stdout,
+        }
+
+    def ensure_xray_stack(self, node: Node, management_secret: str) -> dict:
+        script_content = XRAY_INSTALL_SCRIPT.replace(
+            "__XRAY_INSTALL_SCRIPT_URL__",
+            self._settings.onx_xray_install_script_url,
+        )
+        remote_script_path = "/tmp/onx-install-xray-stack.sh"
+        self._executor.write_file(node, management_secret, remote_script_path, script_content)
+        code, stdout, stderr = self._executor.run(
+            node,
+            management_secret,
+            f"sh -lc 'chmod 700 \"{remote_script_path}\" && \"{remote_script_path}\"; rm -f \"{remote_script_path}\"'",
+        )
+        if code != 0:
+            raise RuntimeError(stderr or stdout or f"Failed to install Xray stack on node {node.name}")
         return {
             "installed": True,
             "stdout": stdout,

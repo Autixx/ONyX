@@ -57,6 +57,14 @@ class NodeRuntimeBootstrapService:
         awg_install = self._runtime.ensure_awg_stack(node, management_secret)
 
         if progress_callback:
+            progress_callback("installing openvpn+cloak prerequisites")
+        openvpn_cloak_install = self._runtime.ensure_openvpn_cloak_stack(node, management_secret)
+
+        if progress_callback:
+            progress_callback("installing xray prerequisites")
+        xray_install = self._runtime.ensure_xray_stack(node, management_secret)
+
+        if progress_callback:
             progress_callback("installing runtime assets")
         self._runtime.ensure_runtime(node, management_secret)
 
@@ -126,6 +134,8 @@ class NodeRuntimeBootstrapService:
             "node_id": node.id,
             "node_name": node.name,
             "awg_install": awg_install,
+            "openvpn_cloak_install": openvpn_cloak_install,
+            "xray_install": xray_install,
             "agent_install": agent_install,
             "capabilities": discovery_result["capabilities"],
             "runtime_capability": {

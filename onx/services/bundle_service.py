@@ -222,6 +222,8 @@ class BundleService:
             return None
         if not isinstance(parsed, dict):
             return None
+        if "cloak" in parsed and "openvpn" in parsed:
+            return "openvpn_cloak"
         if "outbounds" not in parsed:
             return None
         return "xray"

@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     onx_awg_go_repo: str = "https://github.com/amnezia-vpn/amneziawg-go.git"
     onx_awg_go_ref: str = "master"
     onx_go_bootstrap_version: str = "1.24.13"
+    onx_cloak_version: str = "2.12.0"
+    onx_cloak_release_base_url: str = "https://github.com/cbeuw/Cloak/releases/download"
+    onx_xray_install_script_url: str = "https://github.com/XTLS/Xray-install/raw/main/install-release.sh"
 
     model_config = SettingsConfigDict(
         env_prefix="ONX_",
