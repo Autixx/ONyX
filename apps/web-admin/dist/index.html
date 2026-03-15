@@ -376,6 +376,23 @@ td.m{color:var(--t0);}
             <button class="btn" id="btnAddBalancer">+ BALANCER</button>
           </div>
         </div>
+        <div class="two" style="margin-bottom:14px">
+          <div class="card">
+            <div class="stitle">Transit Routing</div>
+            <div class="pbtn-row" style="margin-top:10px">
+              <select class="mf-select" id="policyTransitXraySelect" style="min-width:260px">
+                <option value="">select XRAY service</option>
+              </select>
+              <button class="btn pri" id="btnPolicyAttachTransit">ATTACH NEXT HOP</button>
+              <button class="btn" id="btnPolicyOpenTransit">OPEN TRANSIT</button>
+            </div>
+            <div class="mf-help" style="margin-top:10px">Fast path for XRAY transparent routing. Choose an XRAY service, then create or inspect its transit policies.</div>
+          </div>
+          <div class="card">
+            <div class="stitle">Routing Summary</div>
+            <div id="policyTransitSummary" style="margin-top:10px"></div>
+          </div>
+        </div>
         <div class="two">
           <div>
             <div class="stitle">Route Policies</div>
@@ -1136,6 +1153,7 @@ function renderPolicies(){
       +'</td>'
       +'</tr>';
   }).join('') : '<tr><td class="empty-state" colspan="6">No balancers.</td></tr>');
+  renderPolicyTransitHub();
 }
 function renderJobs(){
   document.getElementById('jtb').innerHTML = JOBS.map(function(j){
@@ -3039,6 +3057,8 @@ function wireStaticButtons(){
   var addLinkBtn = document.getElementById('btnAddLink');
   var addXrayBtn = document.getElementById('btnAddXrayService');
   var addTransitBtn = document.getElementById('btnAddTransitPolicy');
+  var policyAttachTransitBtn = document.getElementById('btnPolicyAttachTransit');
+  var policyOpenTransitBtn = document.getElementById('btnPolicyOpenTransit');
   var addAwgBtn = document.getElementById('btnAddAwgService');
   var addWgBtn = document.getElementById('btnAddWgService');
   var addOpenvpnCloakBtn = document.getElementById('btnAddOpenvpnCloakService');
@@ -3057,6 +3077,25 @@ function wireStaticButtons(){
   if(addLinkBtn){ addLinkBtn.addEventListener('click', function(){ openLinkModal(); }); }
   if(addXrayBtn){ addXrayBtn.addEventListener('click', function(){ openXrayServiceModal(); }); }
   if(addTransitBtn){ addTransitBtn.addEventListener('click', function(){ openTransitPolicyModal(); }); }
+  if(policyAttachTransitBtn){ policyAttachTransitBtn.addEventListener('click', function(){
+    var selectEl = document.getElementById('policyTransitXraySelect');
+    if(!selectEl || !selectEl.value){ alert('Select an XRAY service first.'); return; }
+    openXrayTransitWizard(selectEl.value);
+  }); }
+  if(policyOpenTransitBtn){ policyOpenTransitBtn.addEventListener('click', function(){
+    var selectEl = document.getElementById('policyTransitXraySelect');
+    if(selectEl && selectEl.value){
+      var matches = transitPoliciesForXray(selectEl.value);
+      if(matches.length === 1){
+        showTransitPolicy(matches[0].id);
+        return;
+      }
+    }
+    activatePage('transit');
+    refreshTransitPolicies().catch(function(err){
+      pushEv('transit_policy.refresh.error', String(err && err.message ? err.message : err));
+    });
+  }); }
   if(addAwgBtn){ addAwgBtn.addEventListener('click', function(){ openAwgServiceModal(); }); }
   if(addWgBtn){ addWgBtn.addEventListener('click', function(){ openWgServiceModal(); }); }
   if(addOpenvpnCloakBtn){ addOpenvpnCloakBtn.addEventListener('click', function(){ openOpenvpnCloakServiceModal(); }); }
@@ -3073,14 +3112,18 @@ function wireStaticButtons(){
   if(planBtn){ planBtn.addEventListener('click', function(){ openPathPlanner(); }); }
   bindTopologyCanvas();
 }
+function activatePage(pageId){
+  document.querySelectorAll('.nav-item').forEach(function(x){x.classList.remove('active');});
+  document.querySelectorAll('.page').forEach(function(x){x.classList.remove('active');});
+  var nav = document.querySelector('.nav-item[data-p="'+pageId+'"]');
+  if(nav){ nav.classList.add('active'); }
+  var pg = document.getElementById('page-'+pageId);
+  if(pg){ pg.classList.add('active'); }
+  closeDP();
+}
 document.querySelectorAll('.nav-item').forEach(function(el){
   el.addEventListener('click', function(){
-    document.querySelectorAll('.nav-item').forEach(function(x){x.classList.remove('active');});
-    document.querySelectorAll('.page').forEach(function(x){x.classList.remove('active');});
-    el.classList.add('active');
-    var pg = document.getElementById('page-'+el.dataset.p);
-    if(pg) pg.classList.add('active');
-    closeDP();
+    activatePage(el.dataset.p);
     if(el.dataset.p==='topology'){
       refreshTopology().catch(function(err){
         pushEv('topology.refresh.error', String(err && err.message ? err.message : err));
@@ -3101,6 +3144,17 @@ document.querySelectorAll('.nav-item').forEach(function(el){
       });
       refreshXrayServices().catch(function(err){
         pushEv('xray_service.refresh.error', String(err && err.message ? err.message : err));
+      });
+    }
+    if(el.dataset.p==='policies'){
+      refreshPolicies().catch(function(err){
+        pushEv('policy.refresh.error', String(err && err.message ? err.message : err));
+      });
+      refreshXrayServices().catch(function(err){
+        pushEv('xray_service.refresh.error', String(err && err.message ? err.message : err));
+      });
+      refreshTransitPolicies().catch(function(err){
+        pushEv('transit_policy.refresh.error', String(err && err.message ? err.message : err));
       });
     }
     if(el.dataset.p==='ovpn'){
@@ -3365,6 +3419,7 @@ async function refreshXrayServices(){
   }
   renderXrayServices();
   renderTransitPolicies();
+  renderPolicyTransitHub();
 }
 
 async function refreshTransitPolicies(){
@@ -3376,6 +3431,7 @@ async function refreshTransitPolicies(){
   }
   renderTransitPolicies();
   renderXrayServices();
+  renderPolicyTransitHub();
 }
 
 async function refreshAwgServices(){
@@ -3541,6 +3597,44 @@ function transitNextHopLabel(policy){
     return link ? ('LINK / ' + link.name + ' / ' + (link.driver_name || '-')) : ('LINK / ' + policy.next_hop_ref_id);
   }
   return (policy.next_hop_kind || '-') + ' / ' + (policy.next_hop_ref_id || '-');
+}
+
+function renderPolicyTransitHub(){
+  var selectEl = document.getElementById('policyTransitXraySelect');
+  var summaryEl = document.getElementById('policyTransitSummary');
+  if(selectEl){
+    var currentValue = selectEl.value;
+    var options = ['<option value="">select XRAY service</option>'].concat(
+      XRAY_SERVICES.map(function(service){
+        return '<option value="'+esc(service.id)+'" '+(String(service.id)===String(currentValue) ? 'selected' : '')+'>'+esc(service.name + ' @ ' + nById(service.node_id).name)+'</option>';
+      })
+    );
+    selectEl.innerHTML = options.join('');
+    if(currentValue && !XRAY_SERVICES.some(function(service){ return service.id === currentValue; })){
+      selectEl.value = '';
+    }
+  }
+  if(summaryEl){
+    var xrayCount = XRAY_SERVICES.length;
+    var transitCount = TRANSIT_POLICIES.length;
+    var attachedCount = TRANSIT_POLICIES.filter(function(policy){
+      return policy.ingress_service_kind === 'xray_service' && policy.ingress_service_ref_id;
+    }).length;
+    var nextHopKinds = TRANSIT_POLICIES.reduce(function(acc, policy){
+      if(policy.next_hop_kind){
+        acc[policy.next_hop_kind] = (acc[policy.next_hop_kind] || 0) + 1;
+      }
+      return acc;
+    }, {});
+    summaryEl.innerHTML = rows([
+      ['XRAY Services', String(xrayCount)],
+      ['Transit Policies', String(transitCount)],
+      ['Attached to XRAY', String(attachedCount)],
+      ['AWG Next Hops', String(nextHopKinds.awg_service || 0)],
+      ['WG Next Hops', String(nextHopKinds.wg_service || 0)],
+      ['Link Next Hops', String(nextHopKinds.link || 0)]
+    ]);
+  }
 }
 
 function renderXrayServices(){
