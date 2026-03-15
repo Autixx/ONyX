@@ -1828,14 +1828,6 @@ class ONyXClient(QMainWindow):
 
         self._stack = QStackedWidget()
         root_lay.addWidget(self._stack)
-        self._stack_effect = QGraphicsOpacityEffect(self._stack)
-        self._stack_effect.setOpacity(1.0)
-        self._stack.setGraphicsEffect(self._stack_effect)
-        self._stack_fade = QPropertyAnimation(self._stack_effect, b"opacity", self)
-        self._stack_fade.setDuration(180)
-        self._stack_fade.setStartValue(0.0)
-        self._stack_fade.setEndValue(1.0)
-        self._stack_fade.setEasingCurve(QEasingCurve.Type.InQuad)
 
         self._ls = LoginScreen(self.st)
         self._rs = RegisterScreen(self.st)
@@ -1932,17 +1924,18 @@ class ONyXClient(QMainWindow):
         super().closeEvent(event)
 
     def _go(self,idx):
-        self._stack_fade.stop()
-        self._stack_effect.setOpacity(0.0)
         self._stack.setCurrentIndex(idx)
         current = self._stack.currentWidget()
         if current is not None:
+            current.show()
             current.updateGeometry()
             current.update()
+        self._stack.setUpdatesEnabled(False)
         self._stack.updateGeometry()
+        self._stack.adjustSize()
+        self._stack.setUpdatesEnabled(True)
         self._stack.update()
         self._stack.repaint()
-        self._stack_fade.start()
 
     def _on_login(self):
         self._ds.refresh(); self._go(2); self._update_tray_state()
