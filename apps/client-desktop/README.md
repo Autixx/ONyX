@@ -29,6 +29,7 @@ Not implemented yet:
 - `onyx_client.py` - main PyQt6 client
 - `onyx_splash.py` - first-run splash screen
 - `onyx_daemon_service.py` - Windows privileged daemon skeleton
+- `onyx_runtime_selftest.py` - runtime readiness self-test
 - `runtime/` - named-pipe, service, and transport adapter skeleton
 - `bin/` - reserved bundled-binary layout for future runtime
 - `assets/icons/onyx.ico` - Windows application icon
@@ -73,6 +74,18 @@ Start hidden in the tray:
 
 ```bash
 python onyx_client.py --background
+```
+
+Run runtime self-test:
+
+```bash
+python onyx_runtime_selftest.py
+```
+
+Skip daemon spawn and only validate files/dependencies:
+
+```bash
+python onyx_runtime_selftest.py --skip-daemon
 ```
 
 ## Windows Background Startup
