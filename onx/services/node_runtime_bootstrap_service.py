@@ -17,6 +17,7 @@ from onx.services.secret_service import SecretService
 
 
 RUNTIME_CAPABILITY_NAME = "onx_link_runtime"
+TRANSIT_RUNTIME_CAPABILITY_NAME = "onx_transit_runtime"
 
 
 class NodeRuntimeBootstrapService:
@@ -69,9 +70,14 @@ class NodeRuntimeBootstrapService:
         xray_install = self._runtime.ensure_xray_stack(node, management_secret)
 
         if progress_callback:
+            progress_callback("installing transit prerequisites")
+        transit_install = self._runtime.ensure_transit_stack(node, management_secret)
+
+        if progress_callback:
             progress_callback("installing runtime assets")
         self._runtime.ensure_runtime(node, management_secret)
         self._runtime.ensure_xray_runtime(node, management_secret)
+        self._runtime.ensure_transit_runtime(node, management_secret)
 
         if progress_callback:
             progress_callback("installing node agent")
@@ -110,6 +116,26 @@ class NodeRuntimeBootstrapService:
         capability.checked_at = datetime.now(timezone.utc)
         db.add(capability)
 
+        transit_capability = db.scalar(
+            select(NodeCapability).where(
+                NodeCapability.node_id == node.id,
+                NodeCapability.capability_name == TRANSIT_RUNTIME_CAPABILITY_NAME,
+            )
+        )
+        if transit_capability is None:
+            transit_capability = NodeCapability(
+                node_id=node.id,
+                capability_name=TRANSIT_RUNTIME_CAPABILITY_NAME,
+            )
+        transit_capability.supported = True
+        transit_capability.details_json = {
+            "runner_path": self._settings.onx_transit_runner_path,
+            "unit_path": self._settings.onx_transit_unit_path,
+            "conf_dir": self._settings.onx_transit_conf_dir,
+        }
+        transit_capability.checked_at = datetime.now(timezone.utc)
+        db.add(transit_capability)
+
         agent_capability = db.scalar(
             select(NodeCapability).where(
                 NodeCapability.node_id == node.id,
@@ -134,6 +160,7 @@ class NodeRuntimeBootstrapService:
         db.add(agent_capability)
         db.commit()
         db.refresh(capability)
+        db.refresh(transit_capability)
         db.refresh(agent_capability)
         return {
             "node_id": node.id,
@@ -142,6 +169,7 @@ class NodeRuntimeBootstrapService:
             "wg_install": wg_install,
             "openvpn_cloak_install": openvpn_cloak_install,
             "xray_install": xray_install,
+            "transit_install": transit_install,
             "agent_install": agent_install,
             "capabilities": discovery_result["capabilities"],
             "runtime_capability": {
@@ -149,6 +177,12 @@ class NodeRuntimeBootstrapService:
                 "supported": capability.supported,
                 "details": capability.details_json,
                 "checked_at": capability.checked_at.isoformat(),
+            },
+            "transit_runtime_capability": {
+                "name": transit_capability.capability_name,
+                "supported": transit_capability.supported,
+                "details": transit_capability.details_json,
+                "checked_at": transit_capability.checked_at.isoformat(),
             },
             "node_agent_capability": {
                 "name": agent_capability.capability_name,

@@ -35,6 +35,7 @@ from onx.api.routers.realtime import router as realtime_router
 from onx.api.routers.route_policies import router as route_policies_router
 from onx.api.routers.subscriptions import router as subscriptions_router
 from onx.api.routers.topology import router as topology_router
+from onx.api.routers.transit_policies import router as transit_policies_router
 from onx.api.routers.transport_packages import router as transport_packages_router
 from onx.api.routers.wg_services import router as wg_services_router
 from onx.api.routers.users import router as users_router
@@ -127,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(links_router, prefix=settings.api_prefix)
     app.include_router(balancers_router, prefix=settings.api_prefix)
     app.include_router(route_policies_router, prefix=settings.api_prefix)
+    app.include_router(transit_policies_router, prefix=settings.api_prefix)
     app.include_router(dns_policies_router, prefix=settings.api_prefix)
     app.include_router(geo_policies_router, prefix=settings.api_prefix)
     app.include_router(probes_router, prefix=settings.api_prefix)

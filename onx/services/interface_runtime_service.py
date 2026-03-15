@@ -153,6 +153,186 @@ CLOAK_UNIT_TEMPLATE = dedent(
     """
 )
 
+TRANSIT_RUNNER_SCRIPT = dedent(
+    """\
+    #!/usr/bin/env python3
+    import json
+    import shutil
+    import subprocess
+    import sys
+
+    CONF_DIR = "__ONX_TRANSIT_CONF_DIR__"
+
+    def fail(message: str) -> None:
+        print(message, file=sys.stderr)
+        raise SystemExit(1)
+
+    def ensure_binary(name: str) -> str:
+        path = shutil.which(name)
+        if not path:
+            fail(f"missing runtime binary: {name}")
+        return path
+
+    def run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(cmd, check=False, text=True, capture_output=True)
+        if check and result.returncode != 0:
+            stderr = (result.stderr or result.stdout or "").strip()
+            fail(stderr or f"command failed: {' '.join(cmd)}")
+        return result
+
+    def iptables(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        return run([IPTABLES_BIN, "-w", "-t", "mangle", *args], check=check)
+
+    def rule_exists(chain: str, rule: list[str]) -> bool:
+        return iptables("-C", chain, *rule, check=False).returncode == 0
+
+    def ensure_rule(chain: str, rule: list[str]) -> None:
+        if not rule_exists(chain, rule):
+            iptables("-A", chain, *rule)
+
+    def ensure_prerouting_jump(interface_name: str, chain_name: str) -> None:
+        rule = ["-i", interface_name, "-j", chain_name]
+        if not rule_exists("PREROUTING", rule):
+            iptables("-A", "PREROUTING", *rule)
+
+    def remove_prerouting_jump(interface_name: str, chain_name: str) -> None:
+        rule = ["-i", interface_name, "-j", chain_name]
+        while rule_exists("PREROUTING", rule):
+            iptables("-D", "PREROUTING", *rule, check=False)
+
+    def clear_chain(chain_name: str) -> None:
+        if iptables("-S", chain_name, check=False).returncode != 0:
+            iptables("-N", chain_name, check=False)
+            return
+        iptables("-F", chain_name, check=False)
+
+    def drop_chain(chain_name: str) -> None:
+        iptables("-F", chain_name, check=False)
+        iptables("-X", chain_name, check=False)
+
+    def remove_ip_rule(mark: int, table_id: int, priority: int) -> None:
+        while True:
+            result = run(
+                [IP_BIN, "rule", "del", "fwmark", str(mark), "table", str(table_id), "priority", str(priority)],
+                check=False,
+            )
+            if result.returncode != 0:
+                break
+
+    def apply(config: dict) -> None:
+        chain_name = config["chain_name"]
+        ingress_interface = config["ingress_interface"]
+        transparent_port = int(config["transparent_port"])
+        firewall_mark = int(config["firewall_mark"])
+        route_table_id = int(config["route_table_id"])
+        rule_priority = int(config["rule_priority"])
+        capture_protocols = list(config.get("capture_protocols_json") or [])
+        capture_cidrs = list(config.get("capture_cidrs_json") or [])
+        excluded_cidrs = list(config.get("excluded_cidrs_json") or [])
+        bypass_ipv4 = list(config.get("management_bypass_ipv4_json") or [])
+        bypass_tcp_ports = [int(item) for item in (config.get("management_bypass_tcp_ports_json") or [])]
+
+        clear_chain(chain_name)
+        ensure_prerouting_jump(ingress_interface, chain_name)
+        ensure_rule(chain_name, ["-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "RETURN"])
+        for port in bypass_tcp_ports:
+            ensure_rule(
+                chain_name,
+                ["-m", "addrtype", "--dst-type", "LOCAL", "-p", "tcp", "--dport", str(port), "-j", "RETURN"],
+            )
+        for cidr in bypass_ipv4:
+            ensure_rule(chain_name, ["-d", cidr, "-j", "RETURN"])
+        for cidr in excluded_cidrs:
+            ensure_rule(chain_name, ["-d", cidr, "-j", "RETURN"])
+        for proto in capture_protocols:
+            for cidr in capture_cidrs:
+                ensure_rule(
+                    chain_name,
+                    [
+                        "-p",
+                        proto,
+                        "-d",
+                        cidr,
+                        "-j",
+                        "TPROXY",
+                        "--on-port",
+                        str(transparent_port),
+                        "--tproxy-mark",
+                        f"{firewall_mark}/{firewall_mark}",
+                    ],
+                )
+        ensure_rule(chain_name, ["-j", "RETURN"])
+        remove_ip_rule(firewall_mark, route_table_id, rule_priority)
+        run([IP_BIN, "rule", "add", "fwmark", str(firewall_mark), "table", str(route_table_id), "priority", str(rule_priority)])
+        run([IP_BIN, "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", str(route_table_id)])
+
+    def cleanup(config: dict) -> None:
+        chain_name = config["chain_name"]
+        ingress_interface = config["ingress_interface"]
+        firewall_mark = int(config["firewall_mark"])
+        route_table_id = int(config["route_table_id"])
+        rule_priority = int(config["rule_priority"])
+        remove_prerouting_jump(ingress_interface, chain_name)
+        drop_chain(chain_name)
+        remove_ip_rule(firewall_mark, route_table_id, rule_priority)
+        run([IP_BIN, "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", str(route_table_id)], check=False)
+
+    def status(config: dict) -> None:
+        chain_name = config["chain_name"]
+        if iptables("-S", chain_name, check=False).returncode != 0:
+            fail(f"transit chain is absent: {chain_name}")
+        print(json.dumps({"status": "present", "chain_name": chain_name}))
+
+    if len(sys.argv) != 3:
+        fail("usage: onx-transit-runner <up|down|reload|status> <policy-id>")
+
+    IPTABLES_BIN = ensure_binary("iptables")
+    IP_BIN = ensure_binary("ip")
+    action = sys.argv[1]
+    policy_id = sys.argv[2]
+    conf_path = f"{CONF_DIR}/{policy_id}.json"
+    try:
+        with open(conf_path, "r", encoding="utf-8") as handle:
+            config = json.load(handle)
+    except FileNotFoundError:
+        fail(f"missing transit config: {conf_path}")
+
+    if action == "up":
+        apply(config)
+    elif action == "down":
+        cleanup(config)
+    elif action == "reload":
+        cleanup(config)
+        apply(config)
+    elif action == "status":
+        status(config)
+    else:
+        fail(f"unsupported action: {action}")
+    """
+)
+
+TRANSIT_UNIT_TEMPLATE = dedent(
+    """\
+    [Unit]
+    Description=ONX managed transit policy %i
+    After=network-online.target
+    Wants=network-online.target
+    ConditionPathExists=__ONX_TRANSIT_CONF_DIR__/%i.json
+
+    [Service]
+    Type=oneshot
+    RemainAfterExit=yes
+    ExecStart=__ONX_TRANSIT_RUNNER_PATH__ up %i
+    ExecStop=__ONX_TRANSIT_RUNNER_PATH__ down %i
+    ExecReload=__ONX_TRANSIT_RUNNER_PATH__ reload %i
+    TimeoutStartSec=60
+    TimeoutStopSec=30
+
+    [Install]
+    WantedBy=multi-user.target
+    """
+)
+
 NODE_AGENT_SCRIPT = dedent(
     """\
     #!/usr/bin/env bash
@@ -599,11 +779,52 @@ XRAY_INSTALL_SCRIPT = dedent(
     """
 )
 
+TRANSIT_INSTALL_SCRIPT = dedent(
+    """\
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    export PATH="/usr/local/bin:/usr/bin:/bin:${PATH}"
+    SUDO=""
+
+    fail() {
+      echo "$*" >&2
+      exit 1
+    }
+
+    setup_privilege() {
+      if [[ "$(id -u)" -eq 0 ]]; then
+        return
+      fi
+      if ! command -v sudo >/dev/null 2>&1; then
+        fail "[transit] Remote package install requires root or passwordless sudo."
+      fi
+      SUDO="sudo"
+    }
+
+    install_transit_stack() {
+      ${SUDO} apt-get update
+      ${SUDO} apt-get install -y iptables iproute2 python3
+      command -v iptables >/dev/null 2>&1 || fail "[transit] Install failed: iptables not found."
+      command -v ip >/dev/null 2>&1 || fail "[transit] Install failed: iproute2 not found."
+      command -v python3 >/dev/null 2>&1 || fail "[transit] Install failed: python3 not found."
+      command -v systemctl >/dev/null 2>&1 || fail "[transit] Install failed: systemctl not found."
+    }
+
+    setup_privilege
+    install_transit_stack
+    """
+)
+
 
 class InterfaceRuntimeService:
     def __init__(self, executor: SSHExecutor) -> None:
         self._executor = executor
         self._settings = get_settings()
+
+    @property
+    def settings(self):
+        return self._settings
 
     def ensure_runtime(self, node: Node, management_secret: str) -> None:
         runner_content = RUNNER_SCRIPT.replace("__ONX_CONF_DIR__", self._settings.onx_conf_dir)
@@ -635,6 +856,20 @@ class InterfaceRuntimeService:
         code, _, stderr = self._executor.run(node, management_secret, "sh -lc 'systemctl daemon-reload'")
         if code != 0:
             raise RuntimeError(stderr or f"Failed to reload systemd for OpenVPN+Cloak runtime on node {node.name}")
+
+    def ensure_transit_runtime(self, node: Node, management_secret: str) -> None:
+        runner_content = TRANSIT_RUNNER_SCRIPT.replace("__ONX_TRANSIT_CONF_DIR__", self._settings.onx_transit_conf_dir)
+        unit_content = (
+            TRANSIT_UNIT_TEMPLATE
+            .replace("__ONX_TRANSIT_CONF_DIR__", self._settings.onx_transit_conf_dir)
+            .replace("__ONX_TRANSIT_RUNNER_PATH__", self._settings.onx_transit_runner_path)
+        )
+        self._executor.write_file(node, management_secret, self._settings.onx_transit_runner_path, runner_content)
+        self._executor.run(node, management_secret, f"sh -lc 'chmod 755 \"{self._settings.onx_transit_runner_path}\"'")
+        self._executor.write_file(node, management_secret, self._settings.onx_transit_unit_path, unit_content)
+        code, _, stderr = self._executor.run(node, management_secret, "sh -lc 'systemctl daemon-reload'")
+        if code != 0:
+            raise RuntimeError(stderr or f"Failed to reload systemd for transit runtime on node {node.name}")
 
     def ensure_node_agent(
         self,
@@ -761,6 +996,21 @@ class InterfaceRuntimeService:
             "stdout": stdout,
         }
 
+    def ensure_transit_stack(self, node: Node, management_secret: str) -> dict:
+        remote_script_path = "/tmp/onx-install-transit-stack.sh"
+        self._executor.write_file(node, management_secret, remote_script_path, TRANSIT_INSTALL_SCRIPT)
+        code, stdout, stderr = self._executor.run(
+            node,
+            management_secret,
+            f"sh -lc 'chmod 700 \"{remote_script_path}\" && \"{remote_script_path}\"; rm -f \"{remote_script_path}\"'",
+        )
+        if code != 0:
+            raise RuntimeError(stderr or stdout or f"Failed to install transit stack on node {node.name}")
+        return {
+            "installed": True,
+            "stdout": stdout,
+        }
+
     def restart_interface(self, node: Node, management_secret: str, interface_name: str) -> None:
         service_name = f"onx-link@{interface_name}.service"
         command = (
@@ -820,4 +1070,23 @@ class InterfaceRuntimeService:
             node,
             management_secret,
             f"sh -lc 'systemctl stop {cloak_unit} >/dev/null 2>&1 || true; systemctl stop {openvpn_unit} >/dev/null 2>&1 || true'",
+        )
+
+    def restart_transit_policy(self, node: Node, management_secret: str, policy_id: str) -> None:
+        unit_name = f"onx-transit@{policy_id}.service"
+        command = (
+            "sh -lc "
+            f"'systemctl enable {unit_name} >/dev/null 2>&1 || true; "
+            f"systemctl restart {unit_name}'"
+        )
+        code, _, stderr = self._executor.run(node, management_secret, command)
+        if code != 0:
+            raise RuntimeError(stderr or f"Failed to restart {unit_name} on node {node.name}")
+
+    def stop_transit_policy(self, node: Node, management_secret: str, policy_id: str) -> None:
+        unit_name = f"onx-transit@{policy_id}.service"
+        self._executor.run(
+            node,
+            management_secret,
+            f"sh -lc 'systemctl stop {unit_name} >/dev/null 2>&1 || true'",
         )
