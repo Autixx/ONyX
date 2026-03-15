@@ -52,7 +52,6 @@ from PyQt6.QtWidgets import (
 
 APP_DIR     = Path.home() / ".onyx-client"
 STATE_PATH  = APP_DIR / "state.json"
-SPLASH_MARK = APP_DIR / "splash_seen"
 RUNTIME_DIR = APP_DIR / "runtime"
 TOOLS_DIR   = APP_DIR / "bin"
 APP_ROOT    = Path(__file__).resolve().parent
@@ -2003,9 +2002,7 @@ if __name__=="__main__":
             _main_win.show()
         _fade.start()
         _main_win._fade = _fade
-        SPLASH_MARK.touch(exist_ok=True)
-
-    show_splash = (not args.background) and (not SPLASH_MARK.exists())
+    show_splash = not args.background
 
     if show_splash:
         splash = SplashScreen()
