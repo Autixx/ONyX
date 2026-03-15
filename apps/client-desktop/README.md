@@ -15,6 +15,7 @@ Current scope:
 - first-run splash screen
 - system tray lifecycle
 - interactive background startup task for Windows user sessions
+- Windows runtime-service skeleton for future privileged daemon split
 
 Not implemented yet:
 
@@ -27,6 +28,9 @@ Not implemented yet:
 
 - `onyx_client.py` - main PyQt6 client
 - `onyx_splash.py` - first-run splash screen
+- `onyx_daemon_service.py` - Windows privileged daemon skeleton
+- `runtime/` - named-pipe, service, and transport adapter skeleton
+- `bin/` - reserved bundled-binary layout for future runtime
 - `assets/icons/onyx.ico` - Windows application icon
 - `assets/icons/onyx_*.png` - multi-resolution icon set for window/tray/app usage
 
@@ -36,17 +40,24 @@ Not implemented yet:
 python -m pip install -r requirements.txt
 ```
 
-For real tunnel runtime on the client machine you also need local transport tools in `PATH`:
+For the Windows daemon skeleton you will also need:
 
-- `awg.exe` and `awg-quick.exe` for AWG
-- `wg.exe` and `wg-quick.exe` for WireGuard
+```bash
+python -m pip install pywin32
+```
 
-The client does not install those tools for you yet.
+The current GUI prototype still supports the older direct-runtime path.
 
-Lookup order is:
+The target Windows architecture is different:
 
-1. `~/.onyx-client/bin`
-2. system `PATH`
+- bundled binaries under `apps/client-desktop/bin/`
+- privileged runtime operations in `onyx_daemon_service.py`
+- GUI-to-daemon communication over a local named pipe
+
+The bundled `bin/` layout is documented in:
+
+- `apps/client-desktop/bin/README.md`
+- `docs/architecture/ONX_WINDOWS_CLIENT_RUNTIME_ARCHITECTURE.md`
 
 ## Run
 
@@ -95,6 +106,29 @@ Alias:
 python onyx_client.py --uninstall-service
 ```
 
+## Windows Runtime Daemon Skeleton
+
+Run the privileged daemon skeleton in console mode:
+
+```bash
+python onyx_daemon_service.py --console
+```
+
+Install / remove the Windows service skeleton:
+
+```bash
+python onyx_daemon_service.py install
+python onyx_daemon_service.py remove
+```
+
+This skeleton is intentionally separate from the current GUI runtime path.
+
+It exists to support the next migration step:
+
+- move privileged transport actions out of the GUI
+- keep the GUI as a normal-user process
+- use a local named pipe for IPC
+
 ## Tray Behavior
 
 - closing the window hides the client to tray
@@ -108,6 +142,7 @@ python onyx_client.py --uninstall-service
 - the client chooses the first working encrypted runtime profile from the issued bundle
 - transport type stays hidden from the normal UI
 - if the bundle contains no usable AWG/WG profile, connect will fail with a runtime error instead of faking success
+- the current direct-runtime path is transitional and will be replaced by the privileged daemon path defined in the Windows runtime architecture document
 - `Settings` now shows:
   - `AWG READY / WG READY / NO RUNTIME`
   - resolved tool paths

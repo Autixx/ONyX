@@ -1,3 +1,4 @@
 PyQt6==6.9.1
 httpx==0.28.1
 cryptography==46.0.1
+pywin32; platform_system=="Windows"
