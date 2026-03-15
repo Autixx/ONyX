@@ -589,6 +589,19 @@ td.m{color:var(--t0);}
             </div>
           </div>
         </div>
+
+        <div class="ph" style="margin-top:18px">
+          <span class="ptitle">Transport Packages</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="loadTransportPackages()">REFRESH</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>User</th><th>Enabled</th><th>Priority</th><th>Preferred Services</th><th>Last Reconciled</th><th>Actions</th></tr></thead>
+            <tbody id="tptb"></tbody>
+          </table>
+        </div>
       </div>
 
 
@@ -785,6 +798,7 @@ var PLANS = [];
 var SUBSCRIPTIONS = [];
 var REFERRAL_CODES = [];
 var DEVICES = [];
+var TRANSPORT_PACKAGES = [];
 var JOB_EVENTS = {};
 var GRAPH_DATA = {nodes:[], edges:[], generated_at:null};
 var TOPO_HITBOXES = {nodes:[], edges:[]};
@@ -801,6 +815,7 @@ function xrayServiceById(id){ return XRAY_SERVICES.find(function(s){ return s.id
 function awgServiceById(id){ return AWG_SERVICES.find(function(s){ return s.id===id; }) || null; }
 function wgServiceById(id){ return WG_SERVICES.find(function(s){ return s.id===id; }) || null; }
 function openvpnCloakServiceById(id){ return OVPN_CLOAK_SERVICES.find(function(s){ return s.id===id; }) || null; }
+function transportPackageById(id){ return TRANSPORT_PACKAGES.find(function(p){ return p.id===id; }) || null; }
 function userById(id){ return USERS.find(function(u){ return u.id===id; }) || null; }
 function planById(id){ return PLANS.find(function(p){ return p.id===id; }) || null; }
 function subscriptionById(id){ return SUBSCRIPTIONS.find(function(s){ return s.id===id; }) || null; }
@@ -1533,11 +1548,12 @@ function connectWS(){
       if(type.indexOf('wg_service.') === 0){ refreshWgServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
       if(type.indexOf('xray_service.') === 0){ refreshXrayServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
       if(type.indexOf('openvpn_cloak_service.') === 0){ refreshOpenvpnCloakServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
-      if(type.indexOf('user.') === 0){ loadUsers().catch(function(){}); }
+      if(type.indexOf('user.') === 0){ loadUsers().catch(function(){}); loadTransportPackages().catch(function(){}); }
       if(type.indexOf('subscription.') === 0){ loadSubscriptions().catch(function(){}); }
       if(type.indexOf('plan.') === 0){ loadPlans().catch(function(){}); }
       if(type.indexOf('referral_code.') === 0){ loadReferralCodes().catch(function(){}); }
       if(type.indexOf('device.') === 0){ loadDevices().catch(function(){}); }
+      if(type.indexOf('transport_package.') === 0){ loadTransportPackages().catch(function(){}); }
       if(type === 'audit.event'){ refreshAudit().catch(function(){}); }
     }catch(_){ }
   };
@@ -4460,7 +4476,8 @@ async function refreshIdentityData(){
     loadPlans(),
     loadSubscriptions(),
     loadReferralCodes(),
-    loadDevices()
+    loadDevices(),
+    loadTransportPackages()
   ]);
 }
 
@@ -4487,6 +4504,11 @@ async function loadReferralCodes(){
 async function loadDevices(){
   DEVICES = await apiFetch(API_PREFIX + '/devices');
   renderDevices();
+}
+
+async function loadTransportPackages(){
+  TRANSPORT_PACKAGES = await apiFetch(API_PREFIX + '/transport-packages');
+  renderTransportPackages();
 }
 
 function updateRegBadge(){
@@ -4550,6 +4572,7 @@ function renderUsers(){
       +'<td>'+esc(String(u.requested_device_count || '-'))+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="showUser(\''+esc(u.id)+'\')">VIEW</button>'
+        +'<button class="btn sm" onclick="openTransportPackageModal(\''+esc(u.id)+'\')">PACKAGE</button>'
         +'<button class="btn sm" onclick="openUserModal(\''+esc(u.id)+'\')">EDIT</button>'
         +'<button class="btn sm red" onclick="deleteUserFlow(\''+esc(u.id)+'\')">DEL</button>'
       +'</td>'
@@ -4643,6 +4666,61 @@ function renderDevices(){
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="showDevice(\''+esc(d.id)+'\')">VIEW</button>'
         +(d.status !== 'revoked' ? '<button class="btn sm red" onclick="revokeDeviceFlow(\''+esc(d.id)+'\')">REVOKE</button>' : '')
+      +'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+function transportServiceLabel(kind, id){
+  if(!id) return '-';
+  if(kind === 'xray'){
+    var x = xrayServiceById(id);
+    return x ? x.name : id;
+  }
+  if(kind === 'awg'){
+    var a = awgServiceById(id);
+    return a ? a.name : id;
+  }
+  if(kind === 'wg'){
+    var w = wgServiceById(id);
+    return w ? w.name : id;
+  }
+  if(kind === 'openvpn_cloak'){
+    var o = openvpnCloakServiceById(id);
+    return o ? o.name : id;
+  }
+  return id;
+}
+
+function renderTransportPackages(){
+  var tb = document.getElementById('tptb');
+  if(!tb) return;
+  if(!TRANSPORT_PACKAGES.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="6">No transport packages.</td></tr>';
+    return;
+  }
+  tb.innerHTML = TRANSPORT_PACKAGES.map(function(pkg){
+    var enabled = [];
+    if(pkg.enable_xray) enabled.push('XRAY');
+    if(pkg.enable_awg) enabled.push('AWG');
+    if(pkg.enable_wg) enabled.push('WG');
+    if(pkg.enable_openvpn_cloak) enabled.push('OVPN');
+    var preferred = [
+      'XRAY: ' + esc(transportServiceLabel('xray', pkg.preferred_xray_service_id)),
+      'AWG: ' + esc(transportServiceLabel('awg', pkg.preferred_awg_service_id)),
+      'WG: ' + esc(transportServiceLabel('wg', pkg.preferred_wg_service_id)),
+      'OVPN: ' + esc(transportServiceLabel('openvpn_cloak', pkg.preferred_openvpn_cloak_service_id))
+    ].join('<br>');
+    return '<tr>'
+      +'<td class="m">'+esc(userNameById(pkg.user_id))+'</td>'
+      +'<td>'+esc(enabled.join(', ') || '-')+'</td>'
+      +'<td class="m">'+esc((pkg.priority_order_json || []).join(' > '))+'</td>'
+      +'<td style="font-size:12px;color:var(--t1);">'+preferred+'</td>'
+      +'<td>'+esc(pkg.last_reconciled_at ? new Date(pkg.last_reconciled_at).toLocaleString() : '-')+'</td>'
+      +'<td style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="showTransportPackage(\''+esc(pkg.id)+'\')">VIEW</button>'
+        +'<button class="btn sm" onclick="openTransportPackageModal(\''+esc(pkg.user_id)+'\')">EDIT</button>'
+        +'<button class="btn sm pri" onclick="reconcileTransportPackageFlow(\''+esc(pkg.user_id)+'\')">RECONCILE</button>'
       +'</td>'
       +'</tr>';
   }).join('');
@@ -4751,6 +4829,109 @@ function showDevice(id){
   ]));
 }
 
+function showTransportPackage(id){
+  var pkg = transportPackageById(id); if(!pkg) return;
+  var summary = pkg.last_reconcile_summary_json || {};
+  openDP('Transport Package — ' + userNameById(pkg.user_id), rows([
+    ['ID', pkg.id],
+    ['User', userNameById(pkg.user_id)],
+    ['Enabled', [
+      pkg.enable_xray ? 'xray' : null,
+      pkg.enable_awg ? 'awg' : null,
+      pkg.enable_wg ? 'wg' : null,
+      pkg.enable_openvpn_cloak ? 'openvpn_cloak' : null
+    ].filter(Boolean).join(', ') || '-'],
+    ['Priority', (pkg.priority_order_json || []).join(' > ') || '-'],
+    ['Preferred XRAY', transportServiceLabel('xray', pkg.preferred_xray_service_id)],
+    ['Preferred AWG', transportServiceLabel('awg', pkg.preferred_awg_service_id)],
+    ['Preferred WG', transportServiceLabel('wg', pkg.preferred_wg_service_id)],
+    ['Preferred OVPN', transportServiceLabel('openvpn_cloak', pkg.preferred_openvpn_cloak_service_id)],
+    ['Last Reconciled', pkg.last_reconciled_at ? new Date(pkg.last_reconciled_at).toLocaleString() : '-'],
+    ['Last Summary', Object.keys(summary).length ? JSON.stringify(summary) : '-']
+  ])
+  +'<div class="dp-actions">'
+    +'<button class="btn" onclick="openTransportPackageModal(\''+esc(pkg.user_id)+'\')">EDIT</button>'
+    +'<button class="btn pri" onclick="reconcileTransportPackageFlow(\''+esc(pkg.user_id)+'\')">RECONCILE</button>'
+  +'</div>');
+}
+
+async function openTransportPackageModal(userId){
+  var user = userById(userId); if(!user){ alert('User not found.'); return; }
+  try{
+    var pkg = await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId));
+    var xrayOptions = [{value:'', label:'-'}].concat(XRAY_SERVICES.map(function(s){ return {value:s.id, label:s.name}; }));
+    var awgOptions = [{value:'', label:'-'}].concat(AWG_SERVICES.map(function(s){ return {value:s.id, label:s.name}; }));
+    var wgOptions = [{value:'', label:'-'}].concat(WG_SERVICES.map(function(s){ return {value:s.id, label:s.name}; }));
+    var ovpnOptions = [{value:'', label:'-'}].concat(OVPN_CLOAK_SERVICES.map(function(s){ return {value:s.id, label:s.name}; }));
+    var body = '<form id="transportPackageForm"><div class="modal-grid">'
+      +formInput('User', 'user_label', user.username, {readonly:true})
+      +formTextarea('Priority order', 'priority_order', (pkg.priority_order_json || []).join(', '), {help:'Comma-separated transport order: xray, awg, wg, openvpn_cloak'})
+      +formCheckbox('Enable XRAY', 'enable_xray', !!pkg.enable_xray, {caption:'Include xray profiles'})
+      +formCheckbox('Enable AWG', 'enable_awg', !!pkg.enable_awg, {caption:'Include AWG profiles'})
+      +formCheckbox('Enable WG', 'enable_wg', !!pkg.enable_wg, {caption:'Include WG profiles'})
+      +formCheckbox('Enable OpenVPN+Cloak', 'enable_openvpn_cloak', !!pkg.enable_openvpn_cloak, {caption:'Include OpenVPN+Cloak profiles'})
+      +formSelect('Preferred XRAY Service', 'preferred_xray_service_id', pkg.preferred_xray_service_id || '', xrayOptions)
+      +formSelect('Preferred AWG Service', 'preferred_awg_service_id', pkg.preferred_awg_service_id || '', awgOptions)
+      +formSelect('Preferred WG Service', 'preferred_wg_service_id', pkg.preferred_wg_service_id || '', wgOptions)
+      +formSelect('Preferred OVPN Service', 'preferred_openvpn_cloak_service_id', pkg.preferred_openvpn_cloak_service_id || '', ovpnOptions)
+      +'</div></form>';
+    openModal('Edit Transport Package — ' + user.username, body, {
+      buttons:[
+        {label:'Cancel', className:'btn', onClick:closeModal},
+        {label:'Save', className:'btn', onClick:function(){ document.getElementById('transportPackageForm').requestSubmit(); }},
+        {label:'Save + Reconcile', className:'btn pri', onClick:function(){ document.getElementById('transportPackageForm').dataset.reconcile = '1'; document.getElementById('transportPackageForm').requestSubmit(); }}
+      ]
+    });
+    bindModalForm('transportPackageForm', function(fd){ saveTransportPackageForm(userId, fd); });
+  }catch(err){
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function saveTransportPackageForm(userId, fd){
+  var form = document.getElementById('transportPackageForm');
+  var doReconcile = !!(form && form.dataset.reconcile === '1');
+  if(form){ form.dataset.reconcile = ''; }
+  try{
+    var priorityOrder = parseCsvList(fd.get('priority_order'));
+    if(!priorityOrder.length){ priorityOrder = ['xray', 'awg', 'wg', 'openvpn_cloak']; }
+    var body = {
+      preferred_xray_service_id: String(fd.get('preferred_xray_service_id') || '').trim() || null,
+      preferred_awg_service_id: String(fd.get('preferred_awg_service_id') || '').trim() || null,
+      preferred_wg_service_id: String(fd.get('preferred_wg_service_id') || '').trim() || null,
+      preferred_openvpn_cloak_service_id: String(fd.get('preferred_openvpn_cloak_service_id') || '').trim() || null,
+      enable_xray: checked(fd, 'enable_xray'),
+      enable_awg: checked(fd, 'enable_awg'),
+      enable_wg: checked(fd, 'enable_wg'),
+      enable_openvpn_cloak: checked(fd, 'enable_openvpn_cloak'),
+      priority_order: priorityOrder
+    };
+    await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId), { method:'PUT', body:body });
+    if(doReconcile){
+      await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId) + '/reconcile', { method:'POST', body:{} });
+      pushEv('transport_package.reconciled', 'transport package reconciled for ' + userNameById(userId));
+    }else{
+      pushEv('transport_package.updated', 'transport package updated for ' + userNameById(userId));
+    }
+    closeModal();
+    await loadTransportPackages();
+  }catch(err){
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function reconcileTransportPackageFlow(userId){
+  if(!confirm('Reconcile transport package for ' + userNameById(userId) + '?')) return;
+  try{
+    await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId) + '/reconcile', { method:'POST', body:{} });
+    pushEv('transport_package.reconciled', 'transport package reconciled for ' + userNameById(userId));
+    await Promise.all([loadTransportPackages(), loadPeers()]);
+  }catch(err){
+    pushEv('transport_package.error', 'reconcile failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
 function openUserModal(userId){
   var user = userId ? userById(userId) : null;
   var body = '<form id="userForm"><div class="modal-grid">'
@@ -4794,7 +4975,7 @@ async function saveUserForm(fd, userId){
       await apiFetch(API_PREFIX + '/users', { method:'POST', body:body });
     }
     closeModal();
-    await loadUsers();
+    await Promise.all([loadUsers(), loadTransportPackages()]);
   }catch(err){
     alert(err && err.message ? err.message : err);
   }
@@ -4804,7 +4985,7 @@ async function deleteUserFlow(userId){
   var user = userById(userId);
   if(!confirm('Delete user ' + (user ? user.username : userId) + '?')) return;
   await apiFetch(API_PREFIX + '/users/' + encodeURIComponent(userId), { method:'DELETE' });
-  await Promise.all([loadUsers(), loadSubscriptions(), loadDevices()]);
+  await Promise.all([loadUsers(), loadSubscriptions(), loadDevices(), loadTransportPackages()]);
 }
 
 function openPlanModal(planId){
