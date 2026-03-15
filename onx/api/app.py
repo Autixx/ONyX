@@ -6,6 +6,7 @@ from fastapi import Request
 
 from onx.api.routers.admin_web_auth import router as admin_web_auth_router
 from onx.api.routers.agent_metrics import router as agent_metrics_router
+from onx.api.routers.awg_services import router as awg_services_router
 from onx.api.routers.access_rules import router as access_rules_router
 from onx.api.routers.audit_logs import router as audit_logs_router
 from onx.api.routers.balancers import router as balancers_router
@@ -116,6 +117,7 @@ def create_app() -> FastAPI:
     app.include_router(referral_codes_router, prefix=settings.api_prefix)
     app.include_router(peer_traffic_router, prefix=settings.api_prefix)
     app.include_router(peers_router, prefix=settings.api_prefix)
+    app.include_router(awg_services_router, prefix=settings.api_prefix)
     app.include_router(xray_services_router, prefix=settings.api_prefix)
     app.include_router(registrations_router, prefix=settings.api_prefix)
     app.include_router(links_router, prefix=settings.api_prefix)

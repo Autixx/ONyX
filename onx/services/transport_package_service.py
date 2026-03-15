@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from onx.db.models.awg_service import AwgService, AwgServiceState
 from onx.db.models.node import Node, NodeStatus
 from onx.db.models.peer import Peer
 from onx.db.models.subscription import Subscription, SubscriptionStatus
@@ -12,6 +13,7 @@ from onx.db.models.transport_package import TransportPackage
 from onx.db.models.user import User, UserStatus
 from onx.db.models.xray_service import XrayService, XrayServiceState
 from onx.schemas.transport_packages import DEFAULT_TRANSPORT_PRIORITY, SUPPORTED_TRANSPORT_TYPES
+from onx.services.awg_service_service import awg_service_manager
 from onx.services.bundle_service import bundle_service
 from onx.services.xray_service_service import xray_service_manager
 
@@ -44,6 +46,7 @@ class TransportPackageService:
     def upsert_for_user(self, db: Session, user: User, payload) -> TransportPackage:
         package = self.get_or_create_for_user(db, user)
         package.preferred_xray_service_id = payload.preferred_xray_service_id
+        package.preferred_awg_service_id = payload.preferred_awg_service_id
         package.enable_xray = payload.enable_xray
         package.enable_awg = payload.enable_awg
         package.enable_wg = payload.enable_wg
@@ -87,8 +90,11 @@ class TransportPackageService:
         xray_summary = self._reconcile_xray(db, user, package, subscription)
         summary["transports"]["xray"] = xray_summary
 
+        awg_summary = self._reconcile_awg(db, user, package, subscription)
+        summary["transports"]["awg"] = awg_summary
+
         inventory = self._build_existing_inventory(db, user)
-        for transport_type in ("awg", "wg", "openvpn_cloak"):
+        for transport_type in ("wg", "openvpn_cloak"):
             enabled = transport_type in self.enabled_transport_types(package)
             item = inventory.get(transport_type)
             summary["transports"][transport_type] = {
@@ -177,6 +183,45 @@ class TransportPackageService:
             "node_id": service.node_id,
         }
 
+    def _reconcile_awg(
+        self,
+        db: Session,
+        user: User,
+        package: TransportPackage,
+        subscription: Subscription | None,
+    ) -> dict:
+        if not package.enable_awg:
+            return {"enabled": False, "status": "disabled", "automation": "full"}
+        if subscription is None:
+            return {"enabled": True, "status": "no_active_subscription", "automation": "full"}
+        service = self._select_awg_service(db, package)
+        if service is None:
+            return {"enabled": True, "status": "missing_service", "automation": "full"}
+        peer = self._select_awg_peer(db, user, service.id)
+        if peer is None:
+            peer = Peer(
+                username=user.username,
+                email=user.email,
+                node_id=service.node_id,
+                config_expires_at=subscription.expires_at if subscription is not None else None,
+            )
+        else:
+            peer.node_id = service.node_id
+            if subscription is not None:
+                peer.config_expires_at = subscription.expires_at
+        result = awg_service_manager.assign_peer(db, service, peer, save_to_peer=True)
+        return {
+            "enabled": True,
+            "status": "ready",
+            "automation": "full",
+            "service_id": service.id,
+            "peer_id": result["peer_id"],
+            "peer_public_key": result["peer_public_key"],
+            "address_v4": result["address_v4"],
+            "auto_applied": result.get("auto_applied", False),
+            "node_id": service.node_id,
+        }
+
     def _select_xray_service(self, db: Session, package: TransportPackage) -> XrayService | None:
         if package.preferred_xray_service_id:
             preferred = db.get(XrayService, package.preferred_xray_service_id)
@@ -195,11 +240,41 @@ class TransportPackageService:
                 return service
         return None
 
+    def _select_awg_service(self, db: Session, package: TransportPackage) -> AwgService | None:
+        if package.preferred_awg_service_id:
+            preferred = db.get(AwgService, package.preferred_awg_service_id)
+            if preferred is not None and preferred.state == AwgServiceState.ACTIVE:
+                node = db.get(Node, preferred.node_id)
+                if node is not None and node.status == NodeStatus.REACHABLE and node.traffic_suspended_at is None:
+                    return preferred
+        services = list(
+            db.scalars(
+                select(AwgService).where(AwgService.state == AwgServiceState.ACTIVE).order_by(AwgService.updated_at.desc())
+            ).all()
+        )
+        for service in services:
+            node = db.get(Node, service.node_id)
+            if node is not None and node.status == NodeStatus.REACHABLE and node.traffic_suspended_at is None:
+                return service
+        return None
+
     def _select_xray_peer(self, db: Session, user: User, service_id: str) -> Peer | None:
         return db.scalar(
             select(Peer)
             .where(
                 Peer.xray_service_id == service_id,
+                Peer.is_active.is_(True),
+                Peer.revoked_at.is_(None),
+                or_(Peer.username == user.username, Peer.email == user.email),
+            )
+            .order_by(Peer.created_at.desc())
+        )
+
+    def _select_awg_peer(self, db: Session, user: User, service_id: str) -> Peer | None:
+        return db.scalar(
+            select(Peer)
+            .where(
+                Peer.awg_service_id == service_id,
                 Peer.is_active.is_(True),
                 Peer.revoked_at.is_(None),
                 or_(Peer.username == user.username, Peer.email == user.email),
