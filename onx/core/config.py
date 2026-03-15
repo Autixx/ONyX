@@ -103,6 +103,8 @@ class Settings(BaseSettings):
     onx_link_runner_path: str = "/usr/local/lib/onx/onx-link-runner"
     onx_link_unit_path: str = "/etc/systemd/system/onx-link@.service"
     onx_runtime_version: str = "1"
+    onx_xray_conf_dir: str = "/etc/onyx/xray"
+    onx_xray_unit_path: str = "/etc/systemd/system/onx-xray@.service"
     onx_public_base_url: str = ""
     onx_node_agent_path: str = "/usr/local/lib/onx/onx-node-agent"
     onx_node_agent_env_path: str = "/etc/onx/node-agent.env"

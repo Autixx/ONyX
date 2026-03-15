@@ -67,6 +67,7 @@ class NodeRuntimeBootstrapService:
         if progress_callback:
             progress_callback("installing runtime assets")
         self._runtime.ensure_runtime(node, management_secret)
+        self._runtime.ensure_xray_runtime(node, management_secret)
 
         if progress_callback:
             progress_callback("installing node agent")

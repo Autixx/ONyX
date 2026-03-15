@@ -30,6 +30,7 @@ from onx.db.models.registration import Registration
 from onx.db.models.route_policy import RoutePolicy
 from onx.db.models.subscription import Subscription
 from onx.db.models.user import User
+from onx.db.models.xray_service import XrayService
 
 __all__ = [
     "AccessRule",
@@ -62,4 +63,5 @@ __all__ = [
     "Job",
     "JobLock",
     "EventLog",
+    "XrayService",
 ]

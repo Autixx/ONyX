@@ -19,6 +19,12 @@ class Peer(Base):
         nullable=False,
         index=True,
     )
+    xray_service_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("xray_services.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     registered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

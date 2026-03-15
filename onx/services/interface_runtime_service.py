@@ -67,6 +67,27 @@ UNIT_TEMPLATE = dedent(
     """
 )
 
+XRAY_UNIT_TEMPLATE = dedent(
+    """\
+    [Unit]
+    Description=ONX managed Xray service %i
+    After=network-online.target
+    Wants=network-online.target
+    ConditionPathExists=__ONX_XRAY_CONF_DIR__/%i.json
+
+    [Service]
+    Type=simple
+    ExecStart=/usr/local/bin/xray run -config __ONX_XRAY_CONF_DIR__/%i.json
+    Restart=on-failure
+    RestartSec=3
+    AmbientCapabilities=CAP_NET_BIND_SERVICE
+    NoNewPrivileges=true
+
+    [Install]
+    WantedBy=multi-user.target
+    """
+)
+
 NODE_AGENT_SCRIPT = dedent(
     """\
     #!/usr/bin/env bash
@@ -497,6 +518,13 @@ class InterfaceRuntimeService:
         if code != 0:
             raise RuntimeError(stderr or f"Failed to reload systemd on node {node.name}")
 
+    def ensure_xray_runtime(self, node: Node, management_secret: str) -> None:
+        unit_content = XRAY_UNIT_TEMPLATE.replace("__ONX_XRAY_CONF_DIR__", self._settings.onx_xray_conf_dir)
+        self._executor.write_file(node, management_secret, self._settings.onx_xray_unit_path, unit_content)
+        code, _, stderr = self._executor.run(node, management_secret, "sh -lc 'systemctl daemon-reload'")
+        if code != 0:
+            raise RuntimeError(stderr or f"Failed to reload systemd for Xray runtime on node {node.name}")
+
     def ensure_node_agent(
         self,
         node: Node,
@@ -624,4 +652,23 @@ class InterfaceRuntimeService:
             node,
             management_secret,
             f"sh -lc 'systemctl stop {service_name} >/dev/null 2>&1 || true'",
+        )
+
+    def restart_xray_service(self, node: Node, management_secret: str, service_name: str) -> None:
+        unit_name = f"onx-xray@{service_name}.service"
+        command = (
+            "sh -lc "
+            f"'systemctl enable {unit_name} >/dev/null 2>&1 || true; "
+            f"systemctl restart {unit_name}'"
+        )
+        code, _, stderr = self._executor.run(node, management_secret, command)
+        if code != 0:
+            raise RuntimeError(stderr or f"Failed to restart {unit_name} on node {node.name}")
+
+    def stop_xray_service(self, node: Node, management_secret: str, service_name: str) -> None:
+        unit_name = f"onx-xray@{service_name}.service"
+        self._executor.run(
+            node,
+            management_secret,
+            f"sh -lc 'systemctl stop {unit_name} >/dev/null 2>&1 || true'",
         )

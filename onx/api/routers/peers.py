@@ -63,6 +63,8 @@ def update_peer_config(
     if peer is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Peer not found.")
     peer.config = payload.config
+    if payload.xray_service_id is not None:
+        peer.xray_service_id = payload.xray_service_id
     db.add(peer)
     db.commit()
     db.refresh(peer)

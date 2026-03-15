@@ -10,6 +10,7 @@ class PeerRead(ONXBaseModel):
     username: str
     email: str
     node_id: str
+    xray_service_id: str | None
     registered_at: datetime
     config_expires_at: datetime | None
     last_ip: str | None
@@ -24,6 +25,7 @@ class PeerCreate(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     email: str = Field(min_length=1, max_length=255)
     node_id: str
+    xray_service_id: str | None = None
     registered_at: datetime | None = None
     config_expires_at: datetime | None = None
     last_ip: str | None = Field(default=None, max_length=255)
@@ -36,3 +38,4 @@ class PeerConfigUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     config: str | None = None
+    xray_service_id: str | None = None
