@@ -117,9 +117,10 @@ python onyx_client.py --uninstall-service
 
 ## DNS Status
 
-- the bundle already carries DNS policy fields
-- the client displays them in diagnostics
-- host-level forced DNS is still not applied on the machine yet
+- the bundle carries DNS policy fields from ONyX backend config
+- on Windows, the client applies the issued resolver to the active tunnel interface on connect
+- on disconnect, the tunnel interface DNS is reset back to DHCP
+- `force_doh` is currently contract-level metadata and diagnostics, not a full host-wide DoH block
 
 ## Icon Mapping
 

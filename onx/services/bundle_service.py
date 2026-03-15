@@ -142,8 +142,8 @@ class BundleService:
             },
             "dns": {
                 "resolver": self._settings.client_bundle_dns_resolver,
-                "force_all": True,
-                "force_doh": True,
+                "force_all": self._settings.client_bundle_dns_force_all,
+                "force_doh": self._settings.client_bundle_dns_force_doh,
             },
             "routing": {
                 "destination_country_code": destination_country_code,

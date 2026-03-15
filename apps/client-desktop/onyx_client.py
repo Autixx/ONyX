@@ -311,6 +311,10 @@ class LocalTunnelRuntime:
     def has_profiles(self) -> bool:
         return bool(self.available_profiles())
 
+    def dns_policy(self) -> dict:
+        decrypted = ((self.st.last_bundle or {}).get("decrypted") or {})
+        return decrypted.get("dns") or {}
+
     def diagnostics(self) -> dict:
         profiles = self.available_profiles()
         tool_details = {}
@@ -350,6 +354,7 @@ class LocalTunnelRuntime:
             self._clear_runtime_state()
             raise RuntimeError(f"{self.st.active_transport.upper()} runtime binary is not installed.")
         config_path = Path(self.st.active_config_path)
+        self._clear_dns_policy(self.st.active_interface)
         self._run_quick(quick_cmd, "down", config_path, allow_fail=True)
         if config_path.exists():
             self._run_quick(quick_cmd, "down", Path(self.st.active_interface), allow_fail=True)
@@ -393,6 +398,11 @@ class LocalTunnelRuntime:
         config_path = self._write_config(interface_name, profile["config"])
         self._run_quick(quick_cmd, "down", config_path, allow_fail=True)
         self._run_quick(quick_cmd, "up", config_path)
+        try:
+            self._apply_dns_policy(interface_name)
+        except Exception:
+            self._run_quick(quick_cmd, "down", config_path, allow_fail=True)
+            raise
 
         self.st.connected = True
         self.st.active_transport = transport
@@ -436,6 +446,55 @@ class LocalTunnelRuntime:
         if result.returncode != 0 and not allow_fail:
             message = result.stderr.strip() or result.stdout.strip() or f"{quick_cmd} {action} failed."
             raise RuntimeError(message)
+
+    def _apply_dns_policy(self, interface_name: str) -> None:
+        dns = self.dns_policy()
+        resolver = (dns.get("resolver") or "").strip()
+        if not resolver or not dns.get("force_all"):
+            return
+        if platform.system() != "Windows":
+            return
+        result = subprocess.run(
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "set",
+                "dnsservers",
+                f"name={interface_name}",
+                "static",
+                f"address={resolver}",
+                "primary",
+                "validate=no",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            message = result.stderr.strip() or result.stdout.strip() or "Failed to apply DNS policy."
+            raise RuntimeError(message)
+
+    def _clear_dns_policy(self, interface_name: str) -> None:
+        dns = self.dns_policy()
+        if not dns.get("force_all"):
+            return
+        if platform.system() != "Windows":
+            return
+        subprocess.run(
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "set",
+                "dnsservers",
+                f"name={interface_name}",
+                "source=dhcp",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
 
     @staticmethod
     def _quick_binary(transport: str) -> str | None:
@@ -1243,7 +1302,11 @@ class DashboardScreen(QWidget):
                 f"Resolver: {dns_bundle.get('resolver', 'not issued')}",
                 f"Force all DNS: {'yes' if dns_bundle.get('force_all') else 'no'}",
                 f"Force DoH: {'yes' if dns_bundle.get('force_doh') else 'no'}",
-                "Host-level DNS enforcement is not applied yet.",
+                (
+                    "Windows tunnel interface DNS will be applied on connect."
+                    if platform.system() == "Windows" and dns_bundle.get("force_all")
+                    else "Host-level DNS enforcement is not active on this platform/state."
+                ),
             ]
             dns_info.setPlainText("\n".join(dns_lines))
 
