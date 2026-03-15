@@ -131,18 +131,18 @@ class OpenVpnCloakAdapter(BaseRuntimeAdapter):
         raise NotImplementedError("OpenVPN+Cloak runtime skeleton exists, but disconnect flow is not implemented yet.")
 
 
-class SingBoxAdapter(BaseRuntimeAdapter):
-    transport = TransportKind.SING_BOX
-    binary_keys = ("sing_box",)
+class XrayAdapter(BaseRuntimeAdapter):
+    transport = TransportKind.XRAY
+    binary_keys = ("xray_core",)
 
     async def connect(self, profile: RuntimeProfile) -> ActiveProcessGroup:
         diag = self.diagnostics()
         if not diag.ready:
-            raise RuntimeError("Sing-box adapter is not ready: " + ", ".join(diag.notes))
-        raise NotImplementedError("Sing-box runtime skeleton exists, but connect flow is not implemented yet.")
+            raise RuntimeError("Xray adapter is not ready: " + ", ".join(diag.notes))
+        raise NotImplementedError("Xray runtime skeleton exists, but connect flow is not implemented yet.")
 
     async def disconnect(self, session: ActiveProcessGroup) -> None:
-        raise NotImplementedError("Sing-box runtime skeleton exists, but disconnect flow is not implemented yet.")
+        raise NotImplementedError("Xray runtime skeleton exists, but disconnect flow is not implemented yet.")
 
 
 def build_runtime_adapters() -> dict[str, BaseRuntimeAdapter]:
@@ -150,6 +150,6 @@ def build_runtime_adapters() -> dict[str, BaseRuntimeAdapter]:
         WireGuardTunnelAdapter(),
         AmneziaWGTunnelAdapter(),
         OpenVpnCloakAdapter(),
-        SingBoxAdapter(),
+        XrayAdapter(),
     ]
     return {adapter.transport.value: adapter for adapter in adapters}

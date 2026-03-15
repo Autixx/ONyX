@@ -12,7 +12,7 @@ bin/
   awg.exe
   openvpn.exe
   ck-client.exe
-  sing-box.exe
+  xray.exe
   wintun.dll
 ```
 

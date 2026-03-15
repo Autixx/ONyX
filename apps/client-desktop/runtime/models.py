@@ -9,7 +9,7 @@ class TransportKind(str, Enum):
     WG = "wg"
     AWG = "awg"
     OPENVPN_CLOAK = "openvpn_cloak"
-    SING_BOX = "sing_box"
+    XRAY = "xray"
 
 
 class DaemonCommand(str, Enum):

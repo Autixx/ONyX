@@ -23,6 +23,6 @@ def expected_binary_layout() -> dict[str, str]:
         "amneziawg_cli": str(BIN_DIR / "awg.exe"),
         "openvpn": str(BIN_DIR / "openvpn.exe"),
         "cloak_client": str(BIN_DIR / "ck-client.exe"),
-        "sing_box": str(BIN_DIR / "sing-box.exe"),
+        "xray_core": str(BIN_DIR / "xray.exe"),
         "wintun_dll": str(BIN_DIR / "wintun.dll"),
     }

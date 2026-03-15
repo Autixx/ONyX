@@ -59,7 +59,7 @@ apps/client-desktop/
     awg.exe
     openvpn.exe
     ck-client.exe
-    sing-box.exe
+    xray.exe
     wintun.dll
 ```
 
@@ -73,7 +73,7 @@ Rules:
 - `wintun.dll` is side-by-side with the tunnel manager binaries.
 - `ck-client.exe` runs first for `OpenVPN + Cloak`.
 - `openvpn.exe` connects through the local Cloak port.
-- `sing-box.exe` handles all supported L7 protocols.
+- `xray.exe` handles the supported L7 protocols and xHTTP-capable flows.
 
 No system-wide installation is assumed.
 
@@ -218,7 +218,7 @@ Recommended adapter set:
 - `WireGuardTunnelAdapter`
 - `AmneziaWGTunnelAdapter`
 - `OpenVpnCloakAdapter`
-- `SingBoxAdapter`
+- `XrayAdapter`
 
 Each adapter must own:
 
@@ -278,27 +278,26 @@ Connect flow:
 5. start `openvpn.exe`
 6. treat both child processes as one logical runtime session
 
-## Sing-box Adapter
+## Xray Adapter
 
 Managed binary:
 
-- `sing-box.exe`
+- `xray.exe`
 
 Supported protocol families:
 
-- Shadowsocks legacy
-- Shadowsocks 2022
 - VLESS
 - VMess
 - Trojan
 - Hysteria2
+- xHTTP-capable Xray transport modes defined by the issued client profile
 
 Connect flow:
 
 1. generate JSON config as Python dict
 2. write temp config file
 3. execute:
-   - `sing-box.exe run -c <tempfile.json>`
+   - `xray.exe run -config <tempfile.json>`
 
 ## Config Generation
 
@@ -312,7 +311,7 @@ The preferred flow is:
 2. GUI sends a reduced runtime profile payload to daemon
 3. daemon materializes final config file using trusted local generation logic
 
-### Sing-box
+### Xray
 
 The daemon builds JSON config from a Python dict and writes it to a temporary file.
 
@@ -377,7 +376,7 @@ Target migration:
 
 ### Phase 4
 
-- add OpenVPN+Cloak and sing-box adapters
+- add OpenVPN+Cloak and Xray adapters
 - add richer runtime diagnostics and recovery
 
 ## First Implementation Target
