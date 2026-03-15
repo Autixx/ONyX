@@ -261,6 +261,7 @@ td.m{color:var(--t0);}
     <div class="nav-item" data-p="xray"><span data-i18n="nav.xray">Xray Services</span></div>
     <div class="nav-item" data-p="awg"><span data-i18n="nav.awg">AWG Services</span></div>
     <div class="nav-item" data-p="wg"><span data-i18n="nav.wg">WG Services</span></div>
+    <div class="nav-item" data-p="ovpn"><span data-i18n="nav.ovpn">OpenVPN+Cloak Services</span></div>
     <div class="nav-item" data-p="policies"><span data-i18n="nav.policies">Policies</span></div>
     <div class="nav-item" data-p="jobs"><span data-i18n="nav.jobs">Jobs</span> <span class="nbadge err" id="jbn" style="display:none">0</span></div>
     <div class="nav-item" data-p="registrations"><span data-i18n="nav.registrations">Registrations</span> <span class="nbadge ok" id="regBadge" style="display:none">0</span></div>
@@ -707,6 +708,35 @@ td.m{color:var(--t0);}
         </div>
       </div>
 
+      <!-- OPENVPN+CLOAK SERVICES -->
+      <div class="page" id="page-ovpn">
+        <div class="ph">
+          <span class="ptitle">OpenVPN+Cloak Services</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="refreshOpenvpnCloakServices()">REFRESH</button>
+            <button class="btn pri" id="btnAddOpenvpnCloakService">+ ADD OPENVPN+CLOAK SERVICE</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Node</th>
+                <th>OpenVPN</th>
+                <th>Cloak</th>
+                <th>Public Endpoint</th>
+                <th>Network</th>
+                <th>Peers</th>
+                <th>State</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ovpntb"></tbody>
+          </table>
+        </div>
+      </div>
+
     </div><!-- /main -->
   </div><!-- /layout -->
 </div><!-- /appWrap -->
@@ -749,6 +779,7 @@ var PEERS = [];
 var XRAY_SERVICES = [];
 var AWG_SERVICES = [];
 var WG_SERVICES = [];
+var OVPN_CLOAK_SERVICES = [];
 var USERS = [];
 var PLANS = [];
 var SUBSCRIPTIONS = [];
@@ -769,6 +800,7 @@ function balancerById(id){ return BALANCERS.find(function(b){ return b.id===id; 
 function xrayServiceById(id){ return XRAY_SERVICES.find(function(s){ return s.id===id; }) || null; }
 function awgServiceById(id){ return AWG_SERVICES.find(function(s){ return s.id===id; }) || null; }
 function wgServiceById(id){ return WG_SERVICES.find(function(s){ return s.id===id; }) || null; }
+function openvpnCloakServiceById(id){ return OVPN_CLOAK_SERVICES.find(function(s){ return s.id===id; }) || null; }
 function userById(id){ return USERS.find(function(u){ return u.id===id; }) || null; }
 function planById(id){ return PLANS.find(function(p){ return p.id===id; }) || null; }
 function subscriptionById(id){ return SUBSCRIPTIONS.find(function(s){ return s.id===id; }) || null; }
@@ -1496,10 +1528,11 @@ function connectWS(){
       if(type.indexOf('node.') === 0){ refreshNodes().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type.indexOf('node.traffic.') === 0){ refreshNodes().catch(function(){}); refreshNodeTrafficSummary().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type.indexOf('registration.') === 0){ loadRegistrations().catch(function(){}); loadUsers().catch(function(){}); loadSubscriptions().catch(function(){}); }
-      if(type.indexOf('peer.') === 0){ loadPeers().catch(function(){}); refreshXrayServices().catch(function(){}); refreshAwgServices().catch(function(){}); refreshWgServices().catch(function(){}); }
+      if(type.indexOf('peer.') === 0){ loadPeers().catch(function(){}); refreshXrayServices().catch(function(){}); refreshAwgServices().catch(function(){}); refreshWgServices().catch(function(){}); refreshOpenvpnCloakServices().catch(function(){}); }
       if(type.indexOf('awg_service.') === 0){ refreshAwgServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
       if(type.indexOf('wg_service.') === 0){ refreshWgServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
       if(type.indexOf('xray_service.') === 0){ refreshXrayServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
+      if(type.indexOf('openvpn_cloak_service.') === 0){ refreshOpenvpnCloakServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
       if(type.indexOf('user.') === 0){ loadUsers().catch(function(){}); }
       if(type.indexOf('subscription.') === 0){ loadSubscriptions().catch(function(){}); }
       if(type.indexOf('plan.') === 0){ loadPlans().catch(function(){}); }
@@ -1661,6 +1694,7 @@ async function loadData(){
     refreshXrayServices(),
     refreshAwgServices(),
     refreshWgServices(),
+    refreshOpenvpnCloakServices(),
     refreshPolicies(),
     refreshJobs(),
     refreshAudit(),
@@ -2956,6 +2990,7 @@ function wireStaticButtons(){
   var addXrayBtn = document.getElementById('btnAddXrayService');
   var addAwgBtn = document.getElementById('btnAddAwgService');
   var addWgBtn = document.getElementById('btnAddWgService');
+  var addOpenvpnCloakBtn = document.getElementById('btnAddOpenvpnCloakService');
   var addRouteBtn = document.getElementById('btnAddRoutePolicy');
   var addDNSBtn = document.getElementById('btnAddDNSPolicy');
   var addGeoBtn = document.getElementById('btnAddGeoPolicy');
@@ -2972,6 +3007,7 @@ function wireStaticButtons(){
   if(addXrayBtn){ addXrayBtn.addEventListener('click', function(){ openXrayServiceModal(); }); }
   if(addAwgBtn){ addAwgBtn.addEventListener('click', function(){ openAwgServiceModal(); }); }
   if(addWgBtn){ addWgBtn.addEventListener('click', function(){ openWgServiceModal(); }); }
+  if(addOpenvpnCloakBtn){ addOpenvpnCloakBtn.addEventListener('click', function(){ openOpenvpnCloakServiceModal(); }); }
   if(addRouteBtn){ addRouteBtn.addEventListener('click', function(){ openRoutePolicyModal(); }); }
   if(addDNSBtn){ addDNSBtn.addEventListener('click', function(){ openDNSPolicyModal(); }); }
   if(addGeoBtn){ addGeoBtn.addEventListener('click', function(){ openGeoPolicyModal(); }); }
@@ -3002,6 +3038,14 @@ document.querySelectorAll('.nav-item').forEach(function(el){
     if(el.dataset.p==='xray'){
       refreshXrayServices().catch(function(err){
         pushEv('xray_service.refresh.error', String(err && err.message ? err.message : err));
+      });
+      loadPeers().catch(function(err){
+        pushEv('peer.refresh.error', String(err && err.message ? err.message : err));
+      });
+    }
+    if(el.dataset.p==='ovpn'){
+      refreshOpenvpnCloakServices().catch(function(err){
+        pushEv('openvpn_cloak_service.refresh.error', String(err && err.message ? err.message : err));
       });
       loadPeers().catch(function(err){
         pushEv('peer.refresh.error', String(err && err.message ? err.message : err));
@@ -3249,6 +3293,7 @@ async function loadPeers(){
   renderXrayServices();
   renderAwgServices();
   renderWgServices();
+  renderOpenvpnCloakServices();
 }
 
 async function refreshXrayServices(){
@@ -3279,6 +3324,16 @@ async function refreshWgServices(){
     if(!WG_SERVICES.length) WG_SERVICES = [];
   }
   renderWgServices();
+}
+
+async function refreshOpenvpnCloakServices(){
+  try{
+    var data = await apiFetch(API_PREFIX + '/openvpn-cloak-services');
+    OVPN_CLOAK_SERVICES = Array.isArray(data) ? data : [];
+  }catch(e){
+    if(!OVPN_CLOAK_SERVICES.length) OVPN_CLOAK_SERVICES = [];
+  }
+  renderOpenvpnCloakServices();
 }
 
 function updatePeersBadge(){
@@ -3361,6 +3416,12 @@ function wgPeerCount(serviceId){
   }).length;
 }
 
+function openvpnCloakPeerCount(serviceId){
+  return PEERS.filter(function(peer){
+    return peer.openvpn_cloak_service_id === serviceId && peer.is_active !== false && !peer.revoked_at;
+  }).length;
+}
+
 function renderXrayServices(){
   var tb = document.getElementById('xraytb');
   if(!tb) return;
@@ -3438,6 +3499,36 @@ function renderWgServices(){
         +'<button class="btn sm pri" onclick="event.stopPropagation();actionWgApply(\''+esc(service.id)+'\')">APPLY</button>'
         +'<button class="btn sm" onclick="event.stopPropagation();openWgServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
         +'<button class="btn sm red" onclick="event.stopPropagation();deleteWgServiceFlow(\''+esc(service.id)+'\')">DEL</button>'
+      +'</div></td>'
+      +'</tr>';
+  }).join('');
+}
+
+function renderOpenvpnCloakServices(){
+  var tb = document.getElementById('ovpntb');
+  if(!tb) return;
+  if(!OVPN_CLOAK_SERVICES.length){
+    tb.innerHTML = '<tr><td class="empty-state" colspan="9">No OpenVPN+Cloak services.</td></tr>';
+    return;
+  }
+  tb.innerHTML = OVPN_CLOAK_SERVICES.map(function(service){
+    var publicEndpoint = service.public_host + ':' + String(service.public_port || service.cloak_listen_port);
+    var openvpnEndpoint = (service.openvpn_local_host || '127.0.0.1') + ':' + String(service.openvpn_local_port || '-');
+    var cloakListen = (service.cloak_listen_host || '0.0.0.0') + ':' + String(service.cloak_listen_port || '-');
+    return '<tr onclick="showOpenvpnCloakService(\''+esc(service.id)+'\')" style="cursor:pointer">'
+      +'<td class="m">'+esc(service.name)+'</td>'
+      +'<td>'+esc(nById(service.node_id).name)+'</td>'
+      +'<td class="m">'+esc(openvpnEndpoint)+'</td>'
+      +'<td class="m">'+esc(cloakListen)+'</td>'
+      +'<td class="m">'+esc(publicEndpoint)+'</td>'
+      +'<td class="m">'+esc(service.server_network_v4 || '-')+'</td>'
+      +'<td>'+esc(String(openvpnCloakPeerCount(service.id)))+'</td>'
+      +'<td>'+sp(service.state)+'</td>'
+      +'<td><div style="display:flex;gap:5px;">'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionOpenvpnCloakAssignPeer(\''+esc(service.id)+'\')">ASSIGN</button>'
+        +'<button class="btn sm pri" onclick="event.stopPropagation();actionOpenvpnCloakApply(\''+esc(service.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openOpenvpnCloakServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();deleteOpenvpnCloakServiceFlow(\''+esc(service.id)+'\')">DEL</button>'
       +'</div></td>'
       +'</tr>';
   }).join('');
@@ -3575,6 +3666,45 @@ function showWgService(id){
   );
 }
 
+function showOpenvpnCloakService(id){
+  var service = openvpnCloakServiceById(id);
+  if(!service) return;
+  var assignedPeers = PEERS.filter(function(peer){ return peer.openvpn_cloak_service_id === service.id && peer.is_active !== false && !peer.revoked_at; });
+  var peerRows = assignedPeers.length ? assignedPeers.map(function(peer){
+    return '<div class="drow"><span class="dk">'+esc(peer.username || peer.email || peer.id)+'</span><span class="dv">'+esc((peer.cloak_uid || '-') + ' / ' + (peer.email || '-'))+'</span></div>';
+  }).join('') : '<div class="drow"><span class="dk">No peers</span><span class="dv">-</span></div>';
+  var health = service.health_summary_json || {};
+  openDP('OpenVPN+Cloak ' + service.name,
+    rows([
+      ['ID', service.id],
+      ['Node', nById(service.node_id).name],
+      ['State', service.state || '-'],
+      ['OpenVPN', (service.openvpn_local_host || '127.0.0.1') + ':' + String(service.openvpn_local_port || '-')],
+      ['Cloak Listen', (service.cloak_listen_host || '0.0.0.0') + ':' + String(service.cloak_listen_port || '-')],
+      ['Public', service.public_host + ':' + String(service.public_port || service.cloak_listen_port)],
+      ['Server Name', service.server_name || '-'],
+      ['Client Local Port', String(service.client_local_port || '-')],
+      ['Server Network', service.server_network_v4 || '-'],
+      ['DNS', service.dns_server_v4 || '-'],
+      ['MTU', String(service.mtu || '-')],
+      ['OpenVPN Config Path', health.openvpn_conf_path || '-'],
+      ['Cloak Config Path', health.cloak_conf_path || '-'],
+      ['Applied At', health.applied_at ? fmtDate(health.applied_at) : '-'],
+      ['Peer Count', String(health.peer_count != null ? health.peer_count : assignedPeers.length)],
+      ['Cloak Public Key', service.cloak_public_key || '-'],
+      ['Last Error', service.last_error_text || '-']
+    ])
+    + '<div class="stitle">Assigned Peers</div>'
+    + '<div style="margin-top:8px;">' + peerRows + '</div>'
+    + '<div class="dp-actions">'
+      +'<button class="btn" onclick="actionOpenvpnCloakAssignPeer(\''+esc(service.id)+'\')">ASSIGN PEER</button>'
+      +'<button class="btn pri" onclick="actionOpenvpnCloakApply(\''+esc(service.id)+'\')">APPLY</button>'
+      +'<button class="btn" onclick="openOpenvpnCloakServiceModal(\''+esc(service.id)+'\')">EDIT</button>'
+      +'<button class="btn red" onclick="deleteOpenvpnCloakServiceFlow(\''+esc(service.id)+'\')">DELETE</button>'
+    +'</div>'
+  );
+}
+
 function openPeerConfig(id){
   var p = PEERS.find(function(x){ return x.id===id; });
   if(!p) return;
@@ -3620,6 +3750,9 @@ async function revokePeer(id){
     pushEv('peer.revoked', 'peer revoked: ' + (p ? p.username : id));
     renderPeers();
     renderXrayServices();
+    renderAwgServices();
+    renderWgServices();
+    renderOpenvpnCloakServices();
     updatePeersBadge();
     closeDP();
   }catch(e){
@@ -3758,6 +3891,137 @@ async function submitXrayAssignPeer(serviceId, fd){
 
 function parseCsvList(text){
   return String(text || '').split(',').map(function(item){ return item.trim(); }).filter(Boolean);
+}
+
+function openOpenvpnCloakServiceModal(serviceId){
+  var service = serviceId ? openvpnCloakServiceById(serviceId) : null;
+  var nodeOptions = NODES.map(function(node){ return {value:node.id, label:node.name}; });
+  var body = '<form id="openvpnCloakServiceForm"><div class="modal-grid">'
+    +formInput('Name', 'name', service ? service.name : '', {required:true})
+    +formSelect('Node', 'node_id', service ? service.node_id : (NODES[0] ? NODES[0].id : ''), nodeOptions, {help:'Managed node where OpenVPN+Cloak will run.'})
+    +formInput('OpenVPN local host', 'openvpn_local_host', service ? service.openvpn_local_host : '127.0.0.1', {required:true})
+    +formInput('OpenVPN local port', 'openvpn_local_port', service ? String(service.openvpn_local_port) : '11940', {type:'number', required:true})
+    +formInput('Cloak listen host', 'cloak_listen_host', service ? service.cloak_listen_host : '0.0.0.0', {required:true})
+    +formInput('Cloak listen port', 'cloak_listen_port', service ? String(service.cloak_listen_port) : '443', {type:'number', required:true})
+    +formInput('Public host', 'public_host', service ? service.public_host : '', {required:true})
+    +formInput('Public port', 'public_port', service && service.public_port != null ? String(service.public_port) : '', {type:'number'})
+    +formInput('Server name', 'server_name', service ? (service.server_name || '') : '')
+    +formInput('Client local port', 'client_local_port', service ? String(service.client_local_port) : '28947', {type:'number', required:true})
+    +formInput('Server network', 'server_network_v4', service ? service.server_network_v4 : '10.251.0.0/24', {required:true})
+    +formInput('DNS server', 'dns_server_v4', service ? (service.dns_server_v4 || '') : '')
+    +formInput('MTU', 'mtu', service ? String(service.mtu) : '1500', {type:'number'})
+    +formTextarea('Client allowed IPs', 'client_allowed_ips_json', service ? (service.client_allowed_ips_json || []).join(', ') : '0.0.0.0/0, ::/0', {help:'Comma-separated CIDRs.'})
+    +'</div></form>';
+  openModal(service ? 'Edit OpenVPN+Cloak Service' : 'Create OpenVPN+Cloak Service', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:service ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('openvpnCloakServiceForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('openvpnCloakServiceForm', function(fd){ saveOpenvpnCloakServiceForm(fd, serviceId); });
+}
+
+async function saveOpenvpnCloakServiceForm(fd, serviceId){
+  try{
+    var body = {
+      name: String(fd.get('name') || '').trim(),
+      node_id: String(fd.get('node_id') || '').trim(),
+      openvpn_local_host: String(fd.get('openvpn_local_host') || '127.0.0.1').trim(),
+      openvpn_local_port: Number(fd.get('openvpn_local_port') || 11940),
+      cloak_listen_host: String(fd.get('cloak_listen_host') || '0.0.0.0').trim(),
+      cloak_listen_port: Number(fd.get('cloak_listen_port') || 443),
+      public_host: String(fd.get('public_host') || '').trim(),
+      public_port: String(fd.get('public_port') || '').trim() ? Number(fd.get('public_port')) : null,
+      server_name: String(fd.get('server_name') || '').trim() || null,
+      client_local_port: Number(fd.get('client_local_port') || 28947),
+      server_network_v4: String(fd.get('server_network_v4') || '').trim(),
+      dns_server_v4: String(fd.get('dns_server_v4') || '').trim() || null,
+      mtu: Number(fd.get('mtu') || 1500),
+      client_allowed_ips_json: parseCsvList(fd.get('client_allowed_ips_json'))
+    };
+    if(serviceId){
+      await apiFetch(API_PREFIX + '/openvpn-cloak-services/' + encodeURIComponent(serviceId), { method:'PATCH', body:body });
+      pushEv('openvpn_cloak_service.updated', 'OpenVPN+Cloak service updated: ' + body.name);
+    } else {
+      await apiFetch(API_PREFIX + '/openvpn-cloak-services', { method:'POST', body:body });
+      pushEv('openvpn_cloak_service.created', 'OpenVPN+Cloak service created: ' + body.name);
+    }
+    closeModal();
+    await refreshOpenvpnCloakServices();
+  }catch(err){
+    pushEv('openvpn_cloak_service.error', 'save failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function deleteOpenvpnCloakServiceFlow(serviceId){
+  var service = openvpnCloakServiceById(serviceId);
+  if(!confirm('Delete OpenVPN+Cloak service ' + (service ? service.name : serviceId) + '?')) return;
+  try{
+    await apiFetch(API_PREFIX + '/openvpn-cloak-services/' + encodeURIComponent(serviceId), { method:'DELETE' });
+    pushEv('openvpn_cloak_service.deleted', 'OpenVPN+Cloak service deleted: ' + (service ? service.name : serviceId));
+    await refreshOpenvpnCloakServices();
+    closeDP();
+  }catch(err){
+    pushEv('openvpn_cloak_service.error', 'delete failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function actionOpenvpnCloakApply(serviceId){
+  try{
+    var service = openvpnCloakServiceById(serviceId);
+    var applied = await apiFetch(API_PREFIX + '/openvpn-cloak-services/' + encodeURIComponent(serviceId) + '/apply', { method:'POST', body:{} });
+    pushEv('openvpn_cloak_service.applied', 'OpenVPN+Cloak service applied: ' + ((applied && applied.name) || (service && service.name) || serviceId));
+    await Promise.all([refreshOpenvpnCloakServices(), loadPeers()]);
+    if(service){ showOpenvpnCloakService(serviceId); }
+  }catch(err){
+    pushEv('openvpn_cloak_service.error', 'apply failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function actionOpenvpnCloakAssignPeer(serviceId){
+  var service = openvpnCloakServiceById(serviceId);
+  if(!service) return;
+  if(!PEERS.length){ await loadPeers(); }
+  var peerOptions = PEERS.filter(function(peer){ return peer.is_active !== false && !peer.revoked_at; }).map(function(peer){
+    return {value: peer.id, label: (peer.username || peer.email || peer.id) + ' — ' + (peer.email || 'no-email')};
+  });
+  if(!peerOptions.length){ alert('No active peers available.'); return; }
+  var body = '<form id="openvpnCloakAssignPeerForm"><div class="modal-grid">'
+    +formSelect('Peer', 'peer_id', peerOptions[0].value, peerOptions, {full:true})
+    +formCheckbox('Save config to peer', 'save_to_peer', true, {caption:'Persist generated client config to peer record', full:true})
+    +'</div></form>';
+  openModal('Assign Peer — ' + service.name, body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:'Assign', className:'btn pri', onClick:function(){ document.getElementById('openvpnCloakAssignPeerForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('openvpnCloakAssignPeerForm', function(fd){ submitOpenvpnCloakAssignPeer(serviceId, fd); });
+}
+
+async function submitOpenvpnCloakAssignPeer(serviceId, fd){
+  try{
+    var result = await apiFetch(API_PREFIX + '/openvpn-cloak-services/' + encodeURIComponent(serviceId) + '/assign-peer', {
+      method:'POST',
+      body:{
+        peer_id: String(fd.get('peer_id') || '').trim(),
+        save_to_peer: checked(fd, 'save_to_peer')
+      }
+    });
+    closeModal();
+    await Promise.all([refreshOpenvpnCloakServices(), loadPeers()]);
+    pushEv(
+      result.auto_applied ? 'openvpn_cloak_service.peer_assigned.auto' : 'openvpn_cloak_service.peer_assigned',
+      'peer assigned to OpenVPN+Cloak service' + (result.auto_applied ? ' and service re-applied automatically' : '')
+    );
+    showOpenvpnCloakService(serviceId);
+  }catch(err){
+    pushEv('openvpn_cloak_service.error', 'assign peer failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
 }
 
 function openAwgServiceModal(serviceId){
@@ -4068,6 +4332,7 @@ var I18N = {
     'nav.xray':            'Xray Services',
     'nav.awg':             'AWG Services',
     'nav.wg':              'WG Services',
+    'nav.ovpn':            'OpenVPN+Cloak Services',
     'nav.registrations':   'Registrations',
     'nav.audit':           'Audit / Access',
     'nav.topology':        'Topology',
@@ -4115,6 +4380,7 @@ var I18N = {
     'nav.xray':            'XRAY Сервисы',
     'nav.awg':             'AWG Сервисы',
     'nav.wg':              'WG Сервисы',
+    'nav.ovpn':            'OpenVPN+Cloak Сервисы',
     'nav.registrations':   'Регистрации',
     'nav.audit':           'Аудит / Доступ',
     'nav.topology':        'Топология',
@@ -4727,3 +4993,4 @@ async function revokeDeviceFlow(deviceId){
 </script>
 </body>
 </html>
+
