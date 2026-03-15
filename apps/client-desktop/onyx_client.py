@@ -10,6 +10,7 @@ Dependencies:
 
 import argparse
 import base64
+import ipaddress
 import json
 import os
 import platform
@@ -54,6 +55,22 @@ APP_ROOT    = Path(__file__).resolve().parent
 ICON_DIR    = APP_ROOT / "assets" / "icons"
 AUTOSTART_TASK_NAME = "ONyX Desktop Client"
 APP_VERSION = "0.2.0"
+DNS_GUARD_RULE_DOT_TCP = "ONyX DNS Guard - Block DoT TCP"
+DNS_GUARD_RULE_DOT_UDP = "ONyX DNS Guard - Block DoT UDP"
+DNS_GUARD_RULE_DOH_TCP = "ONyX DNS Guard - Block Public DoH TCP"
+DNS_GUARD_RULE_DOH_UDP = "ONyX DNS Guard - Block Public DoH UDP"
+COMMON_PUBLIC_DNS_IPS = [
+    "1.1.1.1",
+    "1.0.0.1",
+    "8.8.8.8",
+    "8.8.4.4",
+    "9.9.9.9",
+    "149.112.112.112",
+    "94.140.14.14",
+    "94.140.15.15",
+    "45.90.28.0/24",
+    "45.90.30.0/24",
+]
 
 C_BG0  = "#06090d"
 C_BG1  = "#0a0f15"
@@ -298,6 +315,7 @@ class LocalTunnelRuntime:
     def __init__(self, st: ClientState):
         self.st = st
         self._last_transfer_sample: tuple[int, int] | None = None
+        self._clear_dns_enforcement_rules()
 
     def available_profiles(self):
         decrypted = ((self.st.last_bundle or {}).get("decrypted") or {})
@@ -401,6 +419,7 @@ class LocalTunnelRuntime:
         try:
             self._apply_dns_policy(interface_name)
         except Exception:
+            self._clear_dns_policy(interface_name)
             self._run_quick(quick_cmd, "down", config_path, allow_fail=True)
             raise
 
@@ -450,51 +469,134 @@ class LocalTunnelRuntime:
     def _apply_dns_policy(self, interface_name: str) -> None:
         dns = self.dns_policy()
         resolver = (dns.get("resolver") or "").strip()
-        if not resolver or not dns.get("force_all"):
+        if not resolver:
             return
         if platform.system() != "Windows":
             return
-        result = subprocess.run(
-            [
-                "netsh",
-                "interface",
-                "ipv4",
-                "set",
-                "dnsservers",
-                f"name={interface_name}",
-                "static",
-                f"address={resolver}",
-                "primary",
-                "validate=no",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode != 0:
-            message = result.stderr.strip() or result.stdout.strip() or "Failed to apply DNS policy."
-            raise RuntimeError(message)
+        if dns.get("force_all"):
+            result = subprocess.run(
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "set",
+                    "dnsservers",
+                    f"name={interface_name}",
+                    "static",
+                    f"address={resolver}",
+                    "primary",
+                    "validate=no",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode != 0:
+                message = result.stderr.strip() or result.stdout.strip() or "Failed to apply DNS policy."
+                raise RuntimeError(message)
+        if dns.get("force_doh"):
+            self._apply_dns_enforcement(resolver)
 
     def _clear_dns_policy(self, interface_name: str) -> None:
         dns = self.dns_policy()
-        if not dns.get("force_all"):
-            return
         if platform.system() != "Windows":
             return
-        subprocess.run(
+        if dns.get("force_doh"):
+            self._clear_dns_enforcement_rules()
+        if dns.get("force_all"):
+            subprocess.run(
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "set",
+                    "dnsservers",
+                    f"name={interface_name}",
+                    "source=dhcp",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+
+    def _apply_dns_enforcement(self, resolver: str) -> None:
+        self._clear_dns_enforcement_rules()
+        commands = [
             [
-                "netsh",
-                "interface",
-                "ipv4",
-                "set",
-                "dnsservers",
-                f"name={interface_name}",
-                "source=dhcp",
+                "netsh", "advfirewall", "firewall", "add", "rule",
+                f"name={DNS_GUARD_RULE_DOT_TCP}",
+                "dir=out", "action=block", "enable=yes",
+                "profile=any", "protocol=TCP", "remoteport=853",
             ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
+            [
+                "netsh", "advfirewall", "firewall", "add", "rule",
+                f"name={DNS_GUARD_RULE_DOT_UDP}",
+                "dir=out", "action=block", "enable=yes",
+                "profile=any", "protocol=UDP", "remoteport=853",
+            ],
+        ]
+        remote_ips = self._blocked_public_dns_ips(resolver)
+        if remote_ips:
+            commands.extend(
+                [
+                    [
+                        "netsh", "advfirewall", "firewall", "add", "rule",
+                        f"name={DNS_GUARD_RULE_DOH_TCP}",
+                        "dir=out", "action=block", "enable=yes",
+                        "profile=any", "protocol=TCP", "remoteport=443",
+                        f"remoteip={','.join(remote_ips)}",
+                    ],
+                    [
+                        "netsh", "advfirewall", "firewall", "add", "rule",
+                        f"name={DNS_GUARD_RULE_DOH_UDP}",
+                        "dir=out", "action=block", "enable=yes",
+                        "profile=any", "protocol=UDP", "remoteport=443",
+                        f"remoteip={','.join(remote_ips)}",
+                    ],
+                ]
+            )
+        for command in commands:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+            if result.returncode != 0:
+                message = result.stderr.strip() or result.stdout.strip() or "Failed to apply DNS enforcement rules."
+                raise RuntimeError(message)
+
+    def _clear_dns_enforcement_rules(self) -> None:
+        if platform.system() != "Windows":
+            return
+        for rule_name in (
+            DNS_GUARD_RULE_DOT_TCP,
+            DNS_GUARD_RULE_DOT_UDP,
+            DNS_GUARD_RULE_DOH_TCP,
+            DNS_GUARD_RULE_DOH_UDP,
+        ):
+            subprocess.run(
+                ["netsh", "advfirewall", "firewall", "delete", "rule", f"name={rule_name}"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+
+    @staticmethod
+    def _blocked_public_dns_ips(resolver: str) -> list[str]:
+        allowed = LocalTunnelRuntime._extract_ipv4_host(resolver)
+        return [value for value in COMMON_PUBLIC_DNS_IPS if value != allowed]
+
+    @staticmethod
+    def _extract_ipv4_host(value: str) -> str | None:
+        raw = (value or "").strip()
+        if not raw:
+            return None
+        host = raw
+        if raw.count(":") == 1 and raw.rsplit(":", 1)[1].isdigit():
+            host = raw.rsplit(":", 1)[0]
+        try:
+            parsed = ipaddress.ip_address(host)
+        except ValueError:
+            return None
+        if parsed.version != 4:
+            return None
+        return str(parsed)
 
     @staticmethod
     def _quick_binary(transport: str) -> str | None:
@@ -1303,8 +1405,8 @@ class DashboardScreen(QWidget):
                 f"Force all DNS: {'yes' if dns_bundle.get('force_all') else 'no'}",
                 f"Force DoH: {'yes' if dns_bundle.get('force_doh') else 'no'}",
                 (
-                    "Windows tunnel interface DNS will be applied on connect."
-                    if platform.system() == "Windows" and dns_bundle.get("force_all")
+                    "Windows tunnel DNS is applied on connect; DoT is blocked and common public DoH resolvers over :443 are blocked while connected."
+                    if platform.system() == "Windows" and (dns_bundle.get("force_all") or dns_bundle.get("force_doh"))
                     else "Host-level DNS enforcement is not active on this platform/state."
                 ),
             ]

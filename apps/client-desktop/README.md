@@ -120,7 +120,10 @@ python onyx_client.py --uninstall-service
 - the bundle carries DNS policy fields from ONyX backend config
 - on Windows, the client applies the issued resolver to the active tunnel interface on connect
 - on disconnect, the tunnel interface DNS is reset back to DHCP
-- `force_doh` is currently contract-level metadata and diagnostics, not a full host-wide DoH block
+- when `force_doh=true`, the client also installs temporary Windows Firewall rules while connected:
+  - blocks outbound TCP/UDP 853 (DoT / DoQ-style fallback)
+  - blocks outbound TCP/UDP 443 to common public DNS resolver IPs
+- this is a pragmatic enforcement layer, not a perfect generic HTTPS-level DoH detector
 
 ## Icon Mapping
 
