@@ -332,7 +332,7 @@ class LocalTunnelRuntime:
         runtime = decrypted.get("runtime") or {}
         profiles = runtime.get("profiles") or []
         return sorted(
-            [p for p in profiles if p.get("type") in ("awg", "wg") and p.get("config")],
+            [p for p in profiles if p.get("type") in ("awg", "wg", "xray") and p.get("config")],
             key=lambda p: (p.get("priority", 9999), p.get("id", "")),
         )
 
@@ -357,6 +357,9 @@ class LocalTunnelRuntime:
                 "tool": self._resolve_binary_candidates([f"{transport}.exe", transport]),
                 "quick": self._resolve_binary_candidates([f"{transport}-quick.exe", f"{transport}-quick"]),
             }
+        tool_details["xray"] = {
+            "binary": self._layout_binary("xray_core") or self._resolve_binary_candidates(["xray.exe", "xray"]),
+        }
         return {
             "tools_dir": str(PROJECT_BIN_DIR),
             "legacy_tools_dir": str(TOOLS_DIR),
@@ -372,11 +375,11 @@ class LocalTunnelRuntime:
     def connect(self) -> dict:
         profiles = self.available_profiles()
         if not profiles:
-            raise RuntimeError("No AWG/WG runtime profiles are available in the issued bundle.")
+            raise RuntimeError("No AWG/WG/Xray runtime profiles are available in the issued bundle.")
 
         if self._must_use_daemon(profiles) and not self._can_use_daemon():
             raise RuntimeError(
-                "WG/AWG bundled runtime is configured for daemon mode, but the ONyX daemon pipe is unavailable.\n"
+                "WG/AWG/Xray bundled runtime is configured for daemon mode, but the ONyX daemon pipe is unavailable.\n"
                 "Start `onyx_daemon_service.py --console` or install the Windows service first."
             )
 
@@ -679,6 +682,8 @@ class LocalTunnelRuntime:
         for profile in profiles:
             transport = profile.get("type", "")
             if transport in ("wg", "awg") and self._manager_binary(transport):
+                return True
+            if transport == "xray" and self._layout_binary("xray_core"):
                 return True
         return False
 
@@ -1570,14 +1575,27 @@ class DashboardScreen(QWidget):
             profiles = info["profiles"]
             awg_ready = bool((tool_details["awg"]["manager"] and tool_details["awg"]["cli"] and tool_details["awg"]["dll"]) or (tool_details["awg"]["tool"] and tool_details["awg"]["quick"]))
             wg_ready = bool((tool_details["wg"]["manager"] and tool_details["wg"]["cli"] and tool_details["wg"]["dll"]) or (tool_details["wg"]["tool"] and tool_details["wg"]["quick"]))
-            if awg_ready and wg_ready:
+            xray_ready = bool(tool_details["xray"]["binary"])
+            if awg_ready and wg_ready and xray_ready:
+                runtime_ready_status.setText("Runtime status: AWG READY / WG READY / XRAY READY")
+                runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
+            elif awg_ready and wg_ready:
                 runtime_ready_status.setText("Runtime status: AWG READY / WG READY")
+                runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
+            elif awg_ready and xray_ready:
+                runtime_ready_status.setText("Runtime status: AWG READY / XRAY READY")
+                runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
+            elif wg_ready and xray_ready:
+                runtime_ready_status.setText("Runtime status: WG READY / XRAY READY")
                 runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
             elif awg_ready:
                 runtime_ready_status.setText("Runtime status: AWG READY")
                 runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
             elif wg_ready:
                 runtime_ready_status.setText("Runtime status: WG READY")
+                runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
+            elif xray_ready:
+                runtime_ready_status.setText("Runtime status: XRAY READY")
                 runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
             else:
                 runtime_ready_status.setText("Runtime status: NO RUNTIME")
@@ -1595,6 +1613,7 @@ class DashboardScreen(QWidget):
                 f"WG manager: {tool_details['wg']['manager'] or 'missing'}",
                 f"WG cli: {tool_details['wg']['cli'] or tool_details['wg']['tool'] or 'missing'}",
                 f"WG wintun: {tool_details['wg']['dll'] or 'missing'}",
+                f"Xray binary: {tool_details['xray']['binary'] or 'missing'}",
                 "",
                 f"Bundle runtime profiles: {len(profiles)}",
                 f"Profile types: {', '.join(sorted({p.get('type', '?') for p in profiles})) if profiles else 'none'}",
@@ -1662,13 +1681,14 @@ class DashboardScreen(QWidget):
             details = self._runtime.diagnostics()["tool_details"]
             awg_ready = bool((details["awg"]["manager"] and details["awg"]["cli"] and details["awg"]["dll"]) or (details["awg"]["tool"] and details["awg"]["quick"]))
             wg_ready = bool((details["wg"]["manager"] and details["wg"]["cli"] and details["wg"]["dll"]) or (details["wg"]["tool"] and details["wg"]["quick"]))
-            if awg_ready or wg_ready:
+            xray_ready = bool(details["xray"]["binary"])
+            if awg_ready or wg_ready or xray_ready:
                 QMessageBox.information(dlg, "Runtime Check", "At least one transport runtime is available.")
             else:
                 QMessageBox.warning(
                     dlg,
                     "Runtime Check",
-                    "No local AWG/WG runtime tools were found.\n\n"
+                    "No local AWG/WG/Xray runtime tools were found.\n\n"
                     "Place the bundled runtime files in apps/client-desktop/bin for the new Windows runtime path,\n"
                     "or keep using the older PATH-based fallback until migration is complete.",
                 )

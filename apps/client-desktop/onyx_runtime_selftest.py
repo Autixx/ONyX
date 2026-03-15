@@ -169,6 +169,22 @@ def _build_test_profile(transport: str) -> dict:
     }
 
 
+def _build_xray_test_profile() -> dict:
+    return {
+        "id": "selftest-xray",
+        "transport": "xray",
+        "priority": 1,
+        "config_text": (
+            "{"
+            "\"log\":{\"loglevel\":\"warning\"},"
+            "\"inbounds\":[{\"tag\":\"socks-in\",\"listen\":\"127.0.0.1\",\"port\":20808,\"protocol\":\"socks\",\"settings\":{\"udp\":true}}],"
+            "\"outbounds\":[{\"tag\":\"direct\",\"protocol\":\"freedom\"}]"
+            "}"
+        ),
+        "metadata": {"tunnel_name": "onyxselftestxray"},
+    }
+
+
 async def _daemon_request(command: str, payload: dict) -> tuple[bool, str]:
     client = DaemonPipeClient()
     response = await client.request(
@@ -223,10 +239,50 @@ def _tunnel_smoke_check() -> list[CheckResult]:
     return results
 
 
+def _xray_smoke_check() -> list[CheckResult]:
+    profile = _build_xray_test_profile()
+    results: list[CheckResult] = []
+    apply_ok, apply_detail = asyncio.run(
+        _daemon_request(
+            DaemonCommand.APPLY_BUNDLE.value,
+            {
+                "bundle_id": "selftest-xray",
+                "dns": {},
+                "runtime_profiles": [profile],
+            },
+        )
+    )
+    results.append(CheckResult("xray-smoke:apply_bundle", apply_ok, apply_detail))
+    if not apply_ok:
+        return results
+
+    connect_ok, connect_detail = asyncio.run(
+        _daemon_request(
+            DaemonCommand.CONNECT.value,
+            {
+                "profile_id": profile["id"],
+                "transport": "xray",
+                "dns": {},
+            },
+        )
+    )
+    results.append(CheckResult("xray-smoke:connect", connect_ok, connect_detail))
+
+    disconnect_ok, disconnect_detail = asyncio.run(
+        _daemon_request(
+            DaemonCommand.DISCONNECT.value,
+            {},
+        )
+    )
+    results.append(CheckResult("xray-smoke:disconnect", disconnect_ok, disconnect_detail))
+    return results
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="ONyX desktop runtime self-test")
     parser.add_argument("--skip-daemon", action="store_true", help="Only validate files and dependencies, do not spawn the daemon.")
     parser.add_argument("--with-tunnel-smoke", action="store_true", help="Run real WG/AWG daemon connect/disconnect smoke using temporary configs. Requires admin rights.")
+    parser.add_argument("--with-xray-smoke", action="store_true", help="Run real Xray daemon start/stop smoke using a temporary local config.")
     args = parser.parse_args()
 
     print("ONyX runtime self-test")
@@ -244,6 +300,8 @@ def main() -> int:
         try:
             if args.with_tunnel_smoke and daemon_proc is not None:
                 results.extend(_tunnel_smoke_check())
+            if args.with_xray_smoke and daemon_proc is not None:
+                results.extend(_xray_smoke_check())
         finally:
             if daemon_proc is not None:
                 _stop_process(daemon_proc)
@@ -253,7 +311,7 @@ def main() -> int:
 
     critical_failures = [
         item for item in results
-        if not item.ok and item.name.startswith(("binary:", "manifest", "sha256:", "pywin32", "daemon-console", "daemon-ping", "tunnel-smoke:"))
+        if not item.ok and item.name.startswith(("binary:", "manifest", "sha256:", "pywin32", "daemon-console", "daemon-ping", "tunnel-smoke:", "xray-smoke:"))
     ]
     print("")
     if critical_failures:

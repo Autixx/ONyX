@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import platform
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +17,7 @@ class ActiveProcessGroup:
     config_path: str
     tunnel_name: str
     pids: list[int]
+    processes: list[asyncio.subprocess.Process] | None = None
 
 
 class BaseRuntimeAdapter:
@@ -139,10 +142,56 @@ class XrayAdapter(BaseRuntimeAdapter):
         diag = self.diagnostics()
         if not diag.ready:
             raise RuntimeError("Xray adapter is not ready: " + ", ".join(diag.notes))
-        raise NotImplementedError("Xray runtime skeleton exists, but connect flow is not implemented yet.")
+        tunnel_name = profile.metadata.get("tunnel_name") or "onyxxray0"
+        config_path = self._write_config(tunnel_name, profile.config_text or "{}", suffix=".json")
+        binary = expected_binary_layout()["xray_core"]
+        proc = await asyncio.create_subprocess_exec(
+            binary,
+            "run",
+            "-config",
+            str(config_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=1.0)
+        except asyncio.TimeoutError:
+            return ActiveProcessGroup(
+                transport=self.transport.value,
+                profile_id=profile.id,
+                config_path=str(config_path),
+                tunnel_name=tunnel_name,
+                pids=[proc.pid] if proc.pid is not None else [],
+                processes=None,
+            )
+        stdout = ""
+        stderr = ""
+        if proc.stdout is not None:
+            stdout = (await proc.stdout.read()).decode("utf-8", errors="replace").strip()
+        if proc.stderr is not None:
+            stderr = (await proc.stderr.read()).decode("utf-8", errors="replace").strip()
+        raise RuntimeError(stderr or stdout or "xray failed to start")
 
     async def disconnect(self, session: ActiveProcessGroup) -> None:
-        raise NotImplementedError("Xray runtime skeleton exists, but disconnect flow is not implemented yet.")
+        for pid in session.pids:
+            if not pid:
+                continue
+            if platform.system() == "Windows":
+                proc = await asyncio.create_subprocess_exec(
+                    "taskkill",
+                    "/PID",
+                    str(pid),
+                    "/T",
+                    "/F",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await proc.communicate()
+                if proc.returncode not in (0, 128):
+                    detail = (stderr or stdout).decode("utf-8", errors="replace").strip()
+                    raise RuntimeError(detail or f"taskkill failed for xray pid {pid}")
+            else:
+                os.kill(pid, 15)
 
 
 def build_runtime_adapters() -> dict[str, BaseRuntimeAdapter]:

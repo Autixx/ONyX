@@ -211,12 +211,20 @@ class BundleService:
     @staticmethod
     def _detect_transport_type(config_text: str) -> str | None:
         lower = config_text.lower()
-        if "[interface]" not in lower or "[peer]" not in lower:
+        if "[interface]" in lower and "[peer]" in lower:
+            awg_markers = ("jc =", "jmin =", "jmax =", "s1 =", "s2 =", "h1 =", "h2 =")
+            if any(marker in lower for marker in awg_markers):
+                return "awg"
+            return "wg"
+        try:
+            parsed = json.loads(config_text)
+        except json.JSONDecodeError:
             return None
-        awg_markers = ("jc =", "jmin =", "jmax =", "s1 =", "s2 =", "h1 =", "h2 =")
-        if any(marker in lower for marker in awg_markers):
-            return "awg"
-        return "wg"
+        if not isinstance(parsed, dict):
+            return None
+        if "outbounds" not in parsed:
+            return None
+        return "xray"
 
 
 bundle_service = BundleService()

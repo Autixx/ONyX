@@ -11,7 +11,7 @@ Current scope:
 - device registration
 - device challenge/verify
 - encrypted bundle issue + local decrypt
-- real local tunnel connect/disconnect for AWG and WG when encrypted bundle contains runtime profiles
+- real local or daemon-backed runtime connect/disconnect for AWG, WG, and Xray when encrypted bundle contains runtime profiles
 - first-run splash screen
 - system tray lifecycle
 - interactive background startup task for Windows user sessions
@@ -94,6 +94,12 @@ Run real WG/AWG tunnel smoke through the daemon:
 python onyx_runtime_selftest.py --with-tunnel-smoke
 ```
 
+Run real Xray process smoke through the daemon:
+
+```bash
+python onyx_runtime_selftest.py --with-xray-smoke
+```
+
 This last mode requires:
 
 - Windows
@@ -169,10 +175,10 @@ It exists to support the next migration step:
 
 - the client chooses the first working encrypted runtime profile from the issued bundle
 - transport type stays hidden from the normal UI
-- if the bundle contains no usable AWG/WG profile, connect will fail with a runtime error instead of faking success
+- if the bundle contains no usable AWG/WG/Xray profile, connect will fail with a runtime error instead of faking success
 - the current direct-runtime path is transitional and will be replaced by the privileged daemon path defined in the Windows runtime architecture document
 - `Settings` now shows:
-  - `AWG READY / WG READY / NO RUNTIME`
+  - `AWG READY / WG READY / XRAY READY / NO RUNTIME`
   - resolved tool paths
   - bundle runtime profile summary
   - DNS runtime design state
