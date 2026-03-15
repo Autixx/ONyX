@@ -374,6 +374,12 @@ class LocalTunnelRuntime:
         if not profiles:
             raise RuntimeError("No AWG/WG runtime profiles are available in the issued bundle.")
 
+        if self._must_use_daemon(profiles) and not self._can_use_daemon():
+            raise RuntimeError(
+                "WG/AWG bundled runtime is configured for daemon mode, but the ONyX daemon pipe is unavailable.\n"
+                "Start `onyx_daemon_service.py --console` or install the Windows service first."
+            )
+
         if self._can_use_daemon():
             return self._connect_via_daemon(profiles)
 
@@ -666,6 +672,15 @@ class LocalTunnelRuntime:
     def _can_use_daemon(self) -> bool:
         info = self._daemon_status()
         return bool(info.get("available"))
+
+    def _must_use_daemon(self, profiles: list[dict]) -> bool:
+        if platform.system() != "Windows":
+            return False
+        for profile in profiles:
+            transport = profile.get("type", "")
+            if transport in ("wg", "awg") and self._manager_binary(transport):
+                return True
+        return False
 
     def _daemon_status(self) -> dict:
         try:

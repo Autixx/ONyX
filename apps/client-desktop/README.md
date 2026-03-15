@@ -88,6 +88,19 @@ Skip daemon spawn and only validate files/dependencies:
 python onyx_runtime_selftest.py --skip-daemon
 ```
 
+Run real WG/AWG tunnel smoke through the daemon:
+
+```bash
+python onyx_runtime_selftest.py --with-tunnel-smoke
+```
+
+This last mode requires:
+
+- Windows
+- Administrator privileges
+- `pywin32`
+- bundled WG/AWG binaries present in `apps/client-desktop/bin/`
+
 ## Windows Background Startup
 
 This client is intentionally installed as an interactive startup task, not as a true Windows service.

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import os
 import subprocess
 import sys
 import time
@@ -113,37 +115,118 @@ def _drain_process_output(proc: subprocess.Popen[str]) -> str:
     return output or f"exit code {proc.returncode}"
 
 
-def _daemon_console_check(timeout_seconds: float = 5.0) -> list[CheckResult]:
+def _stop_process(proc: subprocess.Popen[str]) -> None:
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def _start_daemon_console(timeout_seconds: float = 5.0) -> tuple[subprocess.Popen[str] | None, list[CheckResult]]:
     if sys.platform != "win32":
-        return [CheckResult("daemon-console", False, "Windows only")]
+        return None, [CheckResult("daemon-console", False, "Windows only")]
     proc = _spawn_daemon_console()
     start = time.monotonic()
-    try:
-        while time.monotonic() - start < timeout_seconds:
-            if proc.poll() is not None:
-                return [CheckResult("daemon-console", False, _drain_process_output(proc))]
-            try:
-                ping_result = asyncio.run(_ping_daemon())
-            except Exception:
-                time.sleep(0.25)
-                continue
-            return [
-                CheckResult("daemon-console", True, f"started with pid {proc.pid}"),
-                ping_result,
-            ]
-        return [CheckResult("daemon-console", False, f"timed out after {timeout_seconds:.1f}s")]
-    finally:
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+    while time.monotonic() - start < timeout_seconds:
+        if proc.poll() is not None:
+            return None, [CheckResult("daemon-console", False, _drain_process_output(proc))]
+        try:
+            ping_result = asyncio.run(_ping_daemon())
+        except Exception:
+            time.sleep(0.25)
+            continue
+        return proc, [
+            CheckResult("daemon-console", True, f"started with pid {proc.pid}"),
+            ping_result,
+        ]
+    _stop_process(proc)
+    return None, [CheckResult("daemon-console", False, f"timed out after {timeout_seconds:.1f}s")]
+
+
+def _wg_private_key_b64() -> str:
+    raw = bytearray(os.urandom(32))
+    raw[0] &= 248
+    raw[31] &= 127
+    raw[31] |= 64
+    return base64.b64encode(bytes(raw)).decode("ascii")
+
+
+def _build_test_profile(transport: str) -> dict:
+    tunnel_name = f"onyxselftest{transport}"
+    address = "10.255.0.1/32" if transport == "wg" else "10.255.0.2/32"
+    return {
+        "id": f"selftest-{transport}",
+        "transport": transport,
+        "priority": 1,
+        "config_text": (
+            "[Interface]\n"
+            f"PrivateKey = {_wg_private_key_b64()}\n"
+            f"Address = {address}\n"
+        ),
+        "metadata": {"tunnel_name": tunnel_name},
+    }
+
+
+async def _daemon_request(command: str, payload: dict) -> tuple[bool, str]:
+    client = DaemonPipeClient()
+    response = await client.request(
+        CommandEnvelope(
+            request_id=f"selftest-{command}-{int(time.time())}",
+            command=command,
+            payload=payload,
+        )
+    )
+    if response.ok:
+        return True, str(response.result or {})
+    return False, (response.error or {}).get("message", f"{command} failed")
+
+
+def _tunnel_smoke_check() -> list[CheckResult]:
+    results: list[CheckResult] = []
+    for transport in ("wg", "awg"):
+        profile = _build_test_profile(transport)
+        apply_ok, apply_detail = asyncio.run(
+            _daemon_request(
+                DaemonCommand.APPLY_BUNDLE.value,
+                {
+                    "bundle_id": f"selftest-{transport}",
+                    "dns": {},
+                    "runtime_profiles": [profile],
+                },
+            )
+        )
+        results.append(CheckResult(f"tunnel-smoke:{transport}:apply_bundle", apply_ok, apply_detail))
+        if not apply_ok:
+            continue
+
+        connect_ok, connect_detail = asyncio.run(
+            _daemon_request(
+                DaemonCommand.CONNECT.value,
+                {
+                    "profile_id": profile["id"],
+                    "transport": transport,
+                    "dns": {},
+                },
+            )
+        )
+        results.append(CheckResult(f"tunnel-smoke:{transport}:connect", connect_ok, connect_detail))
+
+        disconnect_ok, disconnect_detail = asyncio.run(
+            _daemon_request(
+                DaemonCommand.DISCONNECT.value,
+                {},
+            )
+        )
+        results.append(CheckResult(f"tunnel-smoke:{transport}:disconnect", disconnect_ok, disconnect_detail))
+    return results
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="ONyX desktop runtime self-test")
     parser.add_argument("--skip-daemon", action="store_true", help="Only validate files and dependencies, do not spawn the daemon.")
+    parser.add_argument("--with-tunnel-smoke", action="store_true", help="Run real WG/AWG daemon connect/disconnect smoke using temporary configs. Requires admin rights.")
     args = parser.parse_args()
 
     print("ONyX runtime self-test")
@@ -154,15 +237,23 @@ def main() -> int:
     results: list[CheckResult] = []
     results.extend(_binary_checks())
     results.append(_pywin32_check())
+    daemon_proc: subprocess.Popen[str] | None = None
     if not args.skip_daemon:
-        results.extend(_daemon_console_check())
+        daemon_proc, daemon_results = _start_daemon_console()
+        results.extend(daemon_results)
+        try:
+            if args.with_tunnel_smoke and daemon_proc is not None:
+                results.extend(_tunnel_smoke_check())
+        finally:
+            if daemon_proc is not None:
+                _stop_process(daemon_proc)
 
     for item in results:
         _print_result(item)
 
     critical_failures = [
         item for item in results
-        if not item.ok and item.name.startswith(("binary:", "manifest", "sha256:", "pywin32", "daemon-console", "daemon-ping"))
+        if not item.ok and item.name.startswith(("binary:", "manifest", "sha256:", "pywin32", "daemon-console", "daemon-ping", "tunnel-smoke:"))
     ]
     print("")
     if critical_failures:
