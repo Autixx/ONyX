@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import platform
 from dataclasses import dataclass
@@ -128,10 +129,135 @@ class OpenVpnCloakAdapter(BaseRuntimeAdapter):
         diag = self.diagnostics()
         if not diag.ready:
             raise RuntimeError("OpenVPN+Cloak adapter is not ready: " + ", ".join(diag.notes))
-        raise NotImplementedError("OpenVPN+Cloak runtime skeleton exists, but connect flow is not implemented yet.")
+        tunnel_name = profile.metadata.get("tunnel_name") or "onyxovpn0"
+        config = self._parse_profile_config(profile)
+        cloak_path = self._write_cloak_config(tunnel_name, config["cloak"])
+        ovpn_path = self._write_openvpn_config(tunnel_name, config["openvpn"], config["cloak"])
+
+        cloak_binary = expected_binary_layout()["cloak_client"]
+        cloak_args = [cloak_binary, "-c", str(cloak_path), *config["cloak_args"]]
+        cloak_proc = await asyncio.create_subprocess_exec(
+            *cloak_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            await asyncio.wait_for(cloak_proc.wait(), timeout=1.0)
+        except asyncio.TimeoutError:
+            pass
+        else:
+            stdout = ""
+            stderr = ""
+            if cloak_proc.stdout is not None:
+                stdout = (await cloak_proc.stdout.read()).decode("utf-8", errors="replace").strip()
+            if cloak_proc.stderr is not None:
+                stderr = (await cloak_proc.stderr.read()).decode("utf-8", errors="replace").strip()
+            raise RuntimeError(stderr or stdout or "cloak failed to start")
+
+        await asyncio.sleep(config["startup_delay_seconds"])
+
+        openvpn_binary = expected_binary_layout()["openvpn"]
+        openvpn_args = [openvpn_binary, "--config", str(ovpn_path), *config["openvpn_args"]]
+        openvpn_proc = await asyncio.create_subprocess_exec(
+            *openvpn_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            await asyncio.wait_for(openvpn_proc.wait(), timeout=1.0)
+        except asyncio.TimeoutError:
+            return ActiveProcessGroup(
+                transport=self.transport.value,
+                profile_id=profile.id,
+                config_path=str(ovpn_path),
+                tunnel_name=tunnel_name,
+                pids=[pid for pid in (openvpn_proc.pid, cloak_proc.pid) if pid is not None],
+                processes=None,
+            )
+        stdout = ""
+        stderr = ""
+        if openvpn_proc.stdout is not None:
+            stdout = (await openvpn_proc.stdout.read()).decode("utf-8", errors="replace").strip()
+        if openvpn_proc.stderr is not None:
+            stderr = (await openvpn_proc.stderr.read()).decode("utf-8", errors="replace").strip()
+        await self._terminate_windows_process(cloak_proc.pid)
+        raise RuntimeError(stderr or stdout or "openvpn failed to start")
 
     async def disconnect(self, session: ActiveProcessGroup) -> None:
-        raise NotImplementedError("OpenVPN+Cloak runtime skeleton exists, but disconnect flow is not implemented yet.")
+        for pid in session.pids:
+            await self._terminate_windows_process(pid)
+
+    @staticmethod
+    def _parse_profile_config(profile: RuntimeProfile) -> dict:
+        try:
+            parsed = json.loads(profile.config_text or "{}")
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"OpenVPN+Cloak profile config is not valid JSON: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise RuntimeError("OpenVPN+Cloak profile config must be a JSON object.")
+        cloak_section = parsed.get("cloak")
+        openvpn_section = parsed.get("openvpn")
+        if not isinstance(cloak_section, dict) or not isinstance(openvpn_section, dict):
+            raise RuntimeError("OpenVPN+Cloak profile config must include `cloak` and `openvpn` objects.")
+        cloak_payload = cloak_section.get("config_json", cloak_section.get("config"))
+        if isinstance(cloak_payload, str):
+            try:
+                cloak_payload = json.loads(cloak_payload)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"OpenVPN+Cloak cloak config is not valid JSON: {exc}") from exc
+        if not isinstance(cloak_payload, dict):
+            raise RuntimeError("OpenVPN+Cloak `cloak.config_json` must be a JSON object.")
+        openvpn_text = openvpn_section.get("config_text", openvpn_section.get("ovpn_text"))
+        if not isinstance(openvpn_text, str) or not openvpn_text.strip():
+            raise RuntimeError("OpenVPN+Cloak `openvpn.config_text` is required.")
+        local_port = cloak_section.get("local_port")
+        if local_port is not None:
+            openvpn_text = openvpn_text.replace("__CLOAK_LOCAL_PORT__", str(local_port))
+        return {
+            "cloak": cloak_payload,
+            "cloak_args": [str(item) for item in (cloak_section.get("args") or [])],
+            "openvpn": openvpn_text,
+            "openvpn_args": [str(item) for item in (openvpn_section.get("args") or [])],
+            "startup_delay_seconds": float(parsed.get("startup_delay_seconds", 1.0)),
+        }
+
+    @staticmethod
+    def _write_cloak_config(tunnel_name: str, config_json: dict) -> Path:
+        ensure_runtime_dirs()
+        path = RUNTIME_DIR / f"{tunnel_name}-cloak.json"
+        path.write_text(json.dumps(config_json, indent=2, ensure_ascii=False), encoding="utf-8")
+        return path
+
+    @staticmethod
+    def _write_openvpn_config(tunnel_name: str, config_text: str, cloak_config: dict) -> Path:
+        ensure_runtime_dirs()
+        if "__CLOAK_LOCAL_HOST__" in config_text:
+            local_host = str(cloak_config.get("LocalHost") or cloak_config.get("local_host") or "127.0.0.1")
+            config_text = config_text.replace("__CLOAK_LOCAL_HOST__", local_host)
+        path = RUNTIME_DIR / f"{tunnel_name}.ovpn"
+        path.write_text(config_text.replace("\r\n", "\n").strip() + "\n", encoding="utf-8")
+        return path
+
+    @staticmethod
+    async def _terminate_windows_process(pid: int | None) -> None:
+        if not pid:
+            return
+        if platform.system() == "Windows":
+            proc = await asyncio.create_subprocess_exec(
+                "taskkill",
+                "/PID",
+                str(pid),
+                "/T",
+                "/F",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode not in (0, 128):
+                detail = (stderr or stdout).decode("utf-8", errors="replace").strip()
+                raise RuntimeError(detail or f"taskkill failed for pid {pid}")
+        else:
+            os.kill(pid, 15)
 
 
 class XrayAdapter(BaseRuntimeAdapter):

@@ -11,7 +11,7 @@ Current scope:
 - device registration
 - device challenge/verify
 - encrypted bundle issue + local decrypt
-- real local or daemon-backed runtime connect/disconnect for AWG, WG, and Xray when encrypted bundle contains runtime profiles
+- real local or daemon-backed runtime connect/disconnect for AWG, WG, Xray, and OpenVPN+Cloak when encrypted bundle contains runtime profiles
 - first-run splash screen
 - system tray lifecycle
 - interactive background startup task for Windows user sessions
@@ -176,13 +176,52 @@ It exists to support the next migration step:
 - the client chooses the first working encrypted runtime profile from the issued bundle
 - transport type stays hidden from the normal UI
 - if the bundle contains no usable AWG/WG/Xray profile, connect will fail with a runtime error instead of faking success
+- if the bundle contains no usable AWG/WG/Xray/OpenVPN+Cloak profile, connect will fail with a runtime error instead of faking success
 - the current direct-runtime path is transitional and will be replaced by the privileged daemon path defined in the Windows runtime architecture document
 - `Settings` now shows:
-  - `AWG READY / WG READY / XRAY READY / NO RUNTIME`
+  - `AWG READY / WG READY / OPENVPN+CLOAK READY / XRAY READY / NO RUNTIME`
   - resolved tool paths
   - bundle runtime profile summary
   - DNS runtime design state
   - `Open Tools Folder` action
+
+## OpenVPN+Cloak Profile Contract
+
+The desktop daemon expects `openvpn_cloak` runtime profiles to carry a JSON `config` string with this shape:
+
+```json
+{
+  "startup_delay_seconds": 1.0,
+  "cloak": {
+    "config_json": {
+      "Transport": "direct",
+      "ProxyMethod": "shadowsocks",
+      "EncryptionMethod": "plain",
+      "UID": "example",
+      "PublicKey": "example",
+      "ServerName": "example.com",
+      "NumConn": 1,
+      "BrowserSig": "chrome",
+      "StreamTimeout": 300
+    },
+    "local_port": 20880,
+    "args": []
+  },
+  "openvpn": {
+    "config_text": "client\nnobind\nproto tcp-client\nremote __CLOAK_LOCAL_HOST__ __CLOAK_LOCAL_PORT__\n...",
+    "args": []
+  }
+}
+```
+
+Notes:
+
+- the daemon writes `cloak` config to `~/.onyx-client/runtime/<tunnel>-cloak.json`
+- the daemon writes `openvpn` config to `~/.onyx-client/runtime/<tunnel>.ovpn`
+- `__CLOAK_LOCAL_HOST__` and `__CLOAK_LOCAL_PORT__` placeholders in `openvpn.config_text` are replaced automatically if present
+- `connect()` starts `ck-client.exe` first, then `openvpn.exe`
+- `disconnect()` stops both processes by PID
+- there is no meaningful generic smoke for this runtime without a real remote server profile, so readiness is binary/config-contract based until server-side support is added
 
 ## DNS Status
 
