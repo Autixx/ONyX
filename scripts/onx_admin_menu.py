@@ -16,6 +16,7 @@ import onx_nodes as nodes_cli
 
 DEFAULT_ENV_FILE = "/etc/onx/onx.env"
 DEFAULT_ADMIN_AUTH_FILE = "/etc/onx/admin-auth.txt"
+DEFAULT_ADMIN_WEB_AUTH_FILE = "/etc/onx/admin-web-auth.txt"
 DEFAULT_CLIENT_AUTH_FILE = "/etc/onx/client-auth.txt"
 DEFAULT_BASE_URL = "http://127.0.0.1:8081/api/v1"
 DEFAULT_SERVICE_NAME = "onx-api.service"
@@ -33,6 +34,19 @@ AWG_READY_CAPABILITIES = (
 
 def _read_primary_token(path: Path) -> str | None:
     return nodes_cli._read_primary_token(path)
+
+
+def _read_key_value_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
 
 
 def _load_env(path: Path) -> None:
@@ -701,6 +715,77 @@ def _worker_health_screen(base_url: str, admin_token: str | None) -> None:
     _show_payload_screen("ONX / Worker Health", payload)
 
 
+def _service_check_screen(base_url: str, admin_token: str | None, service_name: str) -> None:
+    lines = [
+        "ONX / Service Check",
+        "",
+        _service_summary(service_name),
+    ]
+
+    try:
+        payload = nodes_cli._request_json(base_url, "GET", "/health", token=None)
+        if isinstance(payload, dict):
+            lines.append(
+                f"api_health=ok status={payload.get('status', '-')}"
+                f" service={payload.get('service', '-')}"
+                f" version={payload.get('version', '-')}"
+            )
+        else:
+            lines.append("api_health=unexpected-response")
+    except Exception as exc:
+        lines.append(f"api_health=down ({exc})")
+
+    try:
+        payload = nodes_cli._request_json(base_url, "GET", "/health/worker", token=admin_token)
+        if isinstance(payload, dict):
+            queue = payload.get("queue") or {}
+            worker = payload.get("worker") or {}
+            lines.append(
+                f"worker_health=ok running={worker.get('running')}"
+                f" pending={queue.get('pending', '-')}"
+                f" running_jobs={queue.get('running', '-')}"
+                f" failed={queue.get('failed', '-')}"
+            )
+        else:
+            lines.append("worker_health=unexpected-response")
+    except Exception as exc:
+        lines.append(f"worker_health=down ({exc})")
+
+    lines.extend(["", "Detailed systemd status follows.", ""])
+    _render(lines)
+    _run_command(["systemctl", "status", service_name, "--no-pager", "--lines=20"])
+    print()
+    _pause()
+
+
+def _show_web_ui_credentials_screen(admin_web_auth_file: Path) -> None:
+    values = _read_key_value_file(admin_web_auth_file)
+    if not values:
+        _render(
+            [
+                "ONX / Web UI Credentials",
+                "",
+                f"No credentials found in {admin_web_auth_file}",
+                "",
+            ]
+        )
+        _pause()
+        return
+
+    lines = [
+        "ONX / Web UI Credentials",
+        "",
+        f"file={admin_web_auth_file}",
+        f"enabled={values.get('enabled', '-')}",
+        f"username={values.get('username', '-')}",
+        f"password={values.get('password', '-')}",
+        f"cookie_name={values.get('cookie_name', '-')}",
+        "",
+    ]
+    _render(lines)
+    _pause()
+
+
 def _retention_policy_screen(base_url: str, admin_token: str | None) -> None:
     try:
         payload = nodes_cli._request_json(base_url, "GET", "/maintenance/retention", token=admin_token)
@@ -736,20 +821,30 @@ def _probe_results_screen(base_url: str, admin_token: str | None) -> None:
     _show_simple_list("ONX / Probe Results", rows, "No probe results found.")
 
 
-def _system_menu(base_url: str, admin_token: str | None, service_name: str, install_dir: Path, client_auth_file: Path, admin_auth_file: Path) -> None:
+def _system_menu(
+    base_url: str,
+    admin_token: str | None,
+    service_name: str,
+    install_dir: Path,
+    client_auth_file: Path,
+    admin_auth_file: Path,
+    admin_web_auth_file: Path,
+) -> None:
     while True:
         _render(
             [
                 "ONX / System",
                 "",
                 "1. Daemon status",
-                "2. Worker health",
-                "3. Retention policy",
-                "4. Run retention cleanup",
-                "5. Probe results",
-                "6. Restart daemon",
-                "7. Smoke-test",
-                "8. Back",
+                "2. Service check",
+                "3. Worker health",
+                "4. Web UI credentials",
+                "5. Retention policy",
+                "6. Run retention cleanup",
+                "7. Probe results",
+                "8. Restart daemon",
+                "9. Smoke-test",
+                "10. Back",
                 "",
             ]
         )
@@ -757,18 +852,22 @@ def _system_menu(base_url: str, admin_token: str | None, service_name: str, inst
         if choice == "1":
             _status_screen(base_url, service_name)
         elif choice == "2":
-            _worker_health_screen(base_url, admin_token)
+            _service_check_screen(base_url, admin_token, service_name)
         elif choice == "3":
-            _retention_policy_screen(base_url, admin_token)
+            _worker_health_screen(base_url, admin_token)
         elif choice == "4":
-            _run_retention_cleanup_screen(base_url, admin_token)
+            _show_web_ui_credentials_screen(admin_web_auth_file)
         elif choice == "5":
-            _probe_results_screen(base_url, admin_token)
+            _retention_policy_screen(base_url, admin_token)
         elif choice == "6":
-            _restart_daemon(service_name)
+            _run_retention_cleanup_screen(base_url, admin_token)
         elif choice == "7":
-            _run_smoke(base_url, install_dir, client_auth_file, admin_auth_file)
+            _probe_results_screen(base_url, admin_token)
         elif choice == "8":
+            _restart_daemon(service_name)
+        elif choice == "9":
+            _run_smoke(base_url, install_dir, client_auth_file, admin_auth_file)
+        elif choice == "10":
             return
 
 
@@ -1568,6 +1667,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Interactive ONX admin menu.")
     parser.add_argument("--env-file", default=DEFAULT_ENV_FILE, help="Path to ONX env file")
     parser.add_argument("--admin-auth-file", default=DEFAULT_ADMIN_AUTH_FILE, help="Path to ONX admin auth file")
+    parser.add_argument("--admin-web-auth-file", default=DEFAULT_ADMIN_WEB_AUTH_FILE, help="Path to ONX admin web auth file")
     parser.add_argument("--client-auth-file", default=DEFAULT_CLIENT_AUTH_FILE, help="Path to ONX client auth file")
     parser.add_argument("--base-url", default=None, help=f"ONX admin API base URL (default: {DEFAULT_BASE_URL})")
     parser.add_argument("--service-name", default=DEFAULT_SERVICE_NAME, help="Systemd service name")
@@ -1581,6 +1681,7 @@ def main() -> int:
     install_dir = Path(args.install_dir).resolve()
     client_auth_file = Path(args.client_auth_file).resolve()
     admin_auth_file = Path(args.admin_auth_file).resolve()
+    admin_web_auth_file = Path(args.admin_web_auth_file).resolve()
 
     _enter_alt_screen()
     try:
@@ -1606,7 +1707,7 @@ def main() -> int:
             )
             choice = input("Choice: ").strip()
             if choice == "1":
-                _system_menu(base_url, admin_token, args.service_name, install_dir, client_auth_file, admin_auth_file)
+                _system_menu(base_url, admin_token, args.service_name, install_dir, client_auth_file, admin_auth_file, admin_web_auth_file)
             elif choice == "2":
                 _nodes_menu(base_url, admin_token)
             elif choice == "3":
