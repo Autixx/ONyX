@@ -4,7 +4,7 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 from onx.core.config import get_settings
 from onx.db.base import Base
@@ -25,6 +25,28 @@ config.set_main_option("sqlalchemy.url", get_settings().database_url)
 import onx.db.models  # noqa: F401
 
 target_metadata = Base.metadata
+
+
+def _ensure_alembic_version_column_capacity(connection) -> None:
+    if connection.dialect.name != "postgresql":
+        return
+    row = connection.execute(
+        text(
+            """
+            SELECT character_maximum_length
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'alembic_version'
+              AND column_name = 'version_num'
+            """
+        )
+    ).first()
+    if row is None:
+        return
+    current_length = row[0]
+    if current_length is None or current_length >= 128:
+        return
+    connection.execute(text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)"))
 
 
 def run_migrations_offline() -> None:
@@ -49,6 +71,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        _ensure_alembic_version_column_capacity(connection)
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
 
         with context.begin_transaction():
