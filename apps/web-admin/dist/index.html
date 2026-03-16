@@ -2506,11 +2506,13 @@ async function actionNodeDiscover(nodeId){
     var node = nById(nodeId);
     var job = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/discover', { method:'POST', body:{} });
     pushEv('job.created', 'discover queued for ' + (node.name || nodeId) + ' [' + job.id + ']');
+    alert('Probe SSH queued: ' + (node.name || nodeId) + ' [' + job.id + ']');
     await refreshJobs();
     setTimeout(function(){ refreshNodes().catch(function(){}); refreshJobs().catch(function(){}); refreshTopology().catch(function(){}); }, 800);
     if(document.getElementById('dp').classList.contains('open') && nodeId === node.id){ showNode(nodeId); }
   }catch(err){
     pushEv('job.error', 'discover failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
   }
 }
 async function actionNodeBootstrap(nodeId){
@@ -2518,11 +2520,13 @@ async function actionNodeBootstrap(nodeId){
     var node = nById(nodeId);
     var job = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/bootstrap-runtime', { method:'POST', body:{} });
     pushEv('job.created', 'bootstrap queued for ' + (node.name || nodeId) + ' [' + job.id + ']');
+    alert('Bootstrap queued: ' + (node.name || nodeId) + ' [' + job.id + ']');
     await refreshJobs();
     setTimeout(function(){ refreshNodes().catch(function(){}); refreshJobs().catch(function(){}); refreshTopology().catch(function(){}); }, 800);
     if(document.getElementById('dp').classList.contains('open') && nodeId === node.id){ showNode(nodeId); }
   }catch(err){
     pushEv('job.error', 'bootstrap failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
   }
 }
 async function actionNodeTrafficReset(nodeId){
@@ -2830,7 +2834,7 @@ function openNodeModal(nodeId){
     +formInput('SSH port', 'ssh_port', node ? node.ssh_port : '22', {required:true, type:'number'})
     +formInput('SSH user', 'ssh_user', node ? node.ssh_user : 'root', {required:true})
     +formSelect('Auth type', 'auth_type', authType, ['password','private_key'])
-    +formSelect('Status', 'status', node ? node.status : 'unknown', ['unknown','reachable','degraded','offline'])
+    +formInput('Traffic threshold (GB)', 'traffic_limit_gb', node && node.traffic_limit_gb != null ? String(node.traffic_limit_gb) : '', {type:'number', step:'0.1', min:'0', help:'Optional monthly or cycle threshold in gigabytes.'})
     +formTextarea(node ? 'New secret (optional)' : 'Secret', 'secret_value', '', {help: node ? 'Leave empty to keep current secret.' : 'Password or private key depending on auth type.'})
     +'</div></form>';
   openModal(node ? 'Edit Node' : 'Create Node', body, {
@@ -2843,6 +2847,7 @@ function openNodeModal(nodeId){
 }
 async function saveNodeForm(fd, nodeId){
   try{
+    var trafficRaw = String(fd.get('traffic_limit_gb') || '').trim();
     var payload = {
       name: String(fd.get('name') || '').trim(),
       role: String(fd.get('role') || 'mixed').trim(),
@@ -2852,7 +2857,7 @@ async function saveNodeForm(fd, nodeId){
       ssh_user: String(fd.get('ssh_user') || '').trim(),
       auth_type: String(fd.get('auth_type') || 'password').trim()
     };
-    if(nodeId){ payload.status = String(fd.get('status') || 'unknown').trim(); }
+    payload.traffic_limit_gb = trafficRaw ? Number(trafficRaw) : null;
     var node = await apiFetch(nodeId ? (API_PREFIX + '/nodes/' + encodeURIComponent(nodeId)) : (API_PREFIX + '/nodes'), {
       method: nodeId ? 'PATCH' : 'POST',
       body: payload
