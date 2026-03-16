@@ -74,6 +74,8 @@ class WireGuardTunnelAdapter(BaseRuntimeAdapter):
         tunnel_name = profile.metadata.get("tunnel_name") or "onyxwg0"
         config_path = self._write_config(tunnel_name, profile.config_text or "")
         manager = expected_binary_layout()["wireguard_manager"]
+        # Clear any stale tunnel service left by a previous crashed run.
+        await self._run(manager, "/uninstalltunnelservice", tunnel_name)
         code, stdout, stderr = await self._run(manager, "/installtunnelservice", str(config_path))
         if code != 0:
             raise RuntimeError(stderr.strip() or stdout.strip() or "wireguard tunnel install failed")
@@ -103,6 +105,8 @@ class AmneziaWGTunnelAdapter(BaseRuntimeAdapter):
         tunnel_name = profile.metadata.get("tunnel_name") or "onyxawg0"
         config_path = self._write_config(tunnel_name, profile.config_text or "")
         manager = expected_binary_layout()["amneziawg_manager"]
+        # Clear any stale tunnel service left by a previous crashed run.
+        await self._run(manager, "/uninstalltunnelservice", tunnel_name)
         code, stdout, stderr = await self._run(manager, "/installtunnelservice", str(config_path))
         if code != 0:
             raise RuntimeError(stderr.strip() or stdout.strip() or "amneziawg tunnel install failed")
