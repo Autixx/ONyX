@@ -7,6 +7,7 @@ Create Date: 2026-03-15 00:00:00.000000
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "0021_add_wg_services"
@@ -16,7 +17,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    wg_service_state = sa.Enum("planned", "applying", "active", "failed", "deleted", name="wg_service_state")
+    wg_service_state = postgresql.ENUM("planned", "applying", "active", "failed", "deleted", name="wg_service_state", create_type=False)
     wg_service_state.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
@@ -86,5 +87,5 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_wg_services_id"), table_name="wg_services")
     op.drop_table("wg_services")
 
-    wg_service_state = sa.Enum("planned", "applying", "active", "failed", "deleted", name="wg_service_state")
+    wg_service_state = postgresql.ENUM("planned", "applying", "active", "failed", "deleted", name="wg_service_state", create_type=False)
     wg_service_state.drop(op.get_bind(), checkfirst=True)

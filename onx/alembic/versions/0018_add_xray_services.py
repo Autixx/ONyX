@@ -7,6 +7,7 @@ Create Date: 2026-03-15
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "0018_add_xray_services"
@@ -16,6 +17,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    transport_mode = postgresql.ENUM("vless_xhttp", name="xray_service_transport_mode", create_type=False)
+    service_state = postgresql.ENUM("planned", "applying", "active", "failed", "deleted", name="xray_service_state", create_type=False)
+    bind = op.get_bind()
+    transport_mode.create(bind, checkfirst=True)
+    service_state.create(bind, checkfirst=True)
+
     op.create_table(
         "xray_services",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -28,12 +35,12 @@ def upgrade() -> None:
         ),
         sa.Column(
             "transport_mode",
-            sa.Enum("vless_xhttp", name="xray_service_transport_mode"),
+            transport_mode,
             nullable=False,
         ),
         sa.Column(
             "state",
-            sa.Enum("planned", "applying", "active", "failed", "deleted", name="xray_service_state"),
+            service_state,
             nullable=False,
         ),
         sa.Column("listen_host", sa.String(length=255), nullable=False),
@@ -80,5 +87,5 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_xray_services_node_id"), table_name="xray_services")
     op.drop_index(op.f("ix_xray_services_name"), table_name="xray_services")
     op.drop_table("xray_services")
-    sa.Enum(name="xray_service_state").drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name="xray_service_transport_mode").drop(op.get_bind(), checkfirst=True)
+    postgresql.ENUM("planned", "applying", "active", "failed", "deleted", name="xray_service_state", create_type=False).drop(op.get_bind(), checkfirst=True)
+    postgresql.ENUM("vless_xhttp", name="xray_service_transport_mode", create_type=False).drop(op.get_bind(), checkfirst=True)

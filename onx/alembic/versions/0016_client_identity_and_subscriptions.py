@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision: str = "0016_client_identity"
@@ -18,9 +19,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    user_status = sa.Enum("pending", "active", "blocked", "deleted", name="user_status")
-    billing_mode = sa.Enum("manual", "lifetime", "periodic", "trial", name="billing_mode")
-    subscription_status = sa.Enum("pending", "active", "suspended", "expired", "revoked", name="subscription_status")
+    user_status = postgresql.ENUM("pending", "active", "blocked", "deleted", name="user_status", create_type=False)
+    billing_mode = postgresql.ENUM("manual", "lifetime", "periodic", "trial", name="billing_mode", create_type=False)
+    subscription_status = postgresql.ENUM("pending", "active", "suspended", "expired", "revoked", name="subscription_status", create_type=False)
+    bind = op.get_bind()
+    user_status.create(bind, checkfirst=True)
+    billing_mode.create(bind, checkfirst=True)
+    subscription_status.create(bind, checkfirst=True)
 
     op.create_table(
         "users",
@@ -137,9 +142,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    user_status = sa.Enum("pending", "active", "blocked", "deleted", name="user_status")
-    billing_mode = sa.Enum("manual", "lifetime", "periodic", "trial", name="billing_mode")
-    subscription_status = sa.Enum("pending", "active", "suspended", "expired", "revoked", name="subscription_status")
+    user_status = postgresql.ENUM("pending", "active", "blocked", "deleted", name="user_status", create_type=False)
+    billing_mode = postgresql.ENUM("manual", "lifetime", "periodic", "trial", name="billing_mode", create_type=False)
+    subscription_status = postgresql.ENUM("pending", "active", "suspended", "expired", "revoked", name="subscription_status", create_type=False)
 
     op.drop_constraint("fk_registrations_approved_user_id_users", "registrations", type_="foreignkey")
     op.drop_constraint("fk_registrations_reviewed_by_admin_users", "registrations", type_="foreignkey")
@@ -168,7 +173,7 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_subscriptions_plan_id"), table_name="subscriptions")
     op.drop_index(op.f("ix_subscriptions_user_id"), table_name="subscriptions")
     op.drop_table("subscriptions")
-    subscription_status.drop(op.get_bind(), checkfirst=False)
+    subscription_status.drop(op.get_bind(), checkfirst=True)
 
     op.drop_index(op.f("ix_plans_code"), table_name="plans")
     op.drop_table("plans")
@@ -176,5 +181,5 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_users_email"), table_name="users")
     op.drop_index(op.f("ix_users_username"), table_name="users")
     op.drop_table("users")
-    billing_mode.drop(op.get_bind(), checkfirst=False)
-    user_status.drop(op.get_bind(), checkfirst=False)
+    billing_mode.drop(op.get_bind(), checkfirst=True)
+    user_status.drop(op.get_bind(), checkfirst=True)

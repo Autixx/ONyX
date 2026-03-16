@@ -7,6 +7,7 @@ Create Date: 2026-03-15 00:00:00.000000
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "0023_add_transit_policies"
@@ -16,7 +17,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    transit_policy_state = sa.Enum(
+    transit_policy_state = postgresql.ENUM(
         "planned",
         "applying",
         "active",
@@ -24,6 +25,7 @@ def upgrade() -> None:
         "degraded",
         "deleted",
         name="transit_policy_state",
+        create_type=False,
     )
     transit_policy_state.create(op.get_bind(), checkfirst=True)
 
@@ -70,7 +72,7 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_transit_policies_name"), table_name="transit_policies")
     op.drop_index(op.f("ix_transit_policies_id"), table_name="transit_policies")
     op.drop_table("transit_policies")
-    sa.Enum(
+    postgresql.ENUM(
         "planned",
         "applying",
         "active",
@@ -78,4 +80,5 @@ def downgrade() -> None:
         "degraded",
         "deleted",
         name="transit_policy_state",
+        create_type=False,
     ).drop(op.get_bind(), checkfirst=True)

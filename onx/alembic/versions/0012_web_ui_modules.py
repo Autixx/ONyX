@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision: str = "0012_web_ui_modules"
@@ -18,7 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    registration_status = sa.Enum("pending", "approved", "rejected", name="registration_status")
+    registration_status = postgresql.ENUM("pending", "approved", "rejected", name="registration_status", create_type=False)
+    registration_status.create(op.get_bind(), checkfirst=True)
 
     op.add_column(
         "nodes",
@@ -69,7 +71,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    registration_status = sa.Enum("pending", "approved", "rejected", name="registration_status")
+    registration_status = postgresql.ENUM("pending", "approved", "rejected", name="registration_status", create_type=False)
 
     op.drop_index(op.f("ix_peers_node_id"), table_name="peers")
     op.drop_index(op.f("ix_peers_email"), table_name="peers")
@@ -79,7 +81,7 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_registrations_email"), table_name="registrations")
     op.drop_index(op.f("ix_registrations_username"), table_name="registrations")
     op.drop_table("registrations")
-    registration_status.drop(op.get_bind(), checkfirst=False)
+    registration_status.drop(op.get_bind(), checkfirst=True)
 
     op.drop_column("nodes", "traffic_limit_gb")
     op.drop_column("nodes", "registered_at")

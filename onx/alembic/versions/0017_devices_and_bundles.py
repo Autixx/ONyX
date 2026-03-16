@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision: str = "0017_devices_and_bundles"
@@ -18,7 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    device_status = sa.Enum("pending", "active", "revoked", name="device_status")
+    device_status = postgresql.ENUM("pending", "active", "revoked", name="device_status", create_type=False)
+    device_status.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "devices",
@@ -67,7 +69,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    device_status = sa.Enum("pending", "active", "revoked", name="device_status")
+    device_status = postgresql.ENUM("pending", "active", "revoked", name="device_status", create_type=False)
 
     op.drop_index(op.f("ix_issued_bundles_expires_at"), table_name="issued_bundles")
     op.drop_index(op.f("ix_issued_bundles_bundle_hash"), table_name="issued_bundles")
@@ -78,4 +80,4 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_devices_device_public_key"), table_name="devices")
     op.drop_index(op.f("ix_devices_user_id"), table_name="devices")
     op.drop_table("devices")
-    device_status.drop(op.get_bind(), checkfirst=False)
+    device_status.drop(op.get_bind(), checkfirst=True)

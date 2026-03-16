@@ -7,6 +7,7 @@ Create Date: 2026-03-15 00:00:00.000000
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "0022_add_openvpn_cloak_services"
@@ -16,7 +17,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    service_state = sa.Enum("planned", "applying", "active", "failed", "deleted", name="openvpn_cloak_service_state")
+    service_state = postgresql.ENUM("planned", "applying", "active", "failed", "deleted", name="openvpn_cloak_service_state", create_type=False)
     service_state.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
@@ -91,5 +92,5 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_openvpn_cloak_services_id"), table_name="openvpn_cloak_services")
     op.drop_table("openvpn_cloak_services")
 
-    service_state = sa.Enum("planned", "applying", "active", "failed", "deleted", name="openvpn_cloak_service_state")
+    service_state = postgresql.ENUM("planned", "applying", "active", "failed", "deleted", name="openvpn_cloak_service_state", create_type=False)
     service_state.drop(op.get_bind(), checkfirst=True)
