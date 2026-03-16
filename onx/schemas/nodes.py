@@ -74,7 +74,7 @@ class NodeRead(ONXBaseModel):
     kernel_version: str | None
     registered_at: datetime
     traffic_limit_gb: float | None
-    traffic_used_gb: float | None
+    traffic_used_gb: float | None = None
     traffic_suspended_at: datetime | None
     traffic_suspension_reason: str | None
     traffic_hard_enforced_at: datetime | None
