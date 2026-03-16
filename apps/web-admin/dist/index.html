@@ -6276,9 +6276,9 @@ function sendTicketReply(){
   var TRAILS   = [];
   var GLOWS    = [];
   var N_NODES        = 250;
-  var N_CONCURRENT   = 5;
-  var EDGE_TRAVEL_MS = 500;
-  var FADE_MS        = 6000;
+  var N_CONCURRENT   = 8;
+  var SIGNAL_PX_PER_SEC = 150; // constant pixel speed
+  var FADE_MS        = 12000;
   var MAX_CONN       = 3;
 
   function resize(){
@@ -6316,11 +6316,18 @@ function sendTicketReply(){
     });
   }
 
+  function edgeDuration(e){
+    var a=nodes[e.a], b=nodes[e.b];
+    var len = Math.hypot(a.x-b.x, a.y-b.y);
+    return Math.max(60, len / SIGNAL_PX_PER_SEC * 1000); // ms, min 60ms
+  }
+
   function spawnSignal(){
     var e   = edges[Math.floor(Math.random()*edges.length)];
     var dir = Math.random() < 0.5 ? 1 : 0;
     var startNode = dir?e.a:e.b;
-    SIGNALS.push({ edge:e, dir:dir, t:0, startTime:performance.now(), fromIdx:startNode, history:[startNode] });
+    SIGNALS.push({ edge:e, dir:dir, t:0, startTime:performance.now(),
+                   duration:edgeDuration(e), fromIdx:startNode, history:[startNode] });
   }
 
   var _accColor = '#00c8b4';
@@ -6386,7 +6393,7 @@ function sendTicketReply(){
 
     // 5. Active signals
     SIGNALS.forEach(function(sig, idx){
-      sig.t = Math.min(1, (now - sig.startTime) / EDGE_TRAVEL_MS);
+      sig.t = Math.min(1, (now - sig.startTime) / sig.duration);
       var e    = sig.edge;
       var from = nodes[sig.dir ? e.a : e.b];
       var to   = nodes[sig.dir ? e.b : e.a];
@@ -6441,9 +6448,45 @@ function sendTicketReply(){
         var newHistory = history.concat([destIdx]);
         if(newHistory.length > 15) newHistory = newHistory.slice(newHistory.length - 15);
 
-        SIGNALS[idx] = { edge:nextEdge, dir:nextDir, t:0, startTime:now, fromIdx:destIdx, history:newHistory };
+        // Decrement hopsLeft for branch signals
+        var hopsLeft = sig.hopsLeft != null ? sig.hopsLeft - 1 : null;
+        if(hopsLeft !== null && hopsLeft <= 0){
+          // Branch exhausted — mark for removal
+          SIGNALS[idx] = null;
+        } else {
+          SIGNALS[idx] = { edge:nextEdge, dir:nextDir, t:0, startTime:now, duration:edgeDuration(nextEdge), fromIdx:destIdx, history:newHistory,
+                           hopsLeft: hopsLeft };
+        }
+
+        // 5% chance: spawn a second branching signal with 20-hop lifetime
+        if(Math.random() < 0.05){
+          // Pick a different forward edge for the branch
+          var branchPool = fresh.length > 1
+            ? fresh.filter(function(nb){ return nb.edge !== nextEdge; })
+            : (forward.length > 1 ? forward.filter(function(nb){ return nb.edge !== nextEdge; }) : null);
+          if(branchPool && branchPool.length){
+            var bpick = branchPool[Math.floor(Math.random()*branchPool.length)];
+            var bEdge = bpick.edge;
+            var bDir  = bEdge.a === destIdx ? 1 : 0;
+            SIGNALS.push({
+              edge: bEdge, dir: bDir, t: 0,
+              startTime: now, duration: edgeDuration(bEdge),
+              fromIdx: destIdx, history: newHistory.slice(),
+              hopsLeft: 20   // branch dies after 20 hops
+            });
+          }
+        }
       }
     });
+
+    // Remove exhausted branch signals
+    SIGNALS = SIGNALS.filter(function(s){ return s !== null; });
+    // Ensure at least N_CONCURRENT base signals always running
+    var baseSigs = SIGNALS.filter(function(s){ return s.hopsLeft == null; });
+    while(baseSigs.length < N_CONCURRENT){
+      spawnSignal();
+      baseSigs = SIGNALS.filter(function(s){ return s.hopsLeft == null; });
+    }
 
     requestAnimationFrame(draw);
   }
