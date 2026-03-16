@@ -55,6 +55,24 @@ class BaseRuntimeAdapter:
         stdout, stderr = await proc.communicate()
         return proc.returncode, stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace")
 
+    async def _install_tunnel_service(self, manager: str, tunnel_name: str, config_path: Path, flavor: str) -> None:
+        last_message = f"{flavor} tunnel install failed"
+        for attempt in range(6):
+            await self._run(manager, "/uninstalltunnelservice", tunnel_name)
+            if attempt:
+                await asyncio.sleep(0.75)
+            code, stdout, stderr = await self._run(manager, "/installtunnelservice", str(config_path))
+            if code == 0:
+                return
+            message = stderr.strip() or stdout.strip() or last_message
+            last_message = message
+            lowered = message.lower()
+            if "already installed" in lowered or "already exists" in lowered:
+                await asyncio.sleep(0.75)
+                continue
+            raise RuntimeError(message)
+        raise RuntimeError(last_message)
+
     @staticmethod
     def _write_config(tunnel_name: str, config_text: str, suffix: str = ".conf") -> Path:
         ensure_runtime_dirs()
@@ -74,11 +92,7 @@ class WireGuardTunnelAdapter(BaseRuntimeAdapter):
         tunnel_name = profile.metadata.get("tunnel_name") or "onyxwg0"
         config_path = self._write_config(tunnel_name, profile.config_text or "")
         manager = expected_binary_layout()["wireguard_manager"]
-        # Clear any stale tunnel service left by a previous crashed run.
-        await self._run(manager, "/uninstalltunnelservice", tunnel_name)
-        code, stdout, stderr = await self._run(manager, "/installtunnelservice", str(config_path))
-        if code != 0:
-            raise RuntimeError(stderr.strip() or stdout.strip() or "wireguard tunnel install failed")
+        await self._install_tunnel_service(manager, tunnel_name, config_path, "wireguard")
         return ActiveProcessGroup(
             transport=self.transport.value,
             profile_id=profile.id,
@@ -105,11 +119,7 @@ class AmneziaWGTunnelAdapter(BaseRuntimeAdapter):
         tunnel_name = profile.metadata.get("tunnel_name") or "onyxawg0"
         config_path = self._write_config(tunnel_name, profile.config_text or "")
         manager = expected_binary_layout()["amneziawg_manager"]
-        # Clear any stale tunnel service left by a previous crashed run.
-        await self._run(manager, "/uninstalltunnelservice", tunnel_name)
-        code, stdout, stderr = await self._run(manager, "/installtunnelservice", str(config_path))
-        if code != 0:
-            raise RuntimeError(stderr.strip() or stdout.strip() or "amneziawg tunnel install failed")
+        await self._install_tunnel_service(manager, tunnel_name, config_path, "amneziawg")
         return ActiveProcessGroup(
             transport=self.transport.value,
             profile_id=profile.id,
