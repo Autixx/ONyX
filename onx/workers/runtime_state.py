@@ -41,6 +41,8 @@ class WorkerRuntimeState:
             self._lease_seconds = lease_seconds
             self._started_at = datetime.now(timezone.utc)
             self._stopped_at = None
+            self._last_error_at = None
+            self._last_error_message = None
 
     def mark_stopped(self) -> None:
         with self._lock:
@@ -65,6 +67,8 @@ class WorkerRuntimeState:
         with self._lock:
             self._counters.jobs_succeeded_total += 1
             self._last_job_finished_at = datetime.now(timezone.utc)
+            self._last_error_at = None
+            self._last_error_message = None
 
     def mark_job_failed(self) -> None:
         with self._lock:

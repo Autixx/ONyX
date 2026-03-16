@@ -16,6 +16,7 @@ from onx.schemas.nodes import (
     NodeSecretRead,
     NodeSecretUpsert,
     NodeUpdate,
+    serialize_node_read,
 )
 from onx.services.job_service import JobConflictError, JobService
 from onx.services.node_agent_service import NodeAgentService
@@ -31,30 +32,7 @@ node_traffic_accounting_service = NodeTrafficAccountingService()
 
 
 def _serialize_node(node: Node, *, traffic_used_gb: float | None = None) -> NodeRead:
-    return NodeRead(
-        id=node.id,
-        name=node.name,
-        role=node.role,
-        management_address=node.management_address,
-        ssh_host=node.ssh_host,
-        ssh_port=node.ssh_port,
-        ssh_user=node.ssh_user,
-        auth_type=node.auth_type,
-        status=node.status,
-        os_family=node.os_family,
-        os_version=node.os_version,
-        kernel_version=node.kernel_version,
-        registered_at=node.registered_at,
-        traffic_limit_gb=node.traffic_limit_gb,
-        traffic_used_gb=traffic_used_gb,
-        traffic_suspended_at=node.traffic_suspended_at,
-        traffic_suspension_reason=node.traffic_suspension_reason,
-        traffic_hard_enforced_at=node.traffic_hard_enforced_at,
-        traffic_hard_enforcement_reason=node.traffic_hard_enforcement_reason,
-        last_seen_at=node.last_seen_at,
-        created_at=node.created_at,
-        updated_at=node.updated_at,
-    )
+    return serialize_node_read(node, traffic_used_gb=traffic_used_gb)
 
 
 @router.get("", response_model=list[NodeRead])

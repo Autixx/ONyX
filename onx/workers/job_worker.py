@@ -15,7 +15,7 @@ from onx.db.models.route_policy import RoutePolicy
 from onx.deploy.ssh_executor import SSHExecutor
 from onx.db.session import SessionLocal
 from onx.schemas.links import LinkRead
-from onx.schemas.nodes import NodeCapabilityRead, NodeRead
+from onx.schemas.nodes import NodeCapabilityRead, serialize_node_read
 from onx.schemas.route_policies import RoutePolicyRead
 from onx.services.discovery_service import DiscoveryService
 from onx.services.interface_runtime_service import InterfaceRuntimeService
@@ -158,7 +158,7 @@ class JobWorker:
             db,
             job,
             {
-                "node": NodeRead.model_validate(node).model_dump(mode="json"),
+                "node": serialize_node_read(node).model_dump(mode="json"),
                 "interfaces": result["interfaces"],
                 "capabilities": [
                     NodeCapabilityRead.model_validate(capability).model_dump(mode="json")
