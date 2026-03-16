@@ -7,11 +7,12 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 :root{
+  --ui-scale:1.15;
   --bg0:#06090d;--bg1:#0a0f15;--bg2:#0f161e;--bg3:#141c26;
   --acc:#00c8b4;--acc2:#00e5cc;--adim:rgba(0,200,180,0.07);
   --bdr:rgba(0,200,180,0.14);--bdr2:rgba(0,200,180,0.28);
   --red:#ff4560;--amb:#f5a623;--grn:#00e676;--blu:#4da6ff;--pur:#a78bfa;
-  --t0:#f0f6fc;--t1:#b8d0e8;--t2:#6e8fa8;
+  --t0:#ffffff;--t1:#d7ebff;--t2:#9cbad4;
   --mono:'Courier New',Courier,monospace;
 }
 /* ── THEMES ── */
@@ -19,28 +20,29 @@ body.theme-crimson{
   --bg0:#0a0506;--bg1:#140a0c;--bg2:#1c0e11;--bg3:#240f14;
   --acc:#c8004a;--acc2:#e5005a;--adim:rgba(200,0,74,0.08);
   --bdr:rgba(200,0,74,0.18);--bdr2:rgba(200,0,74,0.34);
-  --grn:#e55;--blu:#e57;--pur:#c84;--t1:#e8b8c0;--t2:#a86870;
+  --grn:#e55;--blu:#e57;--pur:#c84;--t1:#ffd2dc;--t2:#d79aa8;
 }
 body.theme-pink{
   --bg0:#080508;--bg1:#110a11;--bg2:#170d17;--bg3:#1e101e;
   --acc:#c040a8;--acc2:#d850c0;--adim:rgba(192,64,168,0.08);
   --bdr:rgba(192,64,168,0.18);--bdr2:rgba(192,64,168,0.34);
-  --grn:#d840b8;--blu:#a060d0;--pur:#e080e0;--t1:#e0b8e0;--t2:#a070a8;
+  --grn:#d840b8;--blu:#a060d0;--pur:#e080e0;--t1:#f6d8f6;--t2:#c89cc8;
 }
 body.theme-yellow{
   --bg0:#080800;--bg1:#111100;--bg2:#171700;--bg3:#1e1e00;
   --acc:#c0a800;--acc2:#d8c000;--adim:rgba(192,168,0,0.08);
   --bdr:rgba(192,168,0,0.18);--bdr2:rgba(192,168,0,0.34);
-  --grn:#a0c000;--blu:#c0a800;--pur:#e0c800;--t1:#e0d890;--t2:#a09840;
+  --grn:#a0c000;--blu:#c0a800;--pur:#e0c800;--t1:#fff2b8;--t2:#d8c56a;
 }
 body.theme-green{
   --bg0:#030a04;--bg1:#061208;--bg2:#091a0c;--bg3:#0c2010;
   --acc:#00c050;--acc2:#00e060;--adim:rgba(0,192,80,0.08);
   --bdr:rgba(0,192,80,0.18);--bdr2:rgba(0,192,80,0.34);
-  --grn:#00e060;--blu:#40c080;--pur:#60e0a0;--t1:#b0e8c0;--t2:#60a870;
+  --grn:#00e060;--blu:#40c080;--pur:#60e0a0;--t1:#d6ffe2;--t2:#98d0a6;
 }
-html,body{height:100%;background:var(--bg0);color:var(--t0);font-family:var(--mono);font-size:20px;}
+html,body{height:100%;background:var(--bg0);color:var(--t0);font-family:var(--mono);font-size:23px;}
 body{display:flex;flex-direction:column;}
+#loginWrap,#appWrap{zoom:var(--ui-scale);}
 
 /* в”Ђв”Ђ SCROLLBARS в”Ђв”Ђ */
 ::-webkit-scrollbar{width:4px;height:4px;}
@@ -50,13 +52,13 @@ body{display:flex;flex-direction:column;}
 /* в”Ђв”Ђ LOGIN в”Ђв”Ђ */
 #loginWrap{position:fixed;inset:0;background:var(--bg0);display:none;align-items:center;justify-content:center;z-index:100;}
 .lbox{width:320px;background:var(--bg2);border:1px solid var(--bdr2);border-radius:4px;padding:36px 32px;}
-.llogo{font-size:25px;font-weight:700;color:var(--acc2);letter-spacing:.12em;margin-bottom:2px;}
-.lsub{font-size:13px;color:var(--t1);margin-bottom:28px;letter-spacing:.1em;text-shadow:0 0 12px rgba(0,200,180,0.18);}
-.flbl{display:block;font-size:12px;color:var(--t1);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px;}
-.finp{width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:9px 11px;color:var(--t0);font-family:var(--mono);font-size:15px;outline:none;margin-bottom:12px;transition:border-color .12s;}
+.llogo{font-size:28px;font-weight:700;color:var(--acc2);letter-spacing:.12em;margin-bottom:2px;}
+.lsub{font-size:15px;color:var(--t1);margin-bottom:28px;letter-spacing:.1em;text-shadow:0 0 12px rgba(0,200,180,0.18);}
+.flbl{display:block;font-size:13px;color:var(--t1);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px;}
+.finp{width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:10px 12px;color:var(--t0);font-family:var(--mono);font-size:17px;outline:none;margin-bottom:12px;transition:border-color .12s;}
 .finp:focus{border-color:var(--acc);}
-.lerr{font-size:13px;color:var(--red);min-height:16px;margin-bottom:8px;}
-.lbtn{width:100%;padding:10px;background:var(--acc);color:#080c10;border:none;border-radius:3px;font-family:var(--mono);font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.06em;transition:background .12s;}
+.lerr{font-size:15px;color:var(--red);min-height:18px;margin-bottom:8px;}
+.lbtn{width:100%;padding:11px;background:var(--acc);color:#080c10;border:none;border-radius:3px;font-family:var(--mono);font-size:17px;font-weight:700;cursor:pointer;letter-spacing:.06em;transition:background .12s;}
 .lbtn:hover{background:var(--acc2);}
 
 /* в”Ђв”Ђ APP SHELL в”Ђв”Ђ */
@@ -64,14 +66,14 @@ body{display:flex;flex-direction:column;}
 
 /* в”Ђв”Ђ TOPBAR в”Ђв”Ђ */
 .topbar{height:44px;background:var(--bg1);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 16px;gap:0;flex-shrink:0;}
-.logo{font-size:20px;font-weight:700;color:var(--acc2);letter-spacing:.12em;white-space:nowrap;}
-.logo-sep{color:var(--t2);font-size:13px;letter-spacing:.1em;}
+.logo{font-size:23px;font-weight:700;color:var(--acc2);letter-spacing:.12em;white-space:nowrap;}
+.logo-sep{color:var(--t2);font-size:15px;letter-spacing:.1em;}
 .ws-row{display:flex;align-items:center;gap:6px;margin-left:auto;}
 .wsdot{width:7px;height:7px;border-radius:50%;background:var(--grn);animation:blink 2.2s ease-in-out infinite;}
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:.25;}}
 .wsdot.off{background:var(--red);animation:none;}
-.wslbl{font-size:13px;color:var(--t1);}
-.ubtn{font-size:13px;color:var(--t1);padding:4px 11px;border:1px solid var(--bdr);border-radius:3px;cursor:pointer;background:none;font-family:var(--mono);margin-left:12px;transition:all .12s;}
+.wslbl{font-size:15px;color:var(--t1);}
+.ubtn{font-size:15px;color:var(--t1);padding:5px 12px;border:1px solid var(--bdr);border-radius:3px;cursor:pointer;background:none;font-family:var(--mono);margin-left:12px;transition:all .12s;}
 .ubtn:hover{color:var(--t0);border-color:var(--bdr2);}
 
 /* в”Ђв”Ђ LAYOUT в”Ђв”Ђ */
@@ -91,7 +93,7 @@ body{display:flex;flex-direction:column;}
 
 /* ── LANG SWITCHER ── */
 .lang-switcher{display:flex;align-items:center;gap:4px;margin-left:8px;}
-.lang-btn{font-size:12px;padding:3px 7px;border:1px solid var(--bdr);border-radius:2px;background:none;color:var(--t1);cursor:pointer;font-family:var(--mono);transition:all .12s;letter-spacing:.05em;}
+.lang-btn{font-size:14px;padding:4px 8px;border:1px solid var(--bdr);border-radius:2px;background:none;color:var(--t1);cursor:pointer;font-family:var(--mono);transition:all .12s;letter-spacing:.05em;}
 .lang-btn:hover{color:var(--t0);border-color:var(--bdr2);}
 .lang-btn.active{color:var(--acc2);border-color:var(--acc);background:var(--adim);}
 
@@ -107,35 +109,35 @@ body{display:flex;flex-direction:column;}
 
 /* в”Ђв”Ђ PAGE HEADER в”Ђв”Ђ */
 .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
-.ptitle{font-size:18px;font-weight:700;color:var(--t0);letter-spacing:.05em;display:flex;align-items:center;gap:10px;}
-.tag{font-size:12px;color:var(--acc);border:1px solid var(--bdr2);padding:2px 7px;border-radius:2px;letter-spacing:.08em;}
+.ptitle{font-size:21px;font-weight:700;color:var(--t0);letter-spacing:.05em;display:flex;align-items:center;gap:10px;}
+.tag{font-size:14px;color:var(--acc);border:1px solid var(--bdr2);padding:2px 7px;border-radius:2px;letter-spacing:.08em;}
 .pbtn-row{display:flex;gap:8px;}
 
 /* в”Ђв”Ђ BUTTONS в”Ђв”Ђ */
-.btn{padding:7px 14px;font-family:var(--mono);font-size:13px;cursor:pointer;border-radius:3px;border:1px solid var(--bdr2);background:transparent;color:var(--acc);transition:all .12s;}
+.btn{padding:8px 15px;font-family:var(--mono);font-size:15px;cursor:pointer;border-radius:3px;border:1px solid var(--bdr2);background:transparent;color:var(--acc);transition:all .12s;}
 .btn:hover{background:var(--adim);border-color:var(--acc);}
 .btn.pri{background:var(--acc);color:#080c10;border-color:var(--acc);}
 .btn.pri:hover{background:var(--acc2);}
 .btn.red{color:var(--red);border-color:rgba(255,69,96,.3);}
 .btn.red:hover{background:rgba(255,69,96,.08);}
-.btn.sm{padding:3px 9px;font-size:12px;}
+.btn.sm{padding:4px 10px;font-size:13px;}
 
 /* в”Ђв”Ђ STAT GRID в”Ђв”Ђ */
 .sgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px;}
 .scard{background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;padding:14px 16px;}
-.slbl{font-size:11px;color:var(--t1);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;}
-.sval{font-size:27px;font-weight:700;color:var(--t0);line-height:1;}
-.ssub{font-size:12px;color:var(--t1);margin-top:5px;}
+.slbl{font-size:13px;color:var(--t1);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;}
+.sval{font-size:31px;font-weight:700;color:var(--t0);line-height:1;}
+.ssub{font-size:14px;color:var(--t1);margin-top:5px;}
 
 /* в”Ђв”Ђ TABLE в”Ђв”Ђ */
 .tw{background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;overflow:hidden;margin-bottom:18px;}
-.th-row{padding:9px 14px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--t2);letter-spacing:.08em;text-transform:uppercase;}
+.th-row{padding:9px 14px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;font-size:14px;color:var(--t2);letter-spacing:.08em;text-transform:uppercase;}
 table{width:100%;border-collapse:collapse;}
-thead th{text-align:left;padding:9px 14px;font-size:11px;color:var(--t1);letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid var(--bdr);font-weight:400;}
+thead th{text-align:left;padding:9px 14px;font-size:13px;color:var(--t1);letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid var(--bdr);font-weight:400;}
 tbody tr{border-bottom:1px solid rgba(0,200,180,.04);cursor:pointer;transition:background .1s;}
 tbody tr:last-child{border-bottom:none;}
 tbody tr:hover{background:var(--adim);}
-td{padding:9px 14px;color:var(--t0);font-size:14px;vertical-align:middle;}
+td{padding:9px 14px;color:var(--t0);font-size:15px;vertical-align:middle;}
 td.m{color:var(--t0);}
 
 /* в”Ђв”Ђ PILLS в”Ђв”Ђ */
@@ -149,7 +151,7 @@ td.m{color:var(--t0);}
 
 /* в”Ђв”Ђ EVENT LOG в”Ђв”Ђ */
 .elog{background:var(--bg1);border:1px solid var(--bdr);border-radius:4px;height:200px;overflow-y:auto;padding:10px 12px;}
-.eline{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid rgba(0,200,180,.03);font-size:13px;}
+.eline{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid rgba(0,200,180,.03);font-size:14px;}
 .et{color:var(--t1);flex-shrink:0;width:60px;}
 .ety{flex-shrink:0;width:150px;}
 .ety.sys{color:var(--acc);}
@@ -158,7 +160,7 @@ td.m{color:var(--t0);}
 .ety.err{color:var(--red);}
 
 /* в”Ђв”Ђ SECTION TITLE в”Ђв”Ђ */
-.stitle{font-size:11px;color:var(--t1);letter-spacing:.14em;text-transform:uppercase;margin:18px 0 8px;}
+.stitle{font-size:13px;color:var(--t1);letter-spacing:.14em;text-transform:uppercase;margin:18px 0 8px;}
 
 /* в”Ђв”Ђ TWO COL в”Ђв”Ђ */
 .two{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
@@ -167,7 +169,7 @@ td.m{color:var(--t0);}
 #tc{width:100%;background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:crosshair;}
 
 /* в”Ђв”Ђ JOB LOG в”Ђв”Ђ */
-.jlog{background:var(--bg0);border:1px solid var(--bdr);border-radius:3px;padding:10px 12px;font-size:13px;color:var(--t1);margin-top:10px;max-height:200px;overflow-y:auto;line-height:1.9;}
+.jlog{background:var(--bg0);border:1px solid var(--bdr);border-radius:3px;padding:10px 12px;font-size:14px;color:var(--t1);margin-top:10px;max-height:200px;overflow-y:auto;line-height:1.9;}
 .jlog .ok{color:var(--grn);}
 .jlog .er{color:var(--red);}
 .jlog .inf{color:var(--blu);}
@@ -177,8 +179,8 @@ td.m{color:var(--t0);}
 .dp.open{transform:translateX(0);}
 .dp-close{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--t1);font-size:20px;cursor:pointer;line-height:1;transition:color .1s;}
 .dp-close:hover{color:var(--t0);}
-.dp-title{font-size:20px;font-weight:700;color:var(--t0);margin-bottom:18px;padding-right:24px;}
-.drow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bdr);font-size:14px;}
+.dp-title{font-size:23px;font-weight:700;color:var(--t0);margin-bottom:18px;padding-right:24px;}
+.drow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bdr);font-size:15px;}
 .dk{color:var(--t1);}
 .dv{color:var(--t0);text-align:right;max-width:220px;word-break:break-all;}
 .dp-actions{display:flex;gap:8px;margin-top:16px;}
@@ -189,7 +191,7 @@ td.m{color:var(--t0);}
 #page-apidebug textarea{font-family:var(--mono);}
 
 /* в”Ђв”Ђ GRID OVERLAY в”Ђв”Ђ */
-.topo-legend{display:flex;gap:16px;margin-top:10px;font-size:13px;color:var(--t1);}
+.topo-legend{display:flex;gap:16px;margin-top:10px;font-size:14px;color:var(--t1);}
 .topo-meta{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;}
 
 /* в”Ђв”Ђ MODAL FORM в”Ђв”Ђ */
@@ -197,29 +199,29 @@ td.m{color:var(--t0);}
 .modal.open{display:flex;}
 .modal-box{width:min(760px,92vw);max-height:86vh;overflow-y:auto;background:var(--bg2);border:1px solid var(--bdr2);border-radius:4px;box-shadow:0 20px 60px rgba(0,0,0,.45);}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--bdr);}
-.modal-title{font-size:16px;font-weight:700;color:var(--t0);letter-spacing:.05em;}
+.modal-title{font-size:18px;font-weight:700;color:var(--t0);letter-spacing:.05em;}
 .modal-close{background:none;border:none;color:var(--t1);font-size:20px;cursor:pointer;line-height:1;}
 .modal-body{padding:16px;}
 .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 .modal-grid.one{grid-template-columns:1fr;}
 .mf-row{display:flex;flex-direction:column;gap:6px;}
 .mf-row.full{grid-column:1 / -1;}
-.mf-label{font-size:12px;color:var(--t1);letter-spacing:.1em;text-transform:uppercase;}
-.mf-input,.mf-select,.mf-textarea{width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:9px 11px;color:var(--t0);font-family:var(--mono);font-size:14px;outline:none;}
+.mf-label{font-size:13px;color:var(--t1);letter-spacing:.1em;text-transform:uppercase;}
+.mf-input,.mf-select,.mf-textarea{width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:9px 11px;color:var(--t0);font-family:var(--mono);font-size:15px;outline:none;}
 .mf-textarea{min-height:84px;resize:vertical;}
 .mf-input:focus,.mf-select:focus,.mf-textarea:focus{border-color:var(--acc);}
-.mf-help{font-size:12px;color:var(--t2);line-height:1.5;}
+.mf-help{font-size:13px;color:var(--t2);line-height:1.5;}
 .mf-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 16px 16px;}
-.empty-state{padding:12px 14px;color:var(--t1);font-size:14px;}
+.empty-state{padding:12px 14px;color:var(--t1);font-size:15px;}
 
 /* ── TOPBAR ADDITIONS ── */
 .topbar-center{flex:1;display:flex;align-items:center;justify-content:center;}
-.sys-stats{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--grn);border:1px solid rgba(0,200,180,0.3);border-radius:3px;padding:3px 12px;letter-spacing:.04em;}
+.sys-stats{display:flex;align-items:center;gap:6px;font-size:16px;color:var(--grn);border:1px solid rgba(0,200,180,0.3);border-radius:3px;padding:4px 13px;letter-spacing:.04em;}
 .sys-stats-dot{width:6px;height:6px;border-radius:50%;background:var(--grn);animation:blink 2.2s ease-in-out infinite;flex-shrink:0;}
 .topbar-right{display:flex;align-items:center;gap:6px;}
-.logout-btn{font-size:13px;color:var(--red);padding:4px 11px;border:1px solid rgba(255,69,96,0.35);border-radius:3px;cursor:pointer;background:rgba(255,69,96,0.06);font-family:var(--mono);transition:all .12s;}
+.logout-btn{font-size:15px;color:var(--red);padding:5px 12px;border:1px solid rgba(255,69,96,0.35);border-radius:3px;cursor:pointer;background:rgba(255,69,96,0.06);font-family:var(--mono);transition:all .12s;}
 .logout-btn:hover{background:rgba(255,69,96,0.12);border-color:var(--red);}
-.ubtn{font-size:13px;color:var(--t1);padding:4px 11px;border:1px solid rgba(167,139,250,0.35);border-radius:3px;cursor:pointer;background:rgba(167,139,250,0.06);font-family:var(--mono);transition:all .12s;}
+.ubtn{font-size:15px;color:var(--t1);padding:5px 12px;border:1px solid rgba(167,139,250,0.35);border-radius:3px;cursor:pointer;background:rgba(167,139,250,0.06);font-family:var(--mono);transition:all .12s;}
 .ubtn:hover{color:var(--pur);border-color:var(--pur);}
 /* ── NAV TABS BAR ── */
 .navtabs{background:var(--bg1);border-bottom:1px solid var(--bdr);display:flex;overflow-x:auto;padding:0;flex-shrink:0;}
@@ -229,7 +231,7 @@ td.m{color:var(--t0);}
 .sidebar-footer{display:none;}
 
 /* ── PEER CONFIG EDITOR ── */
-.config-editor{width:100%;min-height:320px;background:var(--bg0);border:1px solid var(--bdr);border-radius:3px;padding:12px;color:var(--acc2);font-family:var(--mono);font-size:13px;outline:none;resize:vertical;line-height:1.7;tab-size:2;}
+.config-editor{width:100%;min-height:320px;background:var(--bg0);border:1px solid var(--bdr);border-radius:3px;padding:12px;color:var(--acc2);font-family:var(--mono);font-size:14px;outline:none;resize:vertical;line-height:1.7;tab-size:2;}
 .config-editor:focus{border-color:var(--acc);}
 /* ── TRAFFIC WARN ── */
 .traffic-warn{color:var(--amb);}
@@ -239,8 +241,8 @@ td.m{color:var(--t0);}
 .nav-main{background:var(--bg1);border-bottom:1px solid var(--bdr2);display:flex;flex-shrink:0;overflow-x:auto;}
 .nav-main::-webkit-scrollbar{height:0;}
 .nav-group-tab{
-  display:flex;align-items:center;gap:6px;padding:10px 22px;
-  cursor:pointer;color:var(--t2);font-size:13px;font-weight:700;
+  display:flex;align-items:center;gap:6px;padding:11px 22px;
+  cursor:pointer;color:var(--t2);font-size:15px;font-weight:700;
   border-bottom:3px solid transparent;letter-spacing:.08em;text-transform:uppercase;
   transition:all .12s;user-select:none;white-space:nowrap;
 }
@@ -249,8 +251,8 @@ td.m{color:var(--t0);}
 .nav-sub{background:var(--bg0);border-bottom:1px solid var(--bdr);display:flex;flex-shrink:0;overflow-x:auto;min-height:36px;}
 .nav-sub::-webkit-scrollbar{height:0;}
 .nav-sub-item{
-  display:flex;align-items:center;gap:6px;padding:7px 18px;
-  cursor:pointer;color:var(--t2);font-size:12px;
+  display:flex;align-items:center;gap:6px;padding:8px 18px;
+  cursor:pointer;color:var(--t2);font-size:14px;
   border-bottom:2px solid transparent;
   transition:all .12s;user-select:none;white-space:nowrap;letter-spacing:.03em;
 }
@@ -277,34 +279,34 @@ td.m{color:var(--t0);}
 .failban-log{
   background:var(--bg1);border:1px solid var(--bdr);border-radius:4px;
   height:calc(100vh - 220px);overflow-y:auto;padding:10px 14px;
-  font-family:var(--mono);font-size:13px;line-height:1.8;
+  font-family:var(--mono);font-size:14px;line-height:1.8;
 }
 .fline{display:flex;gap:10px;padding:2px 0;border-bottom:1px solid rgba(0,200,180,.03);}
 .fline.banned{color:var(--red);}
 .fline.unbanned{color:var(--grn);}
 .fline.warning{color:var(--amb);}
 .fline.info{color:var(--t1);}
-.ftime{color:var(--t2);flex-shrink:0;width:76px;font-size:12px;}
+.ftime{color:var(--t2);flex-shrink:0;width:76px;font-size:13px;}
 
 /* ── SUPPORT TICKETS ── */
 .tickets-layout{display:grid;grid-template-columns:240px 1fr;gap:0;height:calc(100vh - 180px);border:1px solid var(--bdr);border-radius:4px;overflow:hidden;}
 .tickets-sidebar{background:var(--bg2);border-right:1px solid var(--bdr);overflow-y:auto;}
-.ticket-user-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--bdr);font-size:13px;transition:background .1s;}
+.ticket-user-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--bdr);font-size:14px;transition:background .1s;}
 .ticket-user-item:hover{background:var(--adim);}
 .ticket-user-item.active{background:var(--adim);border-left:2px solid var(--acc);color:var(--acc2);}
 .ticket-user-name{font-weight:700;color:var(--t0);}
-.ticket-user-meta{font-size:11px;color:var(--t2);margin-top:2px;}
+.ticket-user-meta{font-size:12px;color:var(--t2);margin-top:2px;}
 .tickets-chat{background:var(--bg1);display:flex;flex-direction:column;}
-.tickets-chat-header{padding:12px 16px;border-bottom:1px solid var(--bdr);font-size:14px;font-weight:700;color:var(--t0);}
+.tickets-chat-header{padding:12px 16px;border-bottom:1px solid var(--bdr);font-size:15px;font-weight:700;color:var(--t0);}
 .tickets-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;}
-.ticket-msg{max-width:80%;padding:9px 13px;border-radius:4px;font-size:13px;line-height:1.6;}
+.ticket-msg{max-width:80%;padding:9px 13px;border-radius:4px;font-size:14px;line-height:1.6;}
 .ticket-msg.user{background:var(--bg2);border:1px solid var(--bdr);align-self:flex-start;color:var(--t0);}
 .ticket-msg.admin{background:var(--adim);border:1px solid var(--bdr2);align-self:flex-end;color:var(--acc2);}
-.ticket-msg-meta{font-size:11px;color:var(--t2);margin-top:3px;}
+.ticket-msg-meta{font-size:12px;color:var(--t2);margin-top:3px;}
 .tickets-input-row{padding:12px 16px;border-top:1px solid var(--bdr);display:flex;gap:8px;}
-.tickets-input{flex:1;background:var(--bg2);border:1px solid var(--bdr);border-radius:3px;padding:8px 12px;color:var(--t0);font-family:var(--mono);font-size:13px;outline:none;}
+.tickets-input{flex:1;background:var(--bg2);border:1px solid var(--bdr);border-radius:3px;padding:8px 12px;color:var(--t0);font-family:var(--mono);font-size:14px;outline:none;}
 .tickets-input:focus{border-color:var(--acc);}
-.tickets-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:13px;}
+.tickets-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:14px;}
 
 </style>
 </head>
@@ -1090,8 +1092,9 @@ function authRedirect(message){
   document.getElementById('appWrap').style.display = 'none';
   document.getElementById('loginWrap').style.display = 'flex';
   document.getElementById('ip').value = '';
-  document.getElementById('lbtn').textContent = 'AUTHENTICATE';
+  document.getElementById('lbtn').textContent = uiLiteral('AUTHENTICATE');
   document.getElementById('lerr').textContent = message || '';
+  scheduleLocaleRefresh();
 }
 async function apiFetch(path, options){
   var opts = options || {};
@@ -1926,8 +1929,21 @@ async function refreshHealth(){
   var links = (summary && summary.links) || {};
   var host = (summary && summary.host) || {};
 
-  var backendStatus = String(backend.status || summary.status || 'unknown').toUpperCase();
-  var workerStatus = String(worker.status || 'unknown').toUpperCase();
+  function statusLabel(status){
+    var s = String(status || 'unknown').toLowerCase();
+    if(LANG === 'ru'){
+      return ({
+        ok: 'OK',
+        degraded: 'ДЕГРАДАЦИЯ',
+        offline: 'НЕ В СЕТИ',
+        unknown: 'НЕИЗВЕСТНО'
+      })[s] || String(status || 'unknown').toUpperCase();
+    }
+    return String(status || 'unknown').toUpperCase();
+  }
+
+  var backendStatus = statusLabel(backend.status || summary.status || 'unknown');
+  var workerStatus = statusLabel(worker.status || 'unknown');
   var backendOk = String(backend.status || summary.status || '').toLowerCase() === 'ok';
   var workerOk = String(worker.status || '').toLowerCase() === 'ok';
 
@@ -1954,7 +1970,11 @@ async function refreshHealth(){
   if(snSub){
     var degraded = Number(nodes.degraded || 0);
     var offline = Number(nodes.offline || 0);
-    snSub.textContent = degraded > 0 ? (degraded + ' degraded') : (offline > 0 ? (offline + ' offline') : 'all reachable');
+    snSub.textContent = degraded > 0
+      ? (LANG === 'ru' ? (degraded + ' в деградации') : (degraded + ' degraded'))
+      : (offline > 0
+        ? (LANG === 'ru' ? (offline + ' не в сети') : (offline + ' offline'))
+        : (LANG === 'ru' ? 'все доступны' : 'all reachable'));
     snSub.style.color = degraded > 0 ? 'var(--amb)' : (offline > 0 ? 'var(--red)' : 'var(--grn)');
   }
   if(sl){
@@ -1964,7 +1984,11 @@ async function refreshHealth(){
     var degradedLinks = Number(links.degraded || 0);
     var totalLinks = Number(links.total || 0);
     var activeLinks = Number(links.active || 0);
-    slSub.textContent = degradedLinks > 0 ? (degradedLinks + ' degraded') : ((activeLinks === totalLinks && totalLinks > 0) ? 'all active' : (totalLinks + ' total'));
+    slSub.textContent = degradedLinks > 0
+      ? (LANG === 'ru' ? (degradedLinks + ' в деградации') : (degradedLinks + ' degraded'))
+      : ((activeLinks === totalLinks && totalLinks > 0)
+        ? (LANG === 'ru' ? 'все активны' : 'all active')
+        : (LANG === 'ru' ? (totalLinks + ' всего') : (totalLinks + ' total')));
     slSub.style.color = degradedLinks > 0 ? 'var(--amb)' : 'var(--grn)';
   }
   if(sysCpu && host.cpu_percent != null){
@@ -1974,6 +1998,7 @@ async function refreshHealth(){
     sysRam.textContent = 'RAM ' + Number(host.memory_used_gb).toFixed(1) + ' / ' + Number(host.memory_total_gb).toFixed(1) + ' GB';
   }
   pushEv('system.ping', 'GET /api/v1/system/summary completed');
+  scheduleLocaleRefresh();
 }
 async function loadData(){
   await Promise.all([
@@ -3495,9 +3520,9 @@ async function doLogin(){
   var u = document.getElementById('iu').value.trim();
   var p = document.getElementById('ip').value;
   var err = document.getElementById('lerr');
-  if(!u||!p){ err.textContent='Enter username and password'; return; }
+  if(!u||!p){ err.textContent = LANG === 'ru' ? 'Введите имя пользователя и пароль' : 'Enter username and password'; return; }
   err.textContent = '';
-  document.getElementById('lbtn').textContent = 'AUTHENTICATING...';
+  document.getElementById('lbtn').textContent = uiLiteral('AUTHENTICATING...');
   if(DEMO_MODE){
     await new Promise(function(r){ setTimeout(r, 600); });
     DEMO_USER = u;
@@ -3512,8 +3537,8 @@ async function doLogin(){
     });
     await bootApp();
   }catch(e){
-    err.textContent = e && e.message ? e.message : 'Authentication failed';
-    document.getElementById('lbtn').textContent = 'AUTHENTICATE';
+    err.textContent = e && e.message ? e.message : (LANG === 'ru' ? 'Ошибка аутентификации' : 'Authentication failed');
+    document.getElementById('lbtn').textContent = uiLiteral('AUTHENTICATE');
   }
 }
 async function bootApp(){
@@ -3527,7 +3552,7 @@ async function bootApp(){
   document.getElementById('appWrap').style.display = 'flex';
   document.getElementById('ubtn').textContent = username;
   switchGroup('system');
-  document.getElementById('lbtn').textContent = 'AUTHENTICATE';
+  document.getElementById('lbtn').textContent = uiLiteral('AUTHENTICATE');
   document.getElementById('lerr').textContent = '';
   if(DEMO_MODE){
     NODES = DEMO_NODES;
@@ -3564,6 +3589,7 @@ async function bootApp(){
     setTimeout(drawTopo, 60);
     pushEv('system.connected', 'DEMO MODE — not connected to real backend');
     startDemoMetricsTicker();
+    scheduleLocaleRefresh();
     return;
   }
   await refreshHealth();
@@ -3571,12 +3597,13 @@ async function bootApp(){
   startHealthPolling();
   connectWS();
   setTimeout(drawTopo, 60);
+  scheduleLocaleRefresh();
 }
 document.getElementById('ubtn').addEventListener('click', function(){
   // username badge - no action
 });
 document.getElementById('logoutBtn').addEventListener('click', async function(){
-  if(confirm('Logout from ONyX Control Plane?')){
+  if(confirm(LANG === 'ru' ? 'Выйти из панели управления ONyX?' : 'Logout from ONyX Control Plane?')){
     try{
       await apiFetch(API_PREFIX + '/auth/logout', {method:'POST', redirectOn401:false});
     }catch(_){ }
@@ -5315,7 +5342,223 @@ var I18N = {
   }
 };
 function t(key){ return (I18N[LANG] && I18N[LANG][key]) || (I18N.en[key]) || key; }
+var LITERAL_TEXT = {
+  ru: {
+    'Control Plane Access': 'Доступ к панели управления',
+    'Username': 'Имя пользователя',
+    'Password': 'Пароль',
+    'AUTHENTICATE': 'ВОЙТИ',
+    'AUTHENTICATING...': 'ВХОД...',
+    'Logout': 'Выйти',
+    'control plane': 'панель управления',
+    'System': 'Система',
+    'Network': 'Сеть',
+    'Access Control': 'Управление доступом',
+    'Services': 'Сервисы',
+    'Topology': 'Топология',
+    'Debug': 'Отладка',
+    'Nodes': 'Узлы',
+    'Node Traffic': 'Трафик узлов',
+    'Links': 'Связи',
+    'Policies': 'Политики',
+    'Transit Policies': 'Политики транзита',
+    'Transport Packages': 'Транспортные пакеты',
+    'Jobs': 'Задачи',
+    'Peers': 'Пиры',
+    'Registrations': 'Регистрации',
+    'Users': 'Пользователи',
+    'Plans': 'Планы',
+    'Subscriptions': 'Подписки',
+    'Referral Codes': 'Реферальные коды',
+    'Devices': 'Устройства',
+    'Audit / Access': 'Аудит / доступ',
+    'Failban': 'Fail2ban',
+    'E-Mail': 'E-mail',
+    'Support Tickets': 'Тикеты поддержки',
+    'XRAY Services': 'XRAY-сервисы',
+    'AWG Services': 'AWG-сервисы',
+    'WG Services': 'WG-сервисы',
+    'OpenVPN+CLOAK Services': 'OpenVPN+Cloak-сервисы',
+    'OpenVPN+Cloak Services': 'OpenVPN+Cloak-сервисы',
+    'API Debug': 'Отладка API',
+    'XRAY': 'XRAY',
+    'AWG': 'AWG',
+    'WG': 'WG',
+    'oVPN': 'oVPN',
+    'Backend': 'Backend',
+    'Worker': 'Worker',
+    'Nodes Online': 'Узлы онлайн',
+    'Active Links': 'Активные связи',
+    'Live Event Stream ” WS /api/v1/ws/admin/events': 'Поток событий ” WS /api/v1/ws/admin/events',
+    'PROBE HEALTH': 'ПРОВЕРИТЬ СОСТОЯНИЕ',
+    'all statuses': 'все статусы',
+    'reachable': 'доступен',
+    'degraded': 'деградация',
+    'offline': 'не в сети',
+    'unknown': 'неизвестно',
+    'all states': 'все состояния',
+    'normal': 'норма',
+    'warning': 'предупреждение',
+    'exceeded': 'превышен',
+    'suspended': 'приостановлен',
+    'hard enforced': 'жёстко ограничен',
+    '+ ADD NODE': '+ ДОБАВИТЬ УЗЕЛ',
+    '+ ADD USER': '+ ДОБАВИТЬ ПОЛЬЗОВАТЕЛЯ',
+    '+ ADD SUBSCRIPTION': '+ ДОБАВИТЬ ПОДПИСКУ',
+    '+ ADD PLAN': '+ ДОБАВИТЬ ПЛАН',
+    '+ ADD REFERRAL CODE': '+ ДОБАВИТЬ РЕФЕРАЛЬНЫЙ КОД',
+    '+ ADD XRAY SERVICE': '+ ДОБАВИТЬ XRAY-СЕРВИС',
+    '+ ADD TRANSIT POLICY': '+ ДОБАВИТЬ ПОЛИТИКУ ТРАНЗИТА',
+    '+ ADD AWG SERVICE': '+ ДОБАВИТЬ AWG-СЕРВИС',
+    '+ ADD WG SERVICE': '+ ДОБАВИТЬ WG-СЕРВИС',
+    '+ ADD OPENVPN+CLOAK SERVICE': '+ ДОБАВИТЬ OPENVPN+CLOAK-СЕРВИС',
+    'REFRESH': 'ОБНОВИТЬ',
+    'VIEW': 'ОТКРЫТЬ',
+    'EDIT': 'ИЗМЕНИТЬ',
+    'DELETE': 'УДАЛИТЬ',
+    'DEL': 'УДАЛИТЬ',
+    'PROBE': 'ПРОВЕРИТЬ',
+    'RESET': 'СБРОСИТЬ',
+    'ROLLOVER': 'НОВЫЙ ЦИКЛ',
+    'REVOKE': 'ОТОЗВАТЬ',
+    'PACKAGE': 'ПАКЕТ',
+    'RECONCILE': 'СИНХРОНИЗИРОВАТЬ',
+    'PREVIEW': 'ПРЕДПРОСМОТР',
+    'APPLY': 'ПРИМЕНИТЬ',
+    'GUIDE': 'МАСТЕР',
+    'RETRY NOW': 'ПОВТОРИТЬ',
+    'PAUSE': 'ПАУЗА',
+    'RESUME': 'ПРОДОЛЖИТЬ',
+    'SEND': 'ОТПРАВИТЬ',
+    'VIEW CONFIG': 'ПОКАЗАТЬ КОНФИГ',
+    'OPEN TRANSIT': 'ОТКРЫТЬ TRANSIT',
+    'ATTACH NEXT HOP': 'ПРИВЯЗАТЬ NEXT HOP',
+    'CREATE TRANSIT': 'СОЗДАТЬ TRANSIT',
+    'Name': 'Имя',
+    'Role': 'Роль',
+    'Mgmt Address': 'Mgmt-адрес',
+    'Status': 'Статус',
+    'State': 'Состояние',
+    'Kind': 'Тип',
+    'Target': 'Цель',
+    'Step': 'Шаг',
+    'Error': 'Ошибка',
+    'Date': 'Дата',
+    'Traffic Used': 'Использовано',
+    'Limit': 'Лимит',
+    'Capabilities': 'Возможности',
+    'Actions': 'Действия',
+    'Node': 'Узел',
+    'Cycle Start': 'Начало цикла',
+    'Cycle End': 'Конец цикла',
+    'Used': 'Использовано',
+    'Usage': 'Использование',
+    'Suspended': 'Приостановлен',
+    'Enforced': 'Принудительно',
+    'No users.': 'Пользователей нет.',
+    'No plans.': 'Планов нет.',
+    'No subscriptions.': 'Подписок нет.',
+    'No referral codes.': 'Реферальных кодов нет.',
+    'No devices.': 'Устройств нет.',
+    'No transport packages.': 'Транспортных пакетов нет.',
+    'No nodes match the current filter.': 'По текущему фильтру узлы не найдены.',
+    'No node traffic entries match the current filter.': 'По текущему фильтру записи трафика не найдены.',
+    'all reachable': 'все доступны',
+    'all active': 'все активны',
+    'total': 'всего',
+    'No registration requests.': 'Заявок на регистрацию нет.',
+    'lifetime': 'бессрочно',
+    'pending': 'ожидает',
+    'approved': 'одобрен',
+    'rejected': 'отклонён',
+    'active': 'активен',
+    'deleted': 'удалён',
+    'cancelled': 'отменён',
+    'running': 'выполняется',
+    'succeeded': 'успешно',
+    'failed': 'ошибка',
+    'dead': 'окончательно упал',
+    'No account?': 'Нет аккаунта?',
+    'Request access': 'Запросить доступ'
+  }
+};
+var PLACEHOLDER_TEXT = {
+  ru: {
+    'search nodes': 'поиск узлов',
+    'search node traffic': 'поиск трафика узлов',
+    'search links': 'поиск связей',
+    'search peers...': 'поиск пиров...',
+    '// JSON request body (for POST / PUT)': '// JSON-тело запроса (для POST / PUT)'
+  }
+};
+function uiLiteral(text){
+  var base = String(text || '');
+  return (LITERAL_TEXT[LANG] && LITERAL_TEXT[LANG][base]) || base;
+}
+function uiPlaceholder(text){
+  var base = String(text || '');
+  return (PLACEHOLDER_TEXT[LANG] && PLACEHOLDER_TEXT[LANG][base]) || base;
+}
+function applyLiteralTranslations(root){
+  var scope = root || document.body;
+  if(!scope) return;
+  scope.querySelectorAll('*').forEach(function(el){
+    if(el.hasAttribute('data-i18n')) return;
+    if(el.placeholder != null){
+      if(!el.dataset.i18nOriginalPlaceholder) el.dataset.i18nOriginalPlaceholder = el.placeholder;
+      el.placeholder = LANG === 'en' ? el.dataset.i18nOriginalPlaceholder : uiPlaceholder(el.dataset.i18nOriginalPlaceholder);
+    }
+    if(el.title){
+      if(!el.dataset.i18nOriginalTitle) el.dataset.i18nOriginalTitle = el.title;
+      el.title = LANG === 'en' ? el.dataset.i18nOriginalTitle : uiLiteral(el.dataset.i18nOriginalTitle);
+    }
+    if(el.children.length === 0){
+      var raw = el.textContent;
+      var trimmed = raw.trim();
+      if(!trimmed) return;
+      if(!el.dataset.i18nOriginalText) el.dataset.i18nOriginalText = trimmed;
+      var original = el.dataset.i18nOriginalText;
+      var translated = LANG === 'en' ? original : uiLiteral(original);
+      if(translated !== trimmed){
+        el.textContent = raw.replace(trimmed, translated);
+      }
+    }
+  });
+}
+function rerenderLocalizedViews(){
+  if(typeof renderNodes === 'function') renderNodes();
+  if(typeof renderNodeTraffic === 'function') renderNodeTraffic();
+  if(typeof renderLinks === 'function') renderLinks();
+  if(typeof renderPolicies === 'function') renderPolicies();
+  if(typeof renderJobs === 'function') renderJobs();
+  if(typeof renderAudit === 'function') renderAudit();
+  if(typeof renderElog === 'function') renderElog();
+  if(typeof renderPeers === 'function') renderPeers();
+  if(typeof renderXrayServices === 'function') renderXrayServices();
+  if(typeof renderTransitPolicies === 'function') renderTransitPolicies();
+  if(typeof renderAwgServices === 'function') renderAwgServices();
+  if(typeof renderWgServices === 'function') renderWgServices();
+  if(typeof renderOpenvpnCloakServices === 'function') renderOpenvpnCloakServices();
+  if(typeof renderRegistrations === 'function') renderRegistrations();
+  if(typeof renderUsers === 'function') renderUsers();
+  if(typeof renderPlans === 'function') renderPlans();
+  if(typeof renderSubscriptions === 'function') renderSubscriptions();
+  if(typeof renderReferralCodes === 'function') renderReferralCodes();
+  if(typeof renderDevices === 'function') renderDevices();
+  if(typeof renderTransportPackages === 'function') renderTransportPackages();
+  if(typeof renderTopologyMeta === 'function') renderTopologyMeta();
+}
+var _localeRefreshScheduled = false;
+function scheduleLocaleRefresh(){
+  if(_localeRefreshScheduled) return;
+  _localeRefreshScheduled = true;
+  setTimeout(function(){
+    _localeRefreshScheduled = false;
+    applyLiteralTranslations(document.body);
+  }, 0);
+}
 function applyI18n(){
+  document.documentElement.lang = LANG;
   document.querySelectorAll('[data-i18n]').forEach(function(el){
     var key = el.getAttribute('data-i18n');
     if(el.tagName === 'OPTION'){
@@ -5326,11 +5569,12 @@ function applyI18n(){
       el.textContent = t(key);
     }
   });
-  // Re-render registrations table if visible
-  renderRegistrations();
+  rerenderLocalizedViews();
+  scheduleLocaleRefresh();
 }
 function setLang(lang){
   LANG = lang;
+  try{ localStorage.setItem('onyx-lang', lang); }catch(e){}
   document.querySelectorAll('.lang-btn').forEach(function(b){
     b.classList.toggle('active', b.textContent.trim().toLowerCase() === lang);
   });
@@ -6047,6 +6291,16 @@ async function revokeDeviceFlow(deviceId){
 // INIT
 // ═══════════════════════════════════════
 (async function init(){
+  try{
+    var savedLang = localStorage.getItem('onyx-lang');
+    if(savedLang === 'ru' || savedLang === 'en'){
+      LANG = savedLang;
+    }
+  }catch(e){}
+  document.querySelectorAll('.lang-btn').forEach(function(b){
+    b.classList.toggle('active', b.textContent.trim().toLowerCase() === LANG);
+  });
+  scheduleLocaleRefresh();
   if(DEMO_MODE){
     authRedirect('');
     return;
@@ -6072,6 +6326,19 @@ function setTheme(name){
 }
 (function(){
   try{ var t=localStorage.getItem('onyx-theme'); if(t) setTheme(t); }catch(e){}
+})();
+(function(){
+  var app = document.getElementById('appWrap');
+  if(!app || typeof MutationObserver === 'undefined') return;
+  var obs = new MutationObserver(function(mutations){
+    for(var i=0;i<mutations.length;i++){
+      if(mutations[i].type === 'childList'){
+        scheduleLocaleRefresh();
+        break;
+      }
+    }
+  });
+  obs.observe(app, { childList:true, subtree:true });
 })();
 
 // ═══════════════════════════════════════
