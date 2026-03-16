@@ -5502,8 +5502,13 @@ function uiPlaceholder(text){
 function applyLiteralTranslations(root){
   var scope = root || document.body;
   if(!scope) return;
+  var dynamicIdSkip = {
+    sb:true, sw:true, sn:true, snSub:true, sl:true, slSub:true,
+    sysCpu:true, sysRam:true, wsl:true, ubtn:true, lerr:true
+  };
   scope.querySelectorAll('*').forEach(function(el){
     if(el.hasAttribute('data-i18n')) return;
+    if(el.id && dynamicIdSkip[el.id]) return;
     if(el.placeholder != null){
       if(!el.dataset.i18nOriginalPlaceholder) el.dataset.i18nOriginalPlaceholder = el.placeholder;
       el.placeholder = LANG === 'en' ? el.dataset.i18nOriginalPlaceholder : uiPlaceholder(el.dataset.i18nOriginalPlaceholder);
