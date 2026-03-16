@@ -6277,8 +6277,8 @@ function sendTicketReply(){
   var GLOWS    = [];
   var N_NODES        = 250;
   var N_CONCURRENT   = 8;
-  var SIGNAL_PX_PER_SEC = 150; // constant pixel speed
-  var FADE_MS        = 12000;
+  var SIGNAL_PX_PER_SEC = 100; // constant pixel speed
+  var FADE_MS        = 15000;
   var MAX_CONN       = 3;
 
   function resize(){
@@ -6327,7 +6327,8 @@ function sendTicketReply(){
     var dir = Math.random() < 0.5 ? 1 : 0;
     var startNode = dir?e.a:e.b;
     SIGNALS.push({ edge:e, dir:dir, t:0, startTime:performance.now(),
-                   duration:edgeDuration(e), fromIdx:startNode, history:[startNode] });
+                   duration:edgeDuration(e), fromIdx:startNode, history:[startNode],
+                   hasBranch:false });
   }
 
   var _accColor = '#00c8b4';
@@ -6454,13 +6455,17 @@ function sendTicketReply(){
           // Branch exhausted — mark for removal
           SIGNALS[idx] = null;
         } else {
+          // Carry hasBranch: reset to false on permanent signals' next hop
+          var keepBranch = (hopsLeft !== null) ? false : sig.hasBranch;
           SIGNALS[idx] = { edge:nextEdge, dir:nextDir, t:0, startTime:now, duration:edgeDuration(nextEdge), fromIdx:destIdx, history:newHistory,
-                           hopsLeft: hopsLeft };
+                           hopsLeft: hopsLeft, hasBranch: keepBranch };
         }
 
-        // 5% chance: spawn a second branching signal with 20-hop lifetime
-        if(Math.random() < 0.05){
-          // Pick a different forward edge for the branch
+        // 20% chance: spawn a temporary branch (5 hops) if:
+        //  - this signal is not itself a branch (hasBranch guard)
+        //  - total signal count stays ≤ 16
+        var canBranch = !sig.hopsLeft && !sig.hasBranch && SIGNALS.filter(function(s){return s!==null;}).length < 16;
+        if(canBranch && Math.random() < 0.20){
           var branchPool = fresh.length > 1
             ? fresh.filter(function(nb){ return nb.edge !== nextEdge; })
             : (forward.length > 1 ? forward.filter(function(nb){ return nb.edge !== nextEdge; }) : null);
@@ -6472,8 +6477,12 @@ function sendTicketReply(){
               edge: bEdge, dir: bDir, t: 0,
               startTime: now, duration: edgeDuration(bEdge),
               fromIdx: destIdx, history: newHistory.slice(),
-              hopsLeft: 20   // branch dies after 20 hops
+              hopsLeft: 5,    // branch dies after 5 hops
+              hasBranch: false
             });
+            // Mark parent so it won't branch again while child lives
+            // We tag via hopsLeft===null && hasBranch=true on the updated signal below
+            if(SIGNALS[idx]) SIGNALS[idx].hasBranch = true;
           }
         }
       }
@@ -6481,9 +6490,9 @@ function sendTicketReply(){
 
     // Remove exhausted branch signals
     SIGNALS = SIGNALS.filter(function(s){ return s !== null; });
-    // Ensure at least N_CONCURRENT base signals always running
+    // Ensure at least N_CONCURRENT base signals, total hard cap 16
     var baseSigs = SIGNALS.filter(function(s){ return s.hopsLeft == null; });
-    while(baseSigs.length < N_CONCURRENT){
+    while(baseSigs.length < N_CONCURRENT && SIGNALS.length < 16){
       spawnSignal();
       baseSigs = SIGNALS.filter(function(s){ return s.hopsLeft == null; });
     }
