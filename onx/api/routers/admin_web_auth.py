@@ -91,17 +91,18 @@ def login(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
     request: Request,
-    response: Response,
     db: Session = Depends(get_database_session),
-) -> None:
+) -> Response:
     token = _session_token_from_request(request)
     admin_web_auth_service.revoke_session(db, token)
     cookie_settings = admin_web_auth_service.to_cookie_settings()
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
     response.delete_cookie(
         key=cookie_settings["key"],
         path=cookie_settings["path"],
         domain=cookie_settings["domain"],
     )
+    return response
 
 
 @router.get("/me", response_model=AdminAuthMeResponse)
