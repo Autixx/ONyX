@@ -4,9 +4,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from onx.core.config import get_settings
-from onx.db.migrations import upgrade_to_head
-
-
 settings = get_settings()
 
 engine_kwargs = {
@@ -31,10 +28,11 @@ SessionLocal = sessionmaker(
 
 
 def init_db() -> None:
-    # Import models so enums and metadata are visible to Alembic env.
+    # Import models so metadata/enums are registered for the runtime.
+    #
+    # Database migrations are applied by install/update workflows and should
+    # not be executed again from the API lifespan startup path.
     import onx.db.models  # noqa: F401
-
-    upgrade_to_head()
 
 
 def get_db() -> Generator[Session, None, None]:
