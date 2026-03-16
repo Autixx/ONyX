@@ -29,6 +29,7 @@ class AdminAccessControl:
         "audit_logs.read": {"roles": ["viewer", "operator", "admin"], "description": "Read audit logs"},
         "maintenance.read": {"roles": ["viewer", "operator", "admin"], "description": "Read retention policy"},
         "maintenance.write": {"roles": ["operator", "admin"], "description": "Run retention cleanup"},
+        "system_summary.read": {"roles": ["viewer", "operator", "admin"], "description": "Read backend system summary"},
         "worker_health.read": {"roles": ["viewer", "operator", "admin"], "description": "Read worker health"},
         "jobs.read": {"roles": ["viewer", "operator", "admin"], "description": "Read jobs and events"},
         "jobs.write": {"roles": ["operator", "admin"], "description": "Modify jobs and locks"},
@@ -141,6 +142,8 @@ class AdminAccessControl:
 
         if path == f"{prefix}/health/worker":
             return "worker_health.read"
+        if path == f"{prefix}/system/summary":
+            return "system_summary.read"
         if path == f"{prefix}/audit-logs":
             return "audit_logs.read"
         if path == f"{prefix}/maintenance/retention":

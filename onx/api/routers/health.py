@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import psutil
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -8,7 +9,9 @@ from onx.api.deps import get_database_session
 from onx.core.config import get_settings
 from onx.db.models.job import Job, JobState
 from onx.db.models.job_lock import JobLock
-from onx.schemas.common import HealthResponse, WorkerHealthResponse
+from onx.db.models.link import Link, LinkState
+from onx.db.models.node import Node, NodeStatus
+from onx.schemas.common import HealthResponse, SystemSummaryResponse, WorkerHealthResponse
 from onx.workers.runtime_state import get_worker_runtime_state
 
 
@@ -97,5 +100,72 @@ def worker_health(db: Session = Depends(get_database_session)) -> WorkerHealthRe
         locks={
             "total": locks_total,
             "expired": locks_expired,
+        },
+    )
+
+
+@router.get("/system/summary", response_model=SystemSummaryResponse)
+def system_summary(db: Session = Depends(get_database_session)) -> SystemSummaryResponse:
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    runtime = get_worker_runtime_state().snapshot()
+
+    def _count_nodes(status: NodeStatus) -> int:
+        return int(db.scalar(select(func.count()).select_from(Node).where(Node.status == status)) or 0)
+
+    def _count_links(state: LinkState) -> int:
+        return int(db.scalar(select(func.count()).select_from(Link).where(Link.state == state)) or 0)
+
+    reachable = _count_nodes(NodeStatus.REACHABLE)
+    degraded_nodes = _count_nodes(NodeStatus.DEGRADED)
+    offline = _count_nodes(NodeStatus.OFFLINE)
+    unknown = _count_nodes(NodeStatus.UNKNOWN)
+    total_nodes = reachable + degraded_nodes + offline + unknown
+
+    active_links = _count_links(LinkState.ACTIVE)
+    degraded_links = _count_links(LinkState.DEGRADED)
+    total_links = int(db.scalar(select(func.count()).select_from(Link)) or 0)
+
+    host_mem = psutil.virtual_memory()
+    cpu_percent = float(psutil.cpu_percent(interval=0.1))
+    memory_used_gb = round(host_mem.used / (1024 ** 3), 1)
+    memory_total_gb = round(host_mem.total / (1024 ** 3), 1)
+
+    worker_status = "ok"
+    if not runtime.running:
+        worker_status = "offline"
+    elif runtime.last_error_message:
+        worker_status = "degraded"
+
+    return SystemSummaryResponse(
+        status="ok",
+        service=settings.app_name,
+        version=settings.app_version,
+        timestamp=now,
+        backend={"status": "ok"},
+        worker={
+            "status": worker_status,
+            "running": runtime.running,
+            "last_error_message": runtime.last_error_message,
+        },
+        nodes={
+            "online": reachable + degraded_nodes,
+            "total": total_nodes,
+            "reachable": reachable,
+            "degraded": degraded_nodes,
+            "offline": offline,
+            "unknown": unknown,
+        },
+        links={
+            "active": active_links,
+            "degraded": degraded_links,
+            "total": total_links,
+        },
+        host={
+            "cpu_percent": cpu_percent,
+            "memory_used_bytes": int(host_mem.used),
+            "memory_total_bytes": int(host_mem.total),
+            "memory_used_gb": memory_used_gb,
+            "memory_total_gb": memory_total_gb,
         },
     )

@@ -63,3 +63,48 @@ class WorkerHealthResponse(ONXBaseModel):
     worker: WorkerRuntimeRead
     queue: WorkerQueueStats
     locks: WorkerLockStats
+
+
+class SystemSummaryBackend(ONXBaseModel):
+    status: str
+
+
+class SystemSummaryWorker(ONXBaseModel):
+    status: str
+    running: bool
+    last_error_message: str | None
+
+
+class SystemSummaryNodes(ONXBaseModel):
+    online: int
+    total: int
+    reachable: int
+    degraded: int
+    offline: int
+    unknown: int
+
+
+class SystemSummaryLinks(ONXBaseModel):
+    active: int
+    degraded: int
+    total: int
+
+
+class SystemSummaryHost(ONXBaseModel):
+    cpu_percent: float
+    memory_used_bytes: int
+    memory_total_bytes: int
+    memory_used_gb: float
+    memory_total_gb: float
+
+
+class SystemSummaryResponse(ONXBaseModel):
+    status: str
+    service: str
+    version: str
+    timestamp: datetime
+    backend: SystemSummaryBackend
+    worker: SystemSummaryWorker
+    nodes: SystemSummaryNodes
+    links: SystemSummaryLinks
+    host: SystemSummaryHost
