@@ -1,7 +1,7 @@
 """add devices and issued bundles
 
 Revision ID: 0017_devices_and_bundles
-Revises: 0016_client_identity_and_subscriptions
+Revises: 0016_client_identity
 Create Date: 2026-03-15 00:10:00
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = "0017_devices_and_bundles"
-down_revision: Union[str, Sequence[str], None] = "0016_client_identity_and_subscriptions"
+down_revision: Union[str, Sequence[str], None] = "0016_client_identity"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

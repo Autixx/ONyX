@@ -1,7 +1,7 @@
 """add client identity and subscription foundation
 
-Revision ID: 0016_client_identity_and_subscriptions
-Revises: 0015_node_traffic_hard_enforcement
+Revision ID: 0016_client_identity
+Revises: 0015_node_traffic_harden
 Create Date: 2026-03-14 23:15:00
 """
 
@@ -11,8 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0016_client_identity_and_subscriptions"
-down_revision: Union[str, Sequence[str], None] = "0015_node_traffic_hard_enforcement"
+revision: str = "0016_client_identity"
+down_revision: Union[str, Sequence[str], None] = "0015_node_traffic_harden"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

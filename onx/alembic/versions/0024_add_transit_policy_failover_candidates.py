@@ -1,6 +1,6 @@
 """add transit policy failover candidates
 
-Revision ID: 0024_add_transit_policy_failover_candidates
+Revision ID: 0024_transit_failover
 Revises: 0023_add_transit_policies
 Create Date: 2026-03-15 18:40:00.000000
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "0024_add_transit_policy_failover_candidates"
+revision = "0024_transit_failover"
 down_revision = "0023_add_transit_policies"
 branch_labels = None
 depends_on = None

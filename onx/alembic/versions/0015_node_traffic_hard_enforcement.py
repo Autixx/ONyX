@@ -1,6 +1,6 @@
 """add node traffic hard enforcement fields
 
-Revision ID: 0015_node_traffic_hard_enforcement
+Revision ID: 0015_node_traffic_harden
 Revises: 0014_node_traffic_control
 Create Date: 2026-03-14 20:40:00
 """
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0015_node_traffic_hard_enforcement"
+revision = "0015_node_traffic_harden"
 down_revision = "0014_node_traffic_control"
 branch_labels = None
 depends_on = None
