@@ -29,6 +29,15 @@ def _session_token_from_request(request: Request) -> str | None:
     return request.cookies.get(admin_web_auth_service.to_cookie_settings()["key"])
 
 
+def _cookie_settings_for_request(request: Request) -> dict:
+    cookie_settings = dict(admin_web_auth_service.to_cookie_settings())
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower()
+    request_scheme = (request.url.scheme or "").lower()
+    is_https = forwarded_proto == "https" or request_scheme == "https"
+    cookie_settings["secure"] = bool(cookie_settings.get("secure")) and is_https
+    return cookie_settings
+
+
 def _serialize_user(user) -> AdminAuthUserRead:
     return AdminAuthUserRead(
         id=user.id,
@@ -81,7 +90,7 @@ def login(
         client_ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
-    response.set_cookie(value=raw_token, **admin_web_auth_service.to_cookie_settings())
+    response.set_cookie(value=raw_token, **_cookie_settings_for_request(request))
     return AdminAuthLoginResponse(
         user=_serialize_user(user),
         session=_serialize_session(session),
@@ -95,7 +104,7 @@ def logout(
 ) -> Response:
     token = _session_token_from_request(request)
     admin_web_auth_service.revoke_session(db, token)
-    cookie_settings = admin_web_auth_service.to_cookie_settings()
+    cookie_settings = _cookie_settings_for_request(request)
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     response.delete_cookie(
         key=cookie_settings["key"],

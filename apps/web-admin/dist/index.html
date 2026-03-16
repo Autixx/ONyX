@@ -1981,7 +1981,6 @@ async function loadData(){
     refreshPolicies(),
     refreshJobs(),
     refreshAudit(),
-    refreshHealth(),
     refreshTopology(),
     loadPeers(),
     loadRegistrations(),
@@ -3555,6 +3554,7 @@ async function bootApp(){
     startDemoMetricsTicker();
     return;
   }
+  await refreshHealth();
   await loadData();
   startHealthPolling();
   connectWS();
