@@ -843,8 +843,9 @@ def _system_menu(
                 "6. Run retention cleanup",
                 "7. Probe results",
                 "8. Restart daemon",
-                "9. Smoke-test",
-                "10. Back",
+                "9. Safe update",
+                "10. Smoke-test",
+                "11. Back",
                 "",
             ]
         )
@@ -866,13 +867,29 @@ def _system_menu(
         elif choice == "8":
             _restart_daemon(service_name)
         elif choice == "9":
-            _run_smoke(base_url, install_dir, client_auth_file, admin_auth_file)
+            _safe_update_screen(install_dir)
         elif choice == "10":
+            _run_smoke(base_url, install_dir, client_auth_file, admin_auth_file)
+        elif choice == "11":
             return
 
 
 def _restart_daemon(service_name: str) -> None:
     _show_command_screen("ONX / Restart Daemon", ["systemctl", "restart", service_name])
+
+
+def _safe_update_screen(install_dir: Path) -> None:
+    update_script = install_dir / "scripts" / "update_onx_ubuntu.sh"
+    if not update_script.exists():
+        _render(["ONX / Safe Update", "", f"Missing update script: {update_script}", ""])
+        _pause()
+        return
+    if not _prompt_bool("Run safe update now?", False):
+        return
+    _show_command_screen(
+        "ONX / Safe Update",
+        ["bash", str(update_script), "--ref", "main"],
+    )
 
 
 def _run_smoke(base_url: str, install_dir: Path, client_auth_file: Path, admin_auth_file: Path) -> None:
