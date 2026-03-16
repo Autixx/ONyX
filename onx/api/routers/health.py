@@ -131,10 +131,12 @@ def system_summary(db: Session = Depends(get_database_session)) -> SystemSummary
     memory_used_gb = round(host_mem.used / (1024 ** 3), 1)
     memory_total_gb = round(host_mem.total / (1024 ** 3), 1)
 
+    worker_running = bool(runtime.get("running"))
+    worker_last_error_message = runtime.get("last_error_message")
     worker_status = "ok"
-    if not runtime.running:
+    if not worker_running:
         worker_status = "offline"
-    elif runtime.last_error_message:
+    elif worker_last_error_message:
         worker_status = "degraded"
 
     return SystemSummaryResponse(
@@ -145,8 +147,8 @@ def system_summary(db: Session = Depends(get_database_session)) -> SystemSummary
         backend={"status": "ok"},
         worker={
             "status": worker_status,
-            "running": runtime.running,
-            "last_error_message": runtime.last_error_message,
+            "running": worker_running,
+            "last_error_message": worker_last_error_message,
         },
         nodes={
             "online": reachable + degraded_nodes,
