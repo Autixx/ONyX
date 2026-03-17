@@ -123,18 +123,23 @@ class JobWorker:
                 self._runtime_state.mark_job_cancelled()
                 return
             except Exception as exc:
-                self._jobs.handle_execution_error(db, job, str(exc))
+                db.rollback()
+                current_job = db.get(Job, job_id)
+                if current_job is not None:
+                    self._jobs.handle_execution_error(db, current_job, str(exc))
                 self._runtime_state.mark_error(str(exc))
             finally:
-                db.refresh(job)
-                if job.state == JobState.SUCCEEDED:
-                    self._runtime_state.mark_job_succeeded()
-                elif job.state in (JobState.FAILED, JobState.DEAD):
-                    self._runtime_state.mark_job_failed()
-                elif job.state == JobState.CANCELLED:
-                    self._runtime_state.mark_job_cancelled()
-                elif job.state == JobState.PENDING and job.current_step == "retry scheduled":
-                    self._runtime_state.mark_job_retried()
+                db.rollback()
+                final_job = db.get(Job, job_id)
+                if final_job is not None:
+                    if final_job.state == JobState.SUCCEEDED:
+                        self._runtime_state.mark_job_succeeded()
+                    elif final_job.state in (JobState.FAILED, JobState.DEAD):
+                        self._runtime_state.mark_job_failed()
+                    elif final_job.state == JobState.CANCELLED:
+                        self._runtime_state.mark_job_cancelled()
+                    elif final_job.state == JobState.PENDING and final_job.current_step == "retry scheduled":
+                        self._runtime_state.mark_job_retried()
 
     def _execute_discover(self, db, job: Job) -> None:
         node = db.get(Node, job.target_id)

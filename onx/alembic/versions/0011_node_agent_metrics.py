@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
-        op.execute("ALTER TYPE node_secret_kind ADD VALUE IF NOT EXISTS 'agent_token'")
+        op.execute("ALTER TYPE node_secret_kind ADD VALUE IF NOT EXISTS 'AGENT_TOKEN'")
 
     op.create_table(
         "peer_registries",
