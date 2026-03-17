@@ -1004,6 +1004,7 @@ var isAuthenticated = false;
 
 var NODES = [];
 var DP_CONTEXT = { kind:null, id:null };
+var JOB_DETAIL_SELECTED_ID = null;
 var NODE_TRAFFIC = [];
 var LINKS = [];
 var JOBS = [];
@@ -1403,10 +1404,16 @@ function openDP(title, html, meta){
   if(meta && meta.kind){
     DP_CONTEXT.kind = meta.kind;
     DP_CONTEXT.id = meta.id || null;
+    if(meta.kind === 'job'){
+      JOB_DETAIL_SELECTED_ID = meta.id || null;
+    }
   }
 }
 function closeDP(){
   document.getElementById('dp').classList.remove('open');
+  if(DP_CONTEXT.kind === 'job'){
+    JOB_DETAIL_SELECTED_ID = null;
+  }
   DP_CONTEXT.kind = null;
   DP_CONTEXT.id = null;
 }
@@ -1734,6 +1741,7 @@ function showBalancer(id){
 }
 function showJob(id){
   var j = jobById(id); if(!j) return;
+  JOB_DETAIL_SELECTED_ID = j.id;
   var previousLog = null;
   var previousScrollTop = 0;
   if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', j.id)){
@@ -1830,6 +1838,13 @@ function jobLeaseText(job){
   var delta = Math.floor((lease - Date.now()) / 1000);
   if(delta < 0) return 'stale ' + fmtDurationSeconds(Math.abs(delta));
   return 'in ' + fmtDurationSeconds(delta);
+}
+function refreshOpenJobDetail(){
+  if(!JOB_DETAIL_SELECTED_ID) return;
+  if(!document.getElementById('dp').classList.contains('open')) return;
+  if(!detailContextIs('job', JOB_DETAIL_SELECTED_ID)) return;
+  if(!jobById(JOB_DETAIL_SELECTED_ID)) return;
+  showJob(JOB_DETAIL_SELECTED_ID);
 }
 function pushEv(type, msg, createdAt){
   var now = createdAt ? new Date(createdAt) : new Date();
@@ -2020,9 +2035,7 @@ async function refreshJobs(){
     }
   }));
   renderJobs();
-  if(document.getElementById('dp').classList.contains('open') && DP_CONTEXT.kind === 'job' && jobById(DP_CONTEXT.id)){
-    showJob(DP_CONTEXT.id);
-  }
+  refreshOpenJobDetail();
 }
 async function refreshAudit(){
   var events = await apiFetch(API_PREFIX + '/audit-logs?limit=50');
@@ -6733,9 +6746,7 @@ function startJobsTicker(){
   if(_jobsTicker) clearInterval(_jobsTicker);
   _jobsTicker = setInterval(function(){
     if(_currentPage === 'jobs'){ renderJobs(); }
-    if(document.getElementById('dp').classList.contains('open') && DP_CONTEXT.kind === 'job' && jobById(DP_CONTEXT.id)){
-      showJob(DP_CONTEXT.id);
-    }
+    refreshOpenJobDetail();
   }, 1000);
 }
 
