@@ -2350,7 +2350,8 @@ function showGraphNode(id){
     +'<div class="dp-actions">'
       +'<button class="btn" onclick="showNode(\''+esc(node.id)+'\')">NODE DETAIL</button>'
       +'<button class="btn pri" onclick="openPathPlanner(\''+esc(node.id)+'\')">PLAN FROM</button>'
-    +'</div>'
+    +'</div>',
+    { kind:'topology-node', id:node.id }
   );
 }
 function showGraphEdge(id){
@@ -2374,7 +2375,8 @@ function showGraphEdge(id){
     +'<div class="dp-actions">'
       +'<button class="btn" onclick="showLink(\''+esc(edge.id)+'\')">LINK DETAIL</button>'
       +'<button class="btn pri" onclick="actionLinkApply(\''+esc(edge.id)+'\')">APPLY</button>'
-    +'</div>'
+    +'</div>',
+    { kind:'topology-link', id:edge.id }
   );
 }
 function drawTopo(){
