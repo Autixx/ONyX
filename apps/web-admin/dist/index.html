@@ -1787,6 +1787,22 @@ function jobAgeText(job){
   if(!job || !job.created_at) return '-';
   var created = new Date(job.created_at).getTime();
   if(isNaN(created)) return '-';
+  var terminalStates = {succeeded:true, failed:true, dead:true, cancelled:true, rolled_back:true};
+  if(terminalStates[job.state]){
+    var endTs = null;
+    if(job.finished_at){
+      endTs = new Date(job.finished_at).getTime();
+    }else if(job.cancelled_at){
+      endTs = new Date(job.cancelled_at).getTime();
+    }
+    if(endTs != null && !isNaN(endTs)){
+      var startTs = job.started_at ? new Date(job.started_at).getTime() : created;
+      if(!isNaN(startTs)){
+        return fmtDurationSeconds(Math.max(0, (endTs - startTs) / 1000));
+      }
+      return fmtDurationSeconds(Math.max(0, (endTs - created) / 1000));
+    }
+  }
   return fmtDurationSeconds((Date.now() - created) / 1000);
 }
 function jobLeaseText(job){
@@ -1971,6 +1987,9 @@ async function refreshJobs(){
       step: job.current_step || '',
       errorText: job.error_text || '',
       created_at: job.created_at,
+      started_at: job.started_at || null,
+      finished_at: job.finished_at || null,
+      cancelled_at: job.cancelled_at || null,
       lease_expires_at: job.lease_expires_at || null,
       heartbeat_at: job.heartbeat_at || null,
       cancel_requested: !!job.cancel_requested,
