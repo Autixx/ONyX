@@ -18,6 +18,7 @@ from onx.services.secret_service import SecretService
 
 RUNTIME_CAPABILITY_NAME = "onx_link_runtime"
 TRANSIT_RUNTIME_CAPABILITY_NAME = "onx_transit_runtime"
+SECURITY_RUNTIME_CAPABILITY_NAME = "onx_security_runtime"
 
 
 class NodeRuntimeBootstrapService:
@@ -72,6 +73,10 @@ class NodeRuntimeBootstrapService:
         if progress_callback:
             progress_callback("installing transit prerequisites")
         transit_install = self._runtime.ensure_transit_stack(node, management_secret)
+
+        if progress_callback:
+            progress_callback("installing security prerequisites")
+        security_install = self._runtime.ensure_security_stack(node, management_secret)
 
         if progress_callback:
             progress_callback("installing runtime assets")
@@ -136,6 +141,26 @@ class NodeRuntimeBootstrapService:
         transit_capability.checked_at = datetime.now(timezone.utc)
         db.add(transit_capability)
 
+        security_capability = db.scalar(
+            select(NodeCapability).where(
+                NodeCapability.node_id == node.id,
+                NodeCapability.capability_name == SECURITY_RUNTIME_CAPABILITY_NAME,
+            )
+        )
+        if security_capability is None:
+            security_capability = NodeCapability(
+                node_id=node.id,
+                capability_name=SECURITY_RUNTIME_CAPABILITY_NAME,
+            )
+        security_capability.supported = True
+        security_capability.details_json = {
+            "ufw_enabled": True,
+            "fail2ban_enabled": True,
+            "ssh_port_allowed": int(node.ssh_port),
+        }
+        security_capability.checked_at = datetime.now(timezone.utc)
+        db.add(security_capability)
+
         agent_capability = db.scalar(
             select(NodeCapability).where(
                 NodeCapability.node_id == node.id,
@@ -161,6 +186,7 @@ class NodeRuntimeBootstrapService:
         db.commit()
         db.refresh(capability)
         db.refresh(transit_capability)
+        db.refresh(security_capability)
         db.refresh(agent_capability)
         return {
             "node_id": node.id,
@@ -170,6 +196,7 @@ class NodeRuntimeBootstrapService:
             "openvpn_cloak_install": openvpn_cloak_install,
             "xray_install": xray_install,
             "transit_install": transit_install,
+            "security_install": security_install,
             "agent_install": agent_install,
             "capabilities": discovery_result["capabilities"],
             "runtime_capability": {
@@ -183,6 +210,12 @@ class NodeRuntimeBootstrapService:
                 "supported": transit_capability.supported,
                 "details": transit_capability.details_json,
                 "checked_at": transit_capability.checked_at.isoformat(),
+            },
+            "security_runtime_capability": {
+                "name": security_capability.capability_name,
+                "supported": security_capability.supported,
+                "details": security_capability.details_json,
+                "checked_at": security_capability.checked_at.isoformat(),
             },
             "node_agent_capability": {
                 "name": agent_capability.capability_name,

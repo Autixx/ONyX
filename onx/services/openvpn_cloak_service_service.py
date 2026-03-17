@@ -199,6 +199,13 @@ class OpenVpnCloakServiceManager:
             self._executor.write_file(node, management_secret, ovpn_conf_path, openvpn_conf)
             self._executor.write_file(node, management_secret, cloak_conf_path, json.dumps(cloak_conf, indent=2, ensure_ascii=False))
             self._runtime.restart_openvpn_cloak_service(node, management_secret, service.name)
+            self._runtime.allow_public_port(
+                node,
+                management_secret,
+                port=service.cloak_listen_port,
+                protocol="tcp",
+                comment=f"onx-cloak-{service.name}",
+            )
         except Exception as exc:
             try:
                 self._runtime.stop_openvpn_cloak_service(node, management_secret, service.name)

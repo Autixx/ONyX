@@ -373,6 +373,21 @@ class LinkService:
                     progress_callback(f"restarting onx-link@{iface} on {node.name}")
                 self._runtime.restart_interface(node, secret, iface)
 
+            self._runtime.allow_public_port(
+                left_node,
+                left_mgmt_secret,
+                port=left_endpoint.listen_port,
+                protocol="udp",
+                comment=f"onx-link-{left_endpoint.interface_name}",
+            )
+            self._runtime.allow_public_port(
+                right_node,
+                right_mgmt_secret,
+                port=right_endpoint.listen_port,
+                protocol="udp",
+                comment=f"onx-link-{right_endpoint.interface_name}",
+            )
+
             left_peer_pub = right_public
             if progress_callback:
                 progress_callback("verifying handshake")

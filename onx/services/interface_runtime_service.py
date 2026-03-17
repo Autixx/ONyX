@@ -853,6 +853,50 @@ TRANSIT_INSTALL_SCRIPT = dedent(
     """
 )
 
+SECURITY_INSTALL_SCRIPT = dedent(
+    """\
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SSH_PORT="__ONX_NODE_SSH_PORT__"
+
+    export DEBIAN_FRONTEND=noninteractive
+    export PATH="/usr/local/bin:/usr/bin:/bin:${PATH}"
+    SUDO=""
+
+    fail() {
+      echo "$*" >&2
+      exit 1
+    }
+
+    setup_privilege() {
+      if [[ "$(id -u)" -eq 0 ]]; then
+        return
+      fi
+      if ! command -v sudo >/dev/null 2>&1; then
+        fail "[security] Remote package install requires root or passwordless sudo."
+      fi
+      SUDO="sudo"
+    }
+
+    install_security_stack() {
+      ${SUDO} apt-get update
+      ${SUDO} apt-get install -y ufw fail2ban
+
+      command -v ufw >/dev/null 2>&1 || fail "[security] Install failed: ufw not found."
+      command -v fail2ban-client >/dev/null 2>&1 || fail "[security] Install failed: fail2ban-client not found."
+      command -v systemctl >/dev/null 2>&1 || fail "[security] Install failed: systemctl not found."
+
+      ${SUDO} ufw allow "${SSH_PORT}/tcp" >/dev/null 2>&1 || true
+      ${SUDO} ufw --force enable >/dev/null 2>&1 || true
+      ${SUDO} systemctl enable --now fail2ban >/dev/null 2>&1 || fail "[security] Failed to enable fail2ban."
+    }
+
+    setup_privilege
+    install_security_stack
+    """
+)
+
 
 class InterfaceRuntimeService:
     def __init__(self, executor: SSHExecutor) -> None:
@@ -965,6 +1009,57 @@ class InterfaceRuntimeService:
             "timer_path": self._settings.onx_node_agent_timer_path,
             "agent_path": self._settings.onx_node_agent_path,
         }
+
+    def ensure_security_stack(self, node: Node, management_secret: str) -> dict:
+        install_timeout = max(60, int(self._settings.ssh_install_timeout_seconds))
+        remote_script_path = "/tmp/onx-install-security-stack.sh"
+        script_content = SECURITY_INSTALL_SCRIPT.replace("__ONX_NODE_SSH_PORT__", str(int(node.ssh_port)))
+        self._executor.write_file(node, management_secret, remote_script_path, script_content)
+        code, stdout, stderr = self._executor.run(
+            node,
+            management_secret,
+            f"sh -lc 'chmod 700 \"{remote_script_path}\" && \"{remote_script_path}\"; rm -f \"{remote_script_path}\"'",
+            timeout_seconds=install_timeout,
+        )
+        if code != 0:
+            raise RuntimeError(stderr or stdout or f"Failed to install security stack on node {node.name}")
+        return {
+            "installed": True,
+            "stdout": stdout,
+            "ssh_port_allowed": int(node.ssh_port),
+            "ufw_enabled": True,
+            "fail2ban_enabled": True,
+        }
+
+    def allow_public_port(
+        self,
+        node: Node,
+        management_secret: str,
+        *,
+        port: int,
+        protocol: str,
+        comment: str | None = None,
+    ) -> None:
+        proto = str(protocol or "").strip().lower()
+        if proto not in {"tcp", "udp"}:
+            raise ValueError(f"Unsupported firewall protocol: {protocol}")
+        port_value = int(port)
+        if not 1 <= port_value <= 65535:
+            raise ValueError(f"Firewall port out of range: {port}")
+        comment_text = str(comment or "").strip()
+        comment_fragment = ""
+        if comment_text:
+            safe_comment = comment_text.replace("'", "").replace('"', "")[:48]
+            if safe_comment:
+                comment_fragment = f" comment '{safe_comment}'"
+        command = (
+            "sh -lc "
+            f"'command -v ufw >/dev/null 2>&1 || exit 0; "
+            f"ufw allow {port_value}/{proto}{comment_fragment} >/dev/null 2>&1 || true'"
+        )
+        code, _, stderr = self._executor.run(node, management_secret, command)
+        if code != 0:
+            raise RuntimeError(stderr or f"Failed to open {port_value}/{proto} via ufw on node {node.name}")
 
     def ensure_awg_stack(self, node: Node, management_secret: str) -> dict:
         install_timeout = max(60, int(self._settings.ssh_install_timeout_seconds))

@@ -145,6 +145,13 @@ class XrayServiceManager:
         try:
             self._executor.write_file(node, management_secret, config_path, json.dumps(config, indent=2, ensure_ascii=False))
             self._runtime.restart_xray_service(node, management_secret, service.name)
+            self._runtime.allow_public_port(
+                node,
+                management_secret,
+                port=service.listen_port,
+                protocol="tcp",
+                comment=f"onx-xray-{service.name}",
+            )
         except Exception as exc:
             try:
                 self._runtime.stop_xray_service(node, management_secret, service.name)

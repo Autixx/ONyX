@@ -167,6 +167,13 @@ class WgServiceManager:
         try:
             self._executor.write_file(node, management_secret, config_path, config_text)
             self._runtime.restart_interface(node, management_secret, service.interface_name)
+            self._runtime.allow_public_port(
+                node,
+                management_secret,
+                port=service.listen_port,
+                protocol="udp",
+                comment=f"onx-wg-{service.interface_name}",
+            )
         except Exception as exc:
             try:
                 self._runtime.stop_interface(node, management_secret, service.interface_name)
