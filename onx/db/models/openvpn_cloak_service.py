@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from onx.db.base import Base
 
 
@@ -23,7 +23,7 @@ class OpenVpnCloakService(Base):
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
     node_id: Mapped[str] = mapped_column(String(36), ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False, index=True)
     state: Mapped[OpenVpnCloakServiceState] = mapped_column(
-        Enum(OpenVpnCloakServiceState, name="openvpn_cloak_service_state"),
+        Enum(OpenVpnCloakServiceState, name="openvpn_cloak_service_state", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=OpenVpnCloakServiceState.PLANNED,
         index=True,

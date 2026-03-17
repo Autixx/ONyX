@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,7 +28,7 @@ class WgService(Base):
         index=True,
     )
     state: Mapped[WgServiceState] = mapped_column(
-        Enum(WgServiceState, name="wg_service_state"),
+        Enum(WgServiceState, name="wg_service_state", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=WgServiceState.PLANNED,
         index=True,

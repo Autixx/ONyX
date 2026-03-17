@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from onx.db.base import Base
 
 
@@ -24,7 +24,7 @@ class AwgService(Base):
     node_id: Mapped[str] = mapped_column(String(36), ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False, index=True)
     interface_name: Mapped[str] = mapped_column(String(32), nullable=False)
     state: Mapped[AwgServiceState] = mapped_column(
-        Enum(AwgServiceState, name="awg_service_state"),
+        Enum(AwgServiceState, name="awg_service_state", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=AwgServiceState.PLANNED,
     )

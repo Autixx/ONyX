@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,12 +32,12 @@ class XrayService(Base):
         index=True,
     )
     transport_mode: Mapped[XrayServiceTransportMode] = mapped_column(
-        Enum(XrayServiceTransportMode, name="xray_service_transport_mode"),
+        Enum(XrayServiceTransportMode, name="xray_service_transport_mode", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=XrayServiceTransportMode.VLESS_XHTTP,
     )
     state: Mapped[XrayServiceState] = mapped_column(
-        Enum(XrayServiceState, name="xray_service_state"),
+        Enum(XrayServiceState, name="xray_service_state", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=XrayServiceState.PLANNED,
         index=True,
