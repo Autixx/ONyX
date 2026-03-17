@@ -4133,10 +4133,13 @@ async function doLogin(){
     document.getElementById('lbtn').textContent = uiLiteral('AUTHENTICATE');
   }
 }
-async function bootApp(){
+async function bootApp(sessionMe){
   var username = DEMO_USER;
   if(!DEMO_MODE){
-    var me = await apiFetch(API_PREFIX + '/auth/me');
+    var me = sessionMe;
+    if(me === undefined){
+      me = await apiFetch(API_PREFIX + '/auth/me');
+    }
     username = me && me.user && me.user.username ? me.user.username : 'admin';
   }
   isAuthenticated = true;
@@ -4184,8 +4187,16 @@ async function bootApp(){
     scheduleLocaleRefresh();
     return;
   }
-  await refreshHealth();
-  await loadData();
+  try{
+    await refreshHealth();
+  }catch(err){
+    pushEv('system.error', 'initial health load failed: ' + String(err && err.message ? err.message : err));
+  }
+  try{
+    await loadData();
+  }catch(err){
+    pushEv('system.error', 'initial data load failed: ' + String(err && err.message ? err.message : err));
+  }
   startHealthPolling();
   startFailbanPolling();
   startJobsTicker();
@@ -6974,11 +6985,21 @@ async function revokeDeviceFlow(deviceId){
     authRedirect('');
     return;
   }
+  var me = null;
   try{
-    await apiFetch(API_PREFIX + '/auth/me', { redirectOn401:false });
-    await bootApp();
+    me = await apiFetch(API_PREFIX + '/auth/me', { redirectOn401:false });
   }catch(_){
     authRedirect('');
+    return;
+  }
+  try{
+    await bootApp(me);
+  }catch(err){
+    isAuthenticated = true;
+    document.getElementById('loginWrap').style.display = 'none';
+    document.getElementById('appWrap').style.display = 'flex';
+    pushEv('system.error', 'boot failed: ' + String(err && err.message ? err.message : err));
+    scheduleLocaleRefresh();
   }
 })();
 // ═══════════════════════════════════════
@@ -7570,4 +7591,3 @@ function sendTicketReply(){
 </script>
 </body>
 </html>
-
