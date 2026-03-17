@@ -191,10 +191,10 @@ td.m{color:var(--t0);}
 #page-apidebug textarea{font-family:var(--mono);}
 
 /* в”Ђв”Ђ GRID OVERLAY в”Ђв”Ђ */
-.topo-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:0 0 5px 0;min-height:24px;}
+.topo-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:0 0 8px 0;min-height:24px;}
 .topo-legend{display:flex;gap:12px;font-size:13px;color:var(--t1);flex-wrap:wrap;align-items:center;}
 .topo-hint{font-size:12px;color:var(--t2);line-height:1.3;white-space:nowrap;}
-.topo-map-wrap{position:relative;}
+.topo-map-wrap{position:relative;height:100%;min-height:300px;}
 .topo-zoom-controls{
   position:absolute;right:10px;bottom:10px;z-index:2;display:flex;align-items:center;gap:6px;
 }
@@ -208,16 +208,23 @@ td.m{color:var(--t0);}
 }
 .topo-zoom-btn:hover{color:var(--acc2);border-color:var(--acc);}
 .topo-zoom-btn.reset{min-width:auto;font-size:12px;letter-spacing:.06em;}
-}
 .topo-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;}
-#page-topology{padding-top:10px;padding-bottom:8px;}
-#page-topology .ph{margin-bottom:5px;}
+#tc,#tc *{user-select:none;-webkit-user-select:none;}
+#page-topology{padding-bottom:10px;}
+#page-topology.active{
+  display:grid;
+  grid-template-columns:1fr;
+  grid-template-rows:auto auto minmax(300px,1fr) auto;
+  gap:8px;
+  min-height:calc(100vh - 154px);
+}
+#page-topology .ph{margin-bottom:0;}
 #page-topology .tw{margin-bottom:0;}
-#page-topology .th-row{padding:6px 10px;font-size:12px;}
+#page-topology .th-row{padding:7px 12px;font-size:12px;}
 #page-topology #topoSummary,
 #page-topology #topoPathSummary{
-  padding:8px 10px !important;font-size:13px !important;line-height:1.45 !important;
-  min-height:72px;max-height:86px;overflow:hidden;
+  padding:10px 12px !important;font-size:13px !important;line-height:1.45 !important;
+  min-height:96px;max-height:none;overflow:visible;
 }
 
 /* в”Ђв”Ђ MODAL FORM в”Ђв”Ђ */
@@ -2495,7 +2502,9 @@ function drawTopo(){
   var svg = document.getElementById('tc');
   if(!svg){ return; }
   var W = svg.getBoundingClientRect().width || 900;
-  var H = 320;
+  var wrap = svg.parentElement;
+  var wrapHeight = wrap ? Math.round(wrap.getBoundingClientRect().height || 0) : 0;
+  var H = Math.max(300, wrapHeight || 320);
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   svg.setAttribute('height', H);
   svg._viewWidth = W;
@@ -2689,6 +2698,7 @@ function drawTopo(){
     var dragStart = null;
     g.addEventListener('mousedown', function(e){
       if(e.button !== 0) return;
+      e.preventDefault();
       e.stopPropagation();
       dragging = true;
       g._dragged = false;
