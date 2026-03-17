@@ -1516,16 +1516,39 @@ function closeDP(){
   DP_CONTEXT.id = null;
 }
 function closeModal(){
-  document.getElementById('modal').classList.remove('open');
-  document.getElementById('modalTitle').textContent = '';
-  document.getElementById('modalBody').innerHTML = '';
-  document.getElementById('modalActions').innerHTML = '';
+  var modal = document.getElementById('modal');
+  var title = document.getElementById('modalTitle');
+  var body = document.getElementById('modalBody');
+  var actions = document.getElementById('modalActions');
+  modal.classList.remove('open');
+  resetI18nCache(title);
+  resetI18nCache(body);
+  resetI18nCache(actions);
+  title.textContent = '';
+  body.innerHTML = '';
+  actions.innerHTML = '';
+}
+function resetI18nCache(root){
+  if(!root) return;
+  delete root.dataset.i18nOriginalText;
+  delete root.dataset.i18nOriginalPlaceholder;
+  delete root.dataset.i18nOriginalTitle;
+  root.querySelectorAll('*').forEach(function(el){
+    delete el.dataset.i18nOriginalText;
+    delete el.dataset.i18nOriginalPlaceholder;
+    delete el.dataset.i18nOriginalTitle;
+  });
 }
 function openModal(title, bodyHtml, options){
   var opts = options || {};
-  document.getElementById('modalTitle').textContent = title;
-  document.getElementById('modalBody').innerHTML = bodyHtml;
+  var titleEl = document.getElementById('modalTitle');
+  var bodyEl = document.getElementById('modalBody');
   var actions = document.getElementById('modalActions');
+  resetI18nCache(titleEl);
+  resetI18nCache(bodyEl);
+  resetI18nCache(actions);
+  titleEl.textContent = title;
+  bodyEl.innerHTML = bodyHtml;
   actions.innerHTML = '';
   var buttons = opts.buttons || [];
   buttons.forEach(function(btn){
@@ -1540,6 +1563,7 @@ function openModal(title, bodyHtml, options){
   var focusSelector = opts.focusSelector || 'input, select, textarea';
   var target = document.querySelector('#modalBody ' + focusSelector);
   if(target){ target.focus(); }
+  scheduleLocaleRefresh();
 }
 function bindModalForm(formId, onSubmit){
   var form = document.getElementById(formId);
