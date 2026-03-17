@@ -111,7 +111,7 @@ body{display:flex;flex-direction:column;}
 .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
 .ptitle{font-size:21px;font-weight:700;color:var(--t0);letter-spacing:.05em;display:flex;align-items:center;gap:10px;}
 .tag{font-size:14px;color:var(--acc);border:1px solid var(--bdr2);padding:2px 7px;border-radius:2px;letter-spacing:.08em;}
-.pbtn-row{display:flex;gap:8px;}
+.pbtn-row{display:flex;gap:8px;flex-wrap:wrap;min-width:0;}
 
 /* в”Ђв”Ђ BUTTONS в”Ђв”Ђ */
 .btn{padding:8px 15px;font-family:var(--mono);font-size:15px;cursor:pointer;border-radius:3px;border:1px solid var(--bdr2);background:transparent;color:var(--acc);transition:all .12s;}
@@ -183,7 +183,7 @@ td.m{color:var(--t0);}
 .drow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bdr);font-size:15px;}
 .dk{color:var(--t1);}
 .dv{color:var(--t0);text-align:right;max-width:220px;word-break:break-all;}
-.dp-actions{display:flex;gap:8px;margin-top:16px;}
+.dp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;}
 
 /* в”Ђв”Ђ API DEBUG в”Ђв”Ђ */
 #page-apidebug select,
@@ -197,21 +197,21 @@ td.m{color:var(--t0);}
 /* в”Ђв”Ђ MODAL FORM в”Ђв”Ђ */
 .modal{position:fixed;inset:0;background:rgba(3,8,12,.72);display:none;align-items:center;justify-content:center;z-index:120;}
 .modal.open{display:flex;}
-.modal-box{width:min(760px,92vw);max-height:86vh;overflow-y:auto;background:var(--bg2);border:1px solid var(--bdr2);border-radius:4px;box-shadow:0 20px 60px rgba(0,0,0,.45);}
-.modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--bdr);}
+.modal-box{width:min(1240px,98vw);max-height:90vh;overflow-y:auto;overflow-x:hidden;background:var(--bg2);border:1px solid var(--bdr2);border-radius:4px;box-shadow:0 20px 60px rgba(0,0,0,.45);}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--bdr);min-width:0;gap:10px;}
 .modal-title{font-size:18px;font-weight:700;color:var(--t0);letter-spacing:.05em;}
 .modal-close{background:none;border:none;color:var(--t1);font-size:20px;cursor:pointer;line-height:1;}
-.modal-body{padding:16px;}
-.modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.modal-body{padding:16px;min-width:0;}
+.modal-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;}
 .modal-grid.one{grid-template-columns:1fr;}
-.mf-row{display:flex;flex-direction:column;gap:6px;}
+.mf-row{display:flex;flex-direction:column;gap:6px;min-width:0;}
 .mf-row.full{grid-column:1 / -1;}
 .mf-label{font-size:13px;color:var(--t1);letter-spacing:.1em;text-transform:uppercase;}
 .mf-input,.mf-select,.mf-textarea{width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:9px 11px;color:var(--t0);font-family:var(--mono);font-size:15px;outline:none;}
 .mf-textarea{min-height:84px;resize:vertical;}
 .mf-input:focus,.mf-select:focus,.mf-textarea:focus{border-color:var(--acc);}
 .mf-help{font-size:13px;color:var(--t2);line-height:1.5;}
-.mf-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 16px 16px;}
+.mf-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 16px 16px;flex-wrap:wrap;}
 .empty-state{padding:12px 14px;color:var(--t1);font-size:15px;}
 
 /* ── TOPBAR ADDITIONS ── */
@@ -1003,6 +1003,7 @@ var wsReconnectTimer = null;
 var isAuthenticated = false;
 
 var NODES = [];
+var DP_CONTEXT = { kind:null, id:null };
 var NODE_TRAFFIC = [];
 var LINKS = [];
 var JOBS = [];
@@ -1379,12 +1380,23 @@ function rows(arr){
     return '<div class="drow"><span class="dk">'+esc(r[0])+'</span><span class="dv">'+esc(r[1])+'</span></div>';
   }).join('');
 }
-function openDP(title, html){
+function detailContextIs(kind, id){
+  return DP_CONTEXT.kind === kind && String(DP_CONTEXT.id || '') === String(id || '');
+}
+function openDP(title, html, meta){
   document.getElementById('dpt').textContent = title;
   document.getElementById('dpb').innerHTML = html;
   document.getElementById('dp').classList.add('open');
+  if(meta && meta.kind){
+    DP_CONTEXT.kind = meta.kind;
+    DP_CONTEXT.id = meta.id || null;
+  }
 }
-function closeDP(){ document.getElementById('dp').classList.remove('open'); }
+function closeDP(){
+  document.getElementById('dp').classList.remove('open');
+  DP_CONTEXT.kind = null;
+  DP_CONTEXT.id = null;
+}
 function closeModal(){
   document.getElementById('modal').classList.remove('open');
   document.getElementById('modalTitle').textContent = '';
@@ -1503,7 +1515,7 @@ function showNode(id){
       +'<button class="btn" onclick="openNodeModal(\''+esc(n.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteNodeFlow(\''+esc(n.id)+'\')">DELETE</button>'
     +'</div>';
-  openDP(n.name, baseHtml);
+  openDP(n.name, baseHtml, { kind:'node', id:n.id });
   apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(n.id) + '/traffic')
     .then(function(overview){
       var box = document.getElementById('nodeTrafficBox');
@@ -2689,7 +2701,9 @@ async function createNodeFlow(){
 
     pushEv('node.created', 'node ' + node.name + ' created');
     await refreshNodes();
-    showNode(node.id);
+    if(!document.getElementById('dp').classList.contains('open') || !DP_CONTEXT.kind || detailContextIs('node', node.id)){
+      showNode(node.id);
+    }
   }catch(err){
     pushEv('node.create.error', 'create node failed: ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
@@ -2900,7 +2914,9 @@ async function saveNodeForm(fd, nodeId){
     pushEv(nodeId ? 'node.updated' : 'node.created', 'node ' + node.name + (nodeId ? ' updated' : ' created'));
     closeModal();
     await refreshNodes();
-    showNode(node.id);
+    if(!document.getElementById('dp').classList.contains('open') || !DP_CONTEXT.kind || detailContextIs('node', node.id)){
+      showNode(node.id);
+    }
   }catch(err){
     pushEv('node.save.error', 'node save failed: ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
@@ -5380,6 +5396,15 @@ var LITERAL_TEXT = {
     'WG Services': 'WG-сервисы',
     'OpenVPN+CLOAK Services': 'OpenVPN+Cloak-сервисы',
     'OpenVPN+Cloak Services': 'OpenVPN+Cloak-сервисы',
+    'Route Policy': 'Политика маршрутизации',
+    'DNS Policy': 'DNS-политика',
+    'DNS Policies': 'DNS-политики',
+    'Geo Policy': 'Гео-политика',
+    'Geo Policies': 'Гео-политики',
+    'Balancer': 'Балансировщик',
+    'Balancers': 'Балансировщики',
+    'Transit Routing': 'Транзитная маршрутизация',
+    'Routing Summary': 'Сводка маршрутизации',
     'API Debug': 'Отладка API',
     'XRAY': 'XRAY',
     'AWG': 'AWG',
@@ -5430,10 +5455,14 @@ var LITERAL_TEXT = {
     'PAUSE': 'ПАУЗА',
     'RESUME': 'ПРОДОЛЖИТЬ',
     'SEND': 'ОТПРАВИТЬ',
+    'PROBE SSH': 'ПРОВЕРИТЬ SSH',
+    'BOOTSTRAP': 'ПОДГОТОВИТЬ',
+    'VALIDATE': 'ПРОВЕРИТЬ',
+    'PICK': 'ВЫБРАТЬ',
     'VIEW CONFIG': 'ПОКАЗАТЬ КОНФИГ',
-    'OPEN TRANSIT': 'ОТКРЫТЬ TRANSIT',
-    'ATTACH NEXT HOP': 'ПРИВЯЗАТЬ NEXT HOP',
-    'CREATE TRANSIT': 'СОЗДАТЬ TRANSIT',
+    'OPEN TRANSIT': 'ОТКРЫТЬ ТРАНЗИТ',
+    'ATTACH NEXT HOP': 'ПРИВЯЗАТЬ СЛЕДУЮЩИЙ ХОП',
+    'CREATE TRANSIT': 'СОЗДАТЬ ТРАНЗИТ',
     'Name': 'Имя',
     'Role': 'Роль',
     'Mgmt Address': 'Mgmt-адрес',
@@ -5477,7 +5506,7 @@ var LITERAL_TEXT = {
     'running': 'выполняется',
     'succeeded': 'успешно',
     'failed': 'ошибка',
-    'dead': 'окончательно упал',
+    'dead': 'провал',
     'No account?': 'Нет аккаунта?',
     'Request access': 'Запросить доступ'
   }
