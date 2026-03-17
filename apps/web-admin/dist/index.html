@@ -195,10 +195,19 @@ td.m{color:var(--t0);}
 .topo-legend{display:flex;gap:12px;font-size:13px;color:var(--t1);flex-wrap:wrap;align-items:center;}
 .topo-hint{font-size:12px;color:var(--t2);line-height:1.3;white-space:nowrap;}
 .topo-map-wrap{position:relative;}
+.topo-zoom-controls{
+  position:absolute;right:10px;bottom:10px;z-index:2;display:flex;align-items:center;gap:6px;
+}
 .topo-zoom-indicator{
-  position:absolute;right:10px;bottom:10px;z-index:2;
   padding:4px 9px;border:1px solid var(--bdr2);border-radius:3px;
   background:rgba(8,12,16,0.92);color:var(--acc2);font-size:12px;letter-spacing:.08em;
+}
+.topo-zoom-btn{
+  min-width:28px;height:28px;padding:0 8px;border:1px solid var(--bdr2);border-radius:3px;
+  background:rgba(8,12,16,0.92);color:var(--t1);font-family:var(--mono);font-size:14px;cursor:pointer;
+}
+.topo-zoom-btn:hover{color:var(--acc2);border-color:var(--acc);}
+.topo-zoom-btn.reset{min-width:auto;font-size:12px;letter-spacing:.06em;}
 }
 .topo-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;}
 #page-topology{padding-top:10px;padding-bottom:8px;}
@@ -604,7 +613,12 @@ td.m{color:var(--t0);}
         </div>
         <div class="topo-map-wrap">
           <svg id="tc" width="100%" height="320" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:grab;"></svg>
-          <div class="topo-zoom-indicator" id="topoZoomLabel">ZOOM 100%</div>
+          <div class="topo-zoom-controls">
+            <button class="topo-zoom-btn" type="button" onclick="adjustTopologyZoom(0.9)">-</button>
+            <div class="topo-zoom-indicator" id="topoZoomLabel">ZOOM 100%</div>
+            <button class="topo-zoom-btn" type="button" onclick="adjustTopologyZoom(1.1)">+</button>
+            <button class="topo-zoom-btn reset" type="button" onclick="resetTopologyView()">RESET</button>
+          </div>
         </div>
         <div class="topo-meta">
           <div class="tw">
@@ -2303,6 +2317,16 @@ function syncTopologyZoomLabel(){
   var label = document.getElementById('topoZoomLabel');
   if(!label) return;
   label.textContent = 'ZOOM ' + Math.round(clampTopologyZoom(TOPO_ZOOM) * 100) + '%';
+}
+function adjustTopologyZoom(factor){
+  TOPO_ZOOM = clampTopologyZoom((TOPO_ZOOM || 1) * factor);
+  applyTopologyZoom(document.getElementById('tc'));
+}
+function resetTopologyView(){
+  TOPO_ZOOM = 1.0;
+  TOPO_PAN_X = 0;
+  TOPO_PAN_Y = 0;
+  applyTopologyZoom(document.getElementById('tc'));
 }
 function applyTopologyZoom(svg){
   if(!svg || !svg._topoWorld) return;
