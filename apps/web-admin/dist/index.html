@@ -208,7 +208,7 @@ td.m{color:var(--t0);}
 }
 .topo-zoom-btn:hover{color:var(--acc2);border-color:var(--acc);}
 .topo-zoom-btn.reset{min-width:auto;font-size:12px;letter-spacing:.06em;}
-.topo-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;}
+.topo-meta{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;}
 #tc,#tc *{user-select:none;-webkit-user-select:none;}
 #page-topology{padding-top:16px;padding-bottom:12px;}
 #page-topology.active{
@@ -219,12 +219,16 @@ td.m{color:var(--t0);}
 }
 #page-topology .ph{margin-bottom:8px;}
 #page-topology .tw{margin-bottom:0;}
-#page-topology .th-row{padding:7px 12px;font-size:12px;}
+#page-topology .th-row{padding:6px 12px;font-size:12px;}
 #page-topology #topoSummary,
 #page-topology #topoPathSummary{
-  padding:10px 12px !important;font-size:13px !important;line-height:1.45 !important;
-  min-height:112px;max-height:none;overflow:visible;
+  padding:6px 12px !important;font-size:13px !important;line-height:1.2 !important;
+  min-height:72px;max-height:none;overflow:visible;
 }
+#page-topology #topoSummary .drow,
+#page-topology #topoPathSummary .drow{padding:4px 0;line-height:1.2;}
+#page-topology #topoSummary .empty-state,
+#page-topology #topoPathSummary .empty-state{padding:6px 4px;line-height:1.2;}
 
 /* в”Ђв”Ђ MODAL FORM в”Ђв”Ђ */
 .modal{position:fixed;inset:0;background:rgba(3,8,12,.72);display:none;align-items:center;justify-content:center;z-index:120;padding:24px;box-sizing:border-box;}
@@ -6099,7 +6103,7 @@ function applyLiteralTranslations(root){
   if(!scope) return;
   var dynamicIdSkip = {
     sb:true, sw:true, sn:true, snSub:true, sl:true, slSub:true,
-    sysCpu:true, sysRam:true, wsl:true, ubtn:true, lerr:true
+    sysCpu:true, sysRam:true, wsl:true, ubtn:true, lerr:true, topoZoomLabel:true
   };
   scope.querySelectorAll('*').forEach(function(el){
     if(el.hasAttribute('data-i18n')) return;
