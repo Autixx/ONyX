@@ -565,6 +565,7 @@ td.m{color:var(--t0);}
           <div class="pbtn-row">
             <button class="btn" id="btnPlanPath" data-i18n="topo.planpath">PLAN PATH</button>
             <button class="btn" onclick="refreshTopology().then(drawTopo)" data-i18n="topo.refresh">REFRESH</button>
+            <button class="btn" id="btnTopoAuto" onclick="toggleTopologyAutoRefresh()" data-i18n="topo.auto">AUTO</button>
           </div>
         </div>
         <svg id="tc" width="100%" height="480" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:default;"></svg>
@@ -573,7 +574,7 @@ td.m{color:var(--t0);}
           <span><span style="color:var(--amb)">●</span> <span data-i18n="topo.degraded">degraded</span></span>
           <span><span style="color:var(--red)">●</span> <span data-i18n="topo.unreachable">unreachable</span></span>
           <span><span style="color:var(--t1)">●</span> <span data-i18n="topo.unknown">unknown</span></span>
-          <span style="margin-left:auto;color:var(--t1)" data-i18n="topo.hint">click node for detail</span>
+          <span style="margin-left:auto;color:var(--t1)" data-i18n="topo.hint">click node or link for detail</span>
         </div>
         <div class="topo-meta">
           <div class="tw">
@@ -1029,6 +1030,9 @@ var JOB_EVENTS = {};
 var GRAPH_DATA = {nodes:[], edges:[], generated_at:null};
 var TOPO_HITBOXES = {nodes:[], edges:[]};
 var TOPO_PATH = null;
+var TOPO_AUTO_REFRESH_ENABLED = false;
+var _topologyAutoTimer = null;
+var _topologyAutoInFlight = false;
 
 function nById(id){ return NODES.find(function(n){return n.id===id;})||{name:id,role:'unknown'}; }
 function linkById(id){ return LINKS.find(function(l){ return l.id===id; }) || null; }
@@ -2167,6 +2171,49 @@ async function refreshTopology(){
   renderTopologyMeta();
   drawTopo();
 }
+function syncTopologyAutoButton(){
+  var btn = document.getElementById('btnTopoAuto');
+  if(!btn) return;
+  btn.classList.toggle('pri', !!TOPO_AUTO_REFRESH_ENABLED);
+  btn.setAttribute('aria-pressed', TOPO_AUTO_REFRESH_ENABLED ? 'true' : 'false');
+}
+async function topologyAutoRefreshTick(){
+  if(!TOPO_AUTO_REFRESH_ENABLED) return;
+  if(_currentPage !== 'topology') return;
+  if(_topologyAutoInFlight) return;
+  _topologyAutoInFlight = true;
+  try{
+    await refreshTopology();
+  }catch(err){
+    console.warn('topology auto refresh failed', err);
+  }finally{
+    _topologyAutoInFlight = false;
+  }
+}
+function stopTopologyAutoRefresh(){
+  if(_topologyAutoTimer){
+    clearInterval(_topologyAutoTimer);
+    _topologyAutoTimer = null;
+  }
+}
+function startTopologyAutoRefresh(){
+  stopTopologyAutoRefresh();
+  if(!TOPO_AUTO_REFRESH_ENABLED) return;
+  if(_currentPage !== 'topology') return;
+  _topologyAutoTimer = setInterval(function(){
+    topologyAutoRefreshTick();
+  }, 5000);
+}
+function toggleTopologyAutoRefresh(){
+  TOPO_AUTO_REFRESH_ENABLED = !TOPO_AUTO_REFRESH_ENABLED;
+  syncTopologyAutoButton();
+  if(TOPO_AUTO_REFRESH_ENABLED){
+    topologyAutoRefreshTick();
+    startTopologyAutoRefresh();
+  } else {
+    stopTopologyAutoRefresh();
+  }
+}
 function buildNodePositions(width, height, nodes){
   var positions = {};
   var source = nodes || [];
@@ -2334,64 +2381,7 @@ function drawTopo(){
   var nodeG = mk('g',{id:'topo-nodes'});
   svg.appendChild(nodeG);
 
-  // Draw edges
-  graphEdges.forEach(function(l){
-    var a = pos[l.left_node_id], b = pos[l.right_node_id];
-    if(!a||!b) return;
-    var inPath = !!(TOPO_PATH && (TOPO_PATH.linkIds||[]).indexOf(l.id) !== -1);
-    var mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
-    var metrics = l.metrics || {};
-
-    var line = mk('line',{
-      x1:a.x, y1:a.y, x2:b.x, y2:b.y,
-      stroke: inPath ? 'rgba(77,166,255,0.9)' : (l.state==='active' ? 'rgba(0,200,180,0.35)' : 'rgba(255,69,96,0.35)'),
-      'stroke-width': inPath ? 3 : 1.5,
-      'stroke-dasharray': inPath ? 'none' : '6,5',
-      style:'cursor:pointer'
-    });
-    line.addEventListener('click', function(){ showGraphEdge(l.id); });
-    edgeG.appendChild(line);
-
-    // Driver label
-    var tdrv = mk('text',{
-      x:mx, y:my-10,
-      'text-anchor':'middle',
-      fill: inPath ? '#4da6ff' : '#00dcc8',
-      'font-size':'12',
-      'font-weight':'bold',
-      'font-family':'Courier New,monospace',
-      style:'pointer-events:none'
-    });
-    tdrv.textContent = l.driver_name || l.driver || '-';
-    edgeG.appendChild(tdrv);
-
-    // Interface label
-    var tiface = mk('text',{
-      x:mx, y:my+8,
-      'text-anchor':'middle',
-      fill:'#b8d0e8',
-      'font-size':'11',
-      'font-family':'Courier New,monospace',
-      style:'pointer-events:none'
-    });
-    tiface.textContent = (l.left_interface||'?') + '→' + (l.right_interface||'?');
-    edgeG.appendChild(tiface);
-
-    // Metrics
-    var lat = metrics.latency_ms != null ? Number(metrics.latency_ms).toFixed(1)+'ms' : null;
-    if(lat){
-      var tmet = mk('text',{
-        x:mx, y:my+22,
-        'text-anchor':'middle',
-        fill:'rgba(184,208,232,0.65)',
-        'font-size':'10',
-        'font-family':'Courier New,monospace',
-        style:'pointer-events:none'
-      });
-      tmet.textContent = lat + (metrics.loss_pct != null ? ' / '+Number(metrics.loss_pct).toFixed(1)+'%' : '');
-      edgeG.appendChild(tmet);
-    }
-  });
+  renderTopologyEdges(pos, graphEdges, edgeG, mk);
 
   // Draw nodes
   graphNodes.forEach(function(n){
@@ -2558,27 +2548,103 @@ function drawTopo(){
   renderTopologyMeta();
 }
 
-function _redrawEdges(pos, graphEdges, edgeG, ns, mk){
-  // Update only line positions (fast, no full redraw)
-  var lines = edgeG.querySelectorAll('line');
-  var li = 0;
+function renderTopologyEdges(pos, graphEdges, edgeG, mk){
+  while(edgeG.firstChild) edgeG.removeChild(edgeG.firstChild);
   graphEdges.forEach(function(l){
     var a = pos[l.left_node_id], b = pos[l.right_node_id];
     if(!a||!b) return;
+    var inPath = !!(TOPO_PATH && (TOPO_PATH.linkIds||[]).indexOf(l.id) !== -1);
     var mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
-    if(lines[li]){
-      lines[li].setAttribute('x1',a.x); lines[li].setAttribute('y1',a.y);
-      lines[li].setAttribute('x2',b.x); lines[li].setAttribute('y2',b.y);
+    var metrics = l.metrics || {};
+    var edgeColor = inPath ? 'rgba(77,166,255,0.9)' : (l.state==='active' ? 'rgba(0,200,180,0.35)' : 'rgba(255,69,96,0.35)');
+    var edgeWidth = inPath ? 3 : 1.5;
+    var edgeDash = inPath ? 'none' : '6,5';
+    var g = mk('g', {'data-edge-id': l.id});
+
+    var line = mk('line',{
+      x1:a.x, y1:a.y, x2:b.x, y2:b.y,
+      stroke: edgeColor,
+      'stroke-width': edgeWidth,
+      'stroke-dasharray': edgeDash,
+      'pointer-events':'none'
+    });
+    g.appendChild(line);
+
+    var hit = mk('line',{
+      x1:a.x, y1:a.y, x2:b.x, y2:b.y,
+      stroke:'rgba(0,0,0,0)',
+      'stroke-width':'18',
+      'stroke-linecap':'round',
+      style:'cursor:pointer'
+    });
+    hit.addEventListener('click', function(){ showGraphEdge(l.id); });
+    g.appendChild(hit);
+
+    var labelText = String(l.name || l.driver_name || l.driver || '-');
+    var label = mk('text',{
+      x:mx, y:my-12,
+      'text-anchor':'middle',
+      fill: inPath ? '#4da6ff' : '#f0f6fc',
+      'font-size':'12',
+      'font-weight':'bold',
+      'font-family':'Courier New,monospace',
+      style:'cursor:pointer'
+    });
+    label.textContent = labelText;
+    g.appendChild(label);
+
+    var labelBox = mk('rect',{
+      rx:'3',
+      ry:'3',
+      fill:'rgba(8,12,16,0.96)',
+      stroke: inPath ? 'rgba(77,166,255,0.55)' : 'rgba(0,220,200,0.35)',
+      'stroke-width':'1',
+      style:'cursor:pointer'
+    });
+    g.insertBefore(labelBox, label);
+
+    var labelPadX = 8;
+    var labelPadY = 4;
+    try{
+      var bbox = label.getBBox();
+      labelBox.setAttribute('x', bbox.x - labelPadX);
+      labelBox.setAttribute('y', bbox.y - labelPadY);
+      labelBox.setAttribute('width', bbox.width + labelPadX * 2);
+      labelBox.setAttribute('height', bbox.height + labelPadY * 2);
+    }catch(_e){}
+    labelBox.addEventListener('click', function(){ showGraphEdge(l.id); });
+    label.addEventListener('click', function(){ showGraphEdge(l.id); });
+
+    var tiface = mk('text',{
+      x:mx, y:my+9,
+      'text-anchor':'middle',
+      fill:'#b8d0e8',
+      'font-size':'11',
+      'font-family':'Courier New,monospace',
+      'pointer-events':'none'
+    });
+    tiface.textContent = (l.left_interface||'?') + '→' + (l.right_interface||'?');
+    g.appendChild(tiface);
+
+    var lat = metrics.latency_ms != null ? Number(metrics.latency_ms).toFixed(1)+'ms' : null;
+    if(lat){
+      var tmet = mk('text',{
+        x:mx, y:my+23,
+        'text-anchor':'middle',
+        fill:'rgba(184,208,232,0.65)',
+        'font-size':'10',
+        'font-family':'Courier New,monospace',
+        'pointer-events':'none'
+      });
+      tmet.textContent = lat + (metrics.loss_pct != null ? ' / '+Number(metrics.loss_pct).toFixed(1)+'%' : '');
+      g.appendChild(tmet);
     }
-    li++;
-    // Update text positions
-    var texts = edgeG.querySelectorAll('text');
-    // texts index = li*3-3, li*3-2, li*3-1 (driver, iface, metrics)
-    var base = (li-1)*3;
-    if(texts[base])  { texts[base].setAttribute('x',mx);   texts[base].setAttribute('y',my-10); }
-    if(texts[base+1]){ texts[base+1].setAttribute('x',mx); texts[base+1].setAttribute('y',my+8); }
-    if(texts[base+2]){ texts[base+2].setAttribute('x',mx); texts[base+2].setAttribute('y',my+22); }
+    edgeG.appendChild(g);
   });
+}
+
+function _redrawEdges(pos, graphEdges, edgeG, ns, mk){
+  renderTopologyEdges(pos, graphEdges, edgeG, mk);
 }
 
 function bindTopologyCanvas(){
@@ -5555,9 +5621,10 @@ var I18N = {
     'topo.degraded':       'degraded',
     'topo.unreachable':    'unreachable',
     'topo.unknown':        'unknown',
-    'topo.hint':           'click node for detail',
+    'topo.hint':           'click node or link for detail',
     'topo.planpath':       'PLAN PATH',
     'topo.refresh':        'REFRESH',
+    'topo.auto':           'AUTO',
     'topo.snapshot':       'Graph Snapshot',
     'topo.pathoverlay':    'Path Overlay',
   },
@@ -5604,9 +5671,10 @@ var I18N = {
     'topo.degraded':       'деградация',
     'topo.unreachable':    'недоступен',
     'topo.unknown':        'неизвестно',
-    'topo.hint':           'клик по узлу — детали',
+    'topo.hint':           'клик по узлу или линку — детали',
     'topo.planpath':       'МАРШРУТ',
     'topo.refresh':        'ОБНОВИТЬ',
+    'topo.auto':           'АВТО',
     'topo.snapshot':       'Снимок графа',
     'topo.pathoverlay':    'Наложение пути',
   }
@@ -6759,8 +6827,13 @@ function showPage(pageId){
     el.classList.toggle('active', el.getAttribute('data-g') === g);
   });
 
-  // Trigger refresh if needed
-  if(pageId==='topology'){ refreshTopology().then(drawTopo); }
+  if(pageId === 'topology'){
+    refreshTopology().then(drawTopo);
+    startTopologyAutoRefresh();
+  } else {
+    stopTopologyAutoRefresh();
+  }
+  syncTopologyAutoButton();
   if(pageId==='failban'){ refreshFailban().catch(function(){}); }
 }
 
