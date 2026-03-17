@@ -4736,12 +4736,13 @@ function openXrayServiceModal(serviceId){
     +formInput('xHTTP path', 'xhttp_path', service ? (service.xhttp_path || '/') : '/', {required:true})
     +formCheckbox('TLS enabled', 'tls_enabled', service ? !!service.tls_enabled : false, {caption:'Use TLS stream security'})
     +'</div></form>';
-  openModal(service ? 'Edit XRAY Service' : 'Create XRAY Service', body, {
+  openModal(service ? 'Edit service' : 'Create service', body, {
     buttons:[
       {label:'Cancel', className:'btn', onClick:closeModal},
       {label:service ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('xrayServiceForm').requestSubmit(); }}
     ]
   });
+  bindNodeHostAutofill('xrayServiceForm', 'node_id', 'public_host');
   bindModalForm('xrayServiceForm', function(fd){ saveXrayServiceForm(fd, serviceId); });
 }
 
@@ -5153,6 +5154,40 @@ async function actionTransitPreview(policyId){
 function parseCsvList(text){
   return String(text || '').split(',').map(function(item){ return item.trim(); }).filter(Boolean);
 }
+function nodeMgmtHost(nodeId){
+  var node = nById(String(nodeId || '').trim());
+  return node ? String(node.management_address || node.ssh_host || '').trim() : '';
+}
+function bindNodeHostAutofill(formId, nodeFieldName, hostFieldName){
+  var form = document.getElementById(formId);
+  if(!form) return;
+  var nodeSelect = form.querySelector('[name="' + nodeFieldName + '"]');
+  var hostInput = form.querySelector('[name="' + hostFieldName + '"]');
+  if(!nodeSelect || !hostInput) return;
+
+  hostInput.setAttribute('data-initial-value', String(hostInput.value || '').trim());
+  hostInput.setAttribute('data-dirty', '0');
+  hostInput.addEventListener('input', function(){
+    var current = String(hostInput.value || '').trim();
+    var initial = String(hostInput.getAttribute('data-initial-value') || '').trim();
+    hostInput.setAttribute('data-dirty', current !== initial ? '1' : '0');
+  });
+
+  function syncHostDefault(){
+    var current = String(hostInput.value || '').trim();
+    var fallback = nodeMgmtHost(nodeSelect.value);
+    var initial = String(hostInput.getAttribute('data-initial-value') || '').trim();
+    var dirty = hostInput.getAttribute('data-dirty') === '1';
+    if(!dirty || current === '' || current === initial){
+      hostInput.value = fallback;
+      hostInput.setAttribute('data-initial-value', fallback);
+      hostInput.setAttribute('data-dirty', '0');
+    }
+  }
+
+  nodeSelect.addEventListener('change', syncHostDefault);
+  syncHostDefault();
+}
 
 function openOpenvpnCloakServiceModal(serviceId){
   var service = serviceId ? openvpnCloakServiceById(serviceId) : null;
@@ -5173,12 +5208,13 @@ function openOpenvpnCloakServiceModal(serviceId){
     +formInput('MTU', 'mtu', service ? String(service.mtu) : '1500', {type:'number'})
     +formTextarea('Client allowed IPs', 'client_allowed_ips_json', service ? (service.client_allowed_ips_json || []).join(', ') : '0.0.0.0/0, ::/0', {help:'Comma-separated CIDRs.'})
     +'</div></form>';
-  openModal(service ? 'Edit OpenVPN+Cloak Service' : 'Create OpenVPN+Cloak Service', body, {
+  openModal(service ? 'Edit service' : 'Create service', body, {
     buttons:[
       {label:'Cancel', className:'btn', onClick:closeModal},
       {label:service ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('openvpnCloakServiceForm').requestSubmit(); }}
     ]
   });
+  bindNodeHostAutofill('openvpnCloakServiceForm', 'node_id', 'public_host');
   bindModalForm('openvpnCloakServiceForm', function(fd){ saveOpenvpnCloakServiceForm(fd, serviceId); });
 }
 
@@ -5303,12 +5339,13 @@ function openAwgServiceModal(serviceId){
     +formTextarea('Client allowed IPs', 'client_allowed_ips_json', service ? (service.client_allowed_ips_json || []).join(', ') : '0.0.0.0/0, ::/0', {help:'Comma-separated CIDRs.'})
     +formTextarea('Obfuscation JSON', 'awg_obfuscation_json', obfJson, {help:'Raw AWG obfuscation parameters.'})
     +'</div></form>';
-  openModal(service ? 'Edit AWG Service' : 'Create AWG Service', body, {
+  openModal(service ? 'Edit service' : 'Create service', body, {
     buttons:[
       {label:'Cancel', className:'btn', onClick:closeModal},
       {label:service ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('awgServiceForm').requestSubmit(); }}
     ]
   });
+  bindNodeHostAutofill('awgServiceForm', 'node_id', 'public_host');
   bindModalForm('awgServiceForm', function(fd){ saveAwgServiceForm(fd, serviceId); });
 }
 
@@ -5430,12 +5467,13 @@ function openWgServiceModal(serviceId){
     +formInput('Keepalive', 'persistent_keepalive', service ? String(service.persistent_keepalive) : '25', {type:'number'})
     +formTextarea('Client allowed IPs', 'client_allowed_ips_json', service ? (service.client_allowed_ips_json || []).join(', ') : '0.0.0.0/0, ::/0', {help:'Comma-separated CIDRs.'})
     +'</div></form>';
-  openModal(service ? 'Edit WG Service' : 'Create WG Service', body, {
+  openModal(service ? 'Edit service' : 'Create service', body, {
     buttons:[
       {label:'Cancel', className:'btn', onClick:closeModal},
       {label:service ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('wgServiceForm').requestSubmit(); }}
     ]
   });
+  bindNodeHostAutofill('wgServiceForm', 'node_id', 'public_host');
   bindModalForm('wgServiceForm', function(fd){ saveWgServiceForm(fd, serviceId); });
 }
 
