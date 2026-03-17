@@ -287,6 +287,14 @@ td.m{color:var(--t0);}
 .fline.warning{color:var(--amb);}
 .fline.info{color:var(--t1);}
 .ftime{color:var(--t2);flex-shrink:0;width:76px;font-size:13px;}
+.failban-sources{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px 0;}
+.failban-scope-tab{
+  display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--bdr);
+  background:var(--bg2);color:var(--t1);cursor:pointer;border-radius:4px;font-size:13px;letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.failban-scope-tab.active{border-color:var(--acc);color:var(--acc2);box-shadow:0 0 0 1px rgba(0,200,180,.25) inset;}
+.failban-summary-line{margin:0 0 10px 0;color:var(--t2);font-size:13px;text-transform:uppercase;letter-spacing:.1em;}
 
 /* ── SUPPORT TICKETS ── */
 .tickets-layout{display:grid;grid-template-columns:240px 1fr;gap:0;height:calc(100vh - 180px);border:1px solid var(--bdr);border-radius:4px;overflow:hidden;}
@@ -903,12 +911,14 @@ td.m{color:var(--t0);}
       <!-- FAILBAN -->
       <div class="page" id="page-failban">
         <div class="ph">
-          <span class="ptitle">Failban <span class="tag">LIVE</span></span>
+          <span class="ptitle">Fail2Ban <span class="tag">LIVE</span></span>
           <div class="pbtn-row">
             <button class="btn red" onclick="failbanPauseToggle()"><span id="failbanPauseLabel">PAUSE</span></button>
             <button class="btn" onclick="document.getElementById('failban-log').innerHTML=''">CLEAR</button>
           </div>
         </div>
+        <div class="failban-sources" id="failban-sources"></div>
+        <div class="failban-summary-line" id="failban-scope-line">CONTROL PLANE</div>
         <div class="failban-log" id="failban-log">
           <div class="fline info"><span class="ftime">--:--:--</span><span>Waiting for fail2ban log stream...</span></div>
         </div>
@@ -1534,16 +1544,19 @@ function showNode(id){
       ['Hard Enforced', n.traffic_hard_enforced_at ? 'yes' : 'no'],
       ['Hard Enforcement Reason', n.traffic_hard_enforcement_reason || '-']
     ])
+    +'<div id="nodeSecurityBox" style="margin-top:14px;color:var(--t1);font-size:13px;">Loading node security status…</div>'
     +'<div id="nodeTrafficBox" style="margin-top:14px;color:var(--t1);font-size:13px;">Loading node traffic cycle…</div>'
     +'<div id="nodeTrafficEventsInlineBox" style="margin-top:14px;color:var(--t1);font-size:13px;">Loading traffic events…</div>'
     +'<div class="dp-actions">'
       +'<button class="btn" onclick="actionNodeDiscover(\''+esc(n.id)+'\')">PROBE SSH</button>'
       +'<button class="btn pri" onclick="actionNodeBootstrap(\''+esc(n.id)+'\')">BOOTSTRAP</button>'
+      +'<button class="btn" onclick="loadNodeSecurityStatus(\''+esc(n.id)+'\')">REFRESH SECURITY</button>'
       +'<button class="btn red" onclick="actionNodeForceReboot(\''+esc(n.id)+'\')">FORCE REBOOT</button>'
       +'<button class="btn" onclick="openNodeModal(\''+esc(n.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteNodeFlow(\''+esc(n.id)+'\')">DELETE</button>'
     +'</div>';
   openDP(n.name, baseHtml, { kind:'node', id:n.id });
+  loadNodeSecurityStatus(n.id);
   apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(n.id) + '/traffic')
     .then(function(overview){
       var box = document.getElementById('nodeTrafficBox');
@@ -1572,6 +1585,41 @@ function showNode(id){
       var box = document.getElementById('nodeTrafficBox');
       if(box) box.innerHTML = '<div style="color:var(--rd)">Failed to load node traffic cycle.</div>';
     });
+}
+function securityFeatureBadge(feature){
+  if(!feature){ return '<span class="pill pq">unknown</span>'; }
+  var status = String(feature.status || 'unknown').toLowerCase();
+  if(status === 'active' || status === 'ok'){ return '<span class="pill pg">'+esc(status)+'</span>'; }
+  if(status === 'inactive' || status === 'degraded'){ return '<span class="pill pp">'+esc(status)+'</span>'; }
+  if(status === 'not_installed'){ return '<span class="pill pr">not installed</span>'; }
+  return '<span class="pill pq">'+esc(status)+'</span>';
+}
+function renderNodeSecurityStatus(summary){
+  var box = document.getElementById('nodeSecurityBox');
+  if(!box || !summary) return;
+  var ufwDetail = summary.ufw && summary.ufw.detail ? summary.ufw.detail : '-';
+  var fail2banDetail = summary.fail2ban && summary.fail2ban.detail ? summary.fail2ban.detail : '-';
+  box.innerHTML =
+    '<div class="dp-sep"></div>'
+    + '<div style="margin-top:10px;color:var(--t2);font-size:12px;text-transform:uppercase;letter-spacing:.12em;">Security</div>'
+    + '<div class="drow"><span class="dk">UFW</span><span class="dv">' + securityFeatureBadge(summary.ufw) + '</span></div>'
+    + '<div class="drow"><span class="dk">UFW Detail</span><span class="dv">' + esc(ufwDetail) + '</span></div>'
+    + '<div class="drow"><span class="dk">Fail2Ban</span><span class="dv">' + securityFeatureBadge(summary.fail2ban) + '</span></div>'
+    + '<div class="drow"><span class="dk">Fail2Ban Detail</span><span class="dv">' + esc(fail2banDetail) + '</span></div>'
+    + '<div class="drow"><span class="dk">Checked At</span><span class="dv">' + esc(summary.timestamp ? fmtDateTime(summary.timestamp) : '-') + '</span></div>';
+}
+async function loadNodeSecurityStatus(nodeId){
+  var box = document.getElementById('nodeSecurityBox');
+  if(!box) return;
+  box.innerHTML = '<div style="color:var(--t1)">Loading node security status…</div>';
+  try{
+    var summary = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/security-status');
+    if(!detailContextIs('node', nodeId)) return;
+    renderNodeSecurityStatus(summary);
+  }catch(err){
+    if(!detailContextIs('node', nodeId)) return;
+    box.innerHTML = '<div style="color:var(--rd)">' + esc(err && err.message ? err.message : String(err)) + '</div>';
+  }
 }
 async function showNodeTraffic(nodeId){
   try{
@@ -1942,6 +1990,7 @@ async function refreshNodes(){
   }));
   NODES = withCaps;
   renderNodes();
+  renderFailbanSourceTabs();
   updateShellCounters();
 }
 async function refreshNodeTrafficSummary(){
@@ -5749,6 +5798,8 @@ var LITERAL_TEXT = {
     'Devices': 'Устройства',
     'Audit / Access': 'Аудит / доступ',
     'Failban': 'Fail2ban',
+    'Fail2Ban': 'Fail2ban',
+    'Control Plane': 'Панель',
     'E-Mail': 'E-mail',
     'Support Tickets': 'Тикеты поддержки',
     'XRAY Services': 'XRAY-сервисы',
@@ -6761,7 +6812,7 @@ var NAV_GROUPS = {
               subs:[
                 {p:'peers',         label:'Peers',         badge:'peersBadge'},
                 {p:'registrations', label:'Registrations', badge:'regBadge'},
-                {p:'failban',       label:'Failban',       dot:'red'},
+                {p:'failban',       label:'Fail2Ban',      dot:'red'},
                 {p:'audit',         label:'Audit / Access'},
               ]},
   services: { label:'Services',       pages:['xray','awg','wg','ovpn','email'],
@@ -6884,6 +6935,46 @@ function showPage(pageId){
 var _failbanPaused = false;
 var _failbanTimer = null;
 var _jobsTicker = null;
+var _failbanScopeKind = 'control_plane';
+var _failbanScopeNodeId = null;
+function currentFailbanNode(){
+  if(_failbanScopeKind !== 'node' || !_failbanScopeNodeId) return null;
+  return NODES.find(function(node){ return String(node.id) === String(_failbanScopeNodeId); }) || null;
+}
+function renderFailbanSourceTabs(){
+  var el = document.getElementById('failban-sources');
+  var line = document.getElementById('failban-scope-line');
+  if(!el || !line) return;
+  if(_failbanScopeKind === 'node' && !currentFailbanNode()){
+    _failbanScopeKind = 'control_plane';
+    _failbanScopeNodeId = null;
+  }
+  var items = [{ kind:'control_plane', nodeId:null, label:(LANG === 'ru' ? 'Панель' : 'Control Plane') }]
+    .concat((NODES || []).map(function(node){
+      return { kind:'node', nodeId:node.id, label:node.name };
+    }));
+  el.innerHTML = items.map(function(item){
+    var active = _failbanScopeKind === item.kind && String(_failbanScopeNodeId || '') === String(item.nodeId || '');
+    return '<button class="failban-scope-tab '+(active ? 'active' : '')+'" onclick="selectFailbanScope(\''+esc(item.kind)+'\', '+(item.nodeId ? ('\''+esc(item.nodeId)+'\'') : 'null')+')">'+esc(item.label)+'</button>';
+  }).join('');
+  if(_failbanScopeKind === 'node' && currentFailbanNode()){
+    line.textContent = (LANG === 'ru' ? 'Узел: ' : 'Node: ') + currentFailbanNode().name;
+  }else{
+    line.textContent = LANG === 'ru' ? 'Панель управления' : 'Control Plane';
+  }
+}
+function selectFailbanScope(kind, nodeId){
+  _failbanScopeKind = kind === 'node' ? 'node' : 'control_plane';
+  _failbanScopeNodeId = _failbanScopeKind === 'node' ? (nodeId || null) : null;
+  renderFailbanSourceTabs();
+  refreshFailban().catch(function(){});
+}
+function failbanSummaryPath(){
+  if(_failbanScopeKind === 'node' && _failbanScopeNodeId){
+    return API_PREFIX + '/fail2ban/nodes/' + encodeURIComponent(_failbanScopeNodeId) + '/summary';
+  }
+  return API_PREFIX + '/fail2ban/summary';
+}
 function failbanEntryClass(entry){
   var level = String((entry && entry.level) || 'info').toLowerCase();
   if(level === 'banned') return 'banned';
@@ -6895,6 +6986,7 @@ function renderFailban(summary){
   var el = document.getElementById('failban-log');
   if(!el) return;
   var lines = [];
+  renderFailbanSourceTabs();
   var labelStatus = LANG === 'ru' ? 'статус' : 'status';
   var labelJails = LANG === 'ru' ? 'jails' : 'jails';
   var textLoadFailed = LANG === 'ru' ? 'Не удалось загрузить статус fail2ban.' : 'Failed to load fail2ban status.';
@@ -6913,7 +7005,8 @@ function renderFailban(summary){
     ? ((summary.active ? textActive : textInactive) + (summary.enabled === true ? ', ' + textEnabled : summary.enabled === false ? ', ' + textDisabled : ''))
     : textNotInstalled;
   var jailNames = (summary.jails || []).map(function(j){ return j.name; }).join(', ') || '-';
-  lines.push('<div class="fline info"><span class="ftime">'+esc(fmtDateTime(summary.timestamp))+'</span><span>'+esc(labelStatus)+': '+esc(statusText)+'; '+esc(labelJails)+': '+esc(jailNames)+'</span></div>');
+  var sourceLabel = summary.scope_name || (_failbanScopeKind === 'node' && currentFailbanNode() ? currentFailbanNode().name : 'control-plane');
+  lines.push('<div class="fline info"><span class="ftime">'+esc(fmtDateTime(summary.timestamp))+'</span><span>'+esc(sourceLabel)+' · '+esc(labelStatus)+': '+esc(statusText)+'; '+esc(labelJails)+': '+esc(jailNames)+'</span></div>');
   if(summary.message){
     lines.push('<div class="fline warning"><span class="ftime">'+esc(fmtDateTime(summary.timestamp))+'</span><span>'+esc(summary.message)+'</span></div>');
   }
@@ -6931,7 +7024,8 @@ function renderFailban(summary){
 async function refreshFailban(){
   if(_failbanPaused) return;
   try{
-    var summary = await apiFetch(API_PREFIX + '/fail2ban/summary');
+    renderFailbanSourceTabs();
+    var summary = await apiFetch(failbanSummaryPath());
     renderFailban(summary);
   }catch(err){
     renderFailban({
@@ -6941,6 +7035,9 @@ async function refreshFailban(){
       jails: [],
       recent_logs: [],
       timestamp: new Date().toISOString(),
+      scope_kind: _failbanScopeKind,
+      scope_node_id: _failbanScopeNodeId,
+      scope_name: _failbanScopeKind === 'node' && currentFailbanNode() ? currentFailbanNode().name : 'control-plane',
       message: err && err.message ? err.message : String(err || 'Failed to load fail2ban status.'),
     });
   }

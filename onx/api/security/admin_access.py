@@ -145,7 +145,7 @@ class AdminAccessControl:
             return "worker_health.read"
         if path == f"{prefix}/system/summary":
             return "system_summary.read"
-        if path == f"{prefix}/fail2ban/summary":
+        if path == f"{prefix}/fail2ban/summary" or path.startswith(f"{prefix}/fail2ban/"):
             return "fail2ban.read"
         if path == f"{prefix}/audit-logs":
             return "audit_logs.read"

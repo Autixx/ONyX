@@ -15,6 +15,7 @@ from onx.schemas.nodes import (
     NodeActionResult,
     NodeCreate,
     NodeRead,
+    NodeSecurityStatusRead,
     NodeSecretRead,
     NodeSecretUpsert,
     NodeUpdate,
@@ -24,6 +25,7 @@ from onx.services.event_log_service import EventLogService
 from onx.services.job_service import JobConflictError, JobService
 from onx.services.node_control_service import NodeControlService
 from onx.services.node_agent_service import NodeAgentService
+from onx.services.node_security_service import NodeSecurityService
 from onx.services.node_traffic_accounting_service import NodeTrafficAccountingService
 from onx.services.realtime_service import realtime_service
 from onx.services.secret_service import SecretService
@@ -35,6 +37,7 @@ job_service = JobService()
 event_log_service = EventLogService()
 node_control_service = NodeControlService()
 node_agent_service = NodeAgentService()
+node_security_service = NodeSecurityService()
 node_traffic_accounting_service = NodeTrafficAccountingService()
 
 
@@ -104,6 +107,24 @@ def get_node_traffic(
         ),
         recent_cycles=serialized_recent,
     )
+
+
+@router.get("/{node_id}/security-status", response_model=NodeSecurityStatusRead, status_code=status.HTTP_200_OK)
+def get_node_security_status(
+    node_id: str,
+    db: Session = Depends(get_database_session),
+) -> NodeSecurityStatusRead:
+    node = db.get(Node, node_id)
+    if node is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found.")
+    try:
+        return node_security_service.summary(db, node)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 @router.delete("/{node_id}", status_code=status.HTTP_204_NO_CONTENT)

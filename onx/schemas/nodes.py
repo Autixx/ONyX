@@ -149,3 +149,19 @@ class NodeActionResult(ONXBaseModel):
     node_id: str
     accepted: bool
     message: str
+
+
+class NodeSecurityFeatureRead(ONXBaseModel):
+    installed: bool
+    enabled: bool | None = None
+    active: bool | None = None
+    status: str
+    detail: str | None = None
+
+
+class NodeSecurityStatusRead(ONXBaseModel):
+    node_id: str
+    node_name: str
+    timestamp: datetime
+    ufw: NodeSecurityFeatureRead
+    fail2ban: NodeSecurityFeatureRead

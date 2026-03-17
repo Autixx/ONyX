@@ -24,6 +24,9 @@ class Fail2BanSummaryRead(ONXBaseModel):
     service: str
     version: str
     timestamp: datetime
+    scope_kind: str = "control_plane"
+    scope_node_id: str | None = None
+    scope_name: str = "control-plane"
     installed: bool
     enabled: bool | None = None
     active: bool = False
