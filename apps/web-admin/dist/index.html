@@ -104,11 +104,11 @@ body{display:flex;flex-direction:column;}
 
 /* в”Ђв”Ђ MAIN в”Ђв”Ђ */
 .main{flex:1;overflow-y:auto;overflow-x:hidden;background:var(--bg0);}
-.page{display:none;padding:22px 24px;}
+.page{display:none;padding:16px 24px 14px;}
 .page.active{display:block;}
 
 /* в”Ђв”Ђ PAGE HEADER в”Ђв”Ђ */
-.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
 .ptitle{font-size:21px;font-weight:700;color:var(--t0);letter-spacing:.05em;display:flex;align-items:center;gap:10px;}
 .tag{font-size:14px;color:var(--acc);border:1px solid var(--bdr2);padding:2px 7px;border-radius:2px;letter-spacing:.08em;}
 .pbtn-row{display:flex;gap:8px;flex-wrap:wrap;min-width:0;}
@@ -166,7 +166,7 @@ td.m{color:var(--t0);}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 
 /* в”Ђв”Ђ CANVAS в”Ђв”Ђ */
-#tc{width:100%;background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:crosshair;}
+#tc{width:100%;background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:grab;}
 
 /* в”Ђв”Ђ JOB LOG в”Ђв”Ђ */
 .jlog{background:var(--bg0);border:1px solid var(--bdr);border-radius:3px;padding:10px 12px;font-size:14px;color:var(--t1);margin-top:10px;max-height:200px;overflow-y:auto;line-height:1.9;}
@@ -191,8 +191,25 @@ td.m{color:var(--t0);}
 #page-apidebug textarea{font-family:var(--mono);}
 
 /* в”Ђв”Ђ GRID OVERLAY в”Ђв”Ђ */
-.topo-legend{display:flex;gap:16px;margin-top:10px;font-size:14px;color:var(--t1);}
-.topo-meta{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;}
+.topo-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:0 0 5px 0;min-height:24px;}
+.topo-legend{display:flex;gap:12px;font-size:13px;color:var(--t1);flex-wrap:wrap;align-items:center;}
+.topo-hint{font-size:12px;color:var(--t2);line-height:1.3;white-space:nowrap;}
+.topo-map-wrap{position:relative;}
+.topo-zoom-indicator{
+  position:absolute;right:10px;bottom:10px;z-index:2;
+  padding:4px 9px;border:1px solid var(--bdr2);border-radius:3px;
+  background:rgba(8,12,16,0.92);color:var(--acc2);font-size:12px;letter-spacing:.08em;
+}
+.topo-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;}
+#page-topology{padding-top:10px;padding-bottom:8px;}
+#page-topology .ph{margin-bottom:5px;}
+#page-topology .tw{margin-bottom:0;}
+#page-topology .th-row{padding:6px 10px;font-size:12px;}
+#page-topology #topoSummary,
+#page-topology #topoPathSummary{
+  padding:8px 10px !important;font-size:13px !important;line-height:1.45 !important;
+  min-height:72px;max-height:86px;overflow:hidden;
+}
 
 /* в”Ђв”Ђ MODAL FORM в”Ђв”Ђ */
 .modal{position:fixed;inset:0;background:rgba(3,8,12,.72);display:none;align-items:center;justify-content:center;z-index:120;padding:24px;box-sizing:border-box;}
@@ -576,13 +593,18 @@ td.m{color:var(--t0);}
             <button class="btn" id="btnTopoAuto" onclick="toggleTopologyAutoRefresh()" data-i18n="topo.auto">AUTO</button>
           </div>
         </div>
-        <svg id="tc" width="100%" height="480" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:default;"></svg>
-        <div class="topo-legend">
-          <span><span style="color:var(--grn)">●</span> <span data-i18n="topo.reachable">reachable</span></span>
-          <span><span style="color:var(--amb)">●</span> <span data-i18n="topo.degraded">degraded</span></span>
-          <span><span style="color:var(--red)">●</span> <span data-i18n="topo.unreachable">unreachable</span></span>
-          <span><span style="color:var(--t1)">●</span> <span data-i18n="topo.unknown">unknown</span></span>
-          <span style="margin-left:auto;color:var(--t1)" data-i18n="topo.hint">click node or link for detail</span>
+        <div class="topo-toolbar">
+          <div class="topo-legend">
+            <span><span style="color:var(--grn)">●</span> <span data-i18n="topo.reachable">reachable</span></span>
+            <span><span style="color:var(--amb)">●</span> <span data-i18n="topo.degraded">degraded</span></span>
+            <span><span style="color:var(--red)">●</span> <span data-i18n="topo.unreachable">unreachable</span></span>
+            <span><span style="color:var(--t1)">●</span> <span data-i18n="topo.unknown">unknown</span></span>
+          </div>
+          <div class="topo-hint" data-i18n="topo.hint">click node or link for detail</div>
+        </div>
+        <div class="topo-map-wrap">
+          <svg id="tc" width="100%" height="320" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:grab;"></svg>
+          <div class="topo-zoom-indicator" id="topoZoomLabel">ZOOM 100%</div>
         </div>
         <div class="topo-meta">
           <div class="tw">
@@ -1044,6 +1066,8 @@ var TOPO_AUTO_REFRESH_ENABLED = false;
 var TOPO_ZOOM = 1.0;
 var TOPO_ZOOM_MIN = 0.35;
 var TOPO_ZOOM_MAX = 2.5;
+var TOPO_PAN_X = 0;
+var TOPO_PAN_Y = 0;
 var _topologyAutoTimer = null;
 var _topologyAutoInFlight = false;
 
@@ -2275,6 +2299,11 @@ function toggleTopologyAutoRefresh(){
 function clampTopologyZoom(value){
   return Math.max(TOPO_ZOOM_MIN, Math.min(TOPO_ZOOM_MAX, value));
 }
+function syncTopologyZoomLabel(){
+  var label = document.getElementById('topoZoomLabel');
+  if(!label) return;
+  label.textContent = 'ZOOM ' + Math.round(clampTopologyZoom(TOPO_ZOOM) * 100) + '%';
+}
 function applyTopologyZoom(svg){
   if(!svg || !svg._topoWorld) return;
   var W = svg._viewWidth || (svg.getBoundingClientRect().width || 900);
@@ -2283,7 +2312,8 @@ function applyTopologyZoom(svg){
   TOPO_ZOOM = s;
   var cx = W / 2;
   var cy = H / 2;
-  svg._topoWorld.setAttribute('transform', 'translate(' + cx + ' ' + cy + ') scale(' + s + ') translate(' + (-cx) + ' ' + (-cy) + ')');
+  svg._topoWorld.setAttribute('transform', 'translate(' + (cx + TOPO_PAN_X) + ' ' + (cy + TOPO_PAN_Y) + ') scale(' + s + ') translate(' + (-cx) + ' ' + (-cy) + ')');
+  syncTopologyZoomLabel();
 }
 function bindTopologyZoom(svg){
   if(!svg || svg._zoomBound) return;
@@ -2294,6 +2324,38 @@ function bindTopologyZoom(svg){
     applyTopologyZoom(svg);
   }, { passive:false });
   svg._zoomBound = true;
+}
+function bindTopologyPan(svg){
+  if(!svg || svg._panBound) return;
+  var dragging = false;
+  var dragStart = null;
+  function stopPan(){
+    if(!dragging) return;
+    dragging = false;
+    svg.style.cursor = 'grab';
+  }
+  svg.addEventListener('mousedown', function(event){
+    if(event.button !== 0) return;
+    if(event.target !== svg && event.target !== svg._topoPanSurface) return;
+    event.preventDefault();
+    dragging = true;
+    dragStart = {
+      mx: event.clientX,
+      my: event.clientY,
+      px: TOPO_PAN_X,
+      py: TOPO_PAN_Y
+    };
+    svg.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', function(event){
+    if(!dragging || !dragStart) return;
+    TOPO_PAN_X = dragStart.px + (event.clientX - dragStart.mx);
+    TOPO_PAN_Y = dragStart.py + (event.clientY - dragStart.my);
+    applyTopologyZoom(svg);
+  });
+  window.addEventListener('mouseup', stopPan);
+  window.addEventListener('mouseleave', stopPan);
+  svg._panBound = true;
 }
 function buildNodePositions(width, height, nodes){
   var positions = {};
@@ -2409,7 +2471,7 @@ function drawTopo(){
   var svg = document.getElementById('tc');
   if(!svg){ return; }
   var W = svg.getBoundingClientRect().width || 900;
-  var H = 480;
+  var H = 320;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   svg.setAttribute('height', H);
   svg._viewWidth = W;
@@ -2458,6 +2520,14 @@ function drawTopo(){
   marker.appendChild(markerPath);
   defs.appendChild(marker);
   svg.appendChild(defs);
+
+  var panSurface = mk('rect',{
+    x:0, y:0, width:W, height:H,
+    fill:'rgba(0,0,0,0)',
+    style:'cursor:grab'
+  });
+  svg._topoPanSurface = panSurface;
+  svg.appendChild(panSurface);
 
   var worldG = mk('g',{id:'topo-world'});
   svg._topoWorld = worldG;
@@ -2616,7 +2686,7 @@ function drawTopo(){
       _redrawEdges(pos, graphEdges, edgeG, ns, mk);
     });
     svg.addEventListener('mouseup', function(){
-      if(dragging){ dragging = false; g.style.cursor='grab'; svg.style.cursor='default'; }
+      if(dragging){ dragging = false; g.style.cursor='grab'; svg.style.cursor='grab'; }
     });
 
     nodeG.appendChild(g);
@@ -2635,6 +2705,7 @@ function drawTopo(){
     svg.appendChild(scoreT);
   }
 
+  bindTopologyPan(svg);
   bindTopologyZoom(svg);
   applyTopologyZoom(svg);
   renderTopologyMeta();
