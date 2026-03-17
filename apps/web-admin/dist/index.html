@@ -1423,7 +1423,13 @@ function openDP(title, html, meta){
     DP_CONTEXT.id = meta.id || null;
     if(meta.kind === 'job'){
       JOB_DETAIL_SELECTED_ID = meta.id || null;
+    }else{
+      JOB_DETAIL_SELECTED_ID = null;
     }
+  }else{
+    DP_CONTEXT.kind = null;
+    DP_CONTEXT.id = null;
+    JOB_DETAIL_SELECTED_ID = null;
   }
 }
 function closeDP(){
