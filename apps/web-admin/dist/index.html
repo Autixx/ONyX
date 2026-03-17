@@ -1176,6 +1176,7 @@ function renderNodes(){
       +'<td class="'+trafficCls+'">'+(n.traffic_used_gb != null ? n.traffic_used_gb+' GB' : '-')+'</td>'+'<td style="color:var(--t1)">'+(n.traffic_limit_gb ? n.traffic_limit_gb+' GB' : '—')+'</td>'+'<td style="color:var(--t2);font-size:13px;">'+esc((n.caps||[]).join(', ') || '-')+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="event.stopPropagation();actionNodeDiscover(\''+esc(n.id)+'\')">PROBE</button>'
+        +'<button class="btn sm pri" onclick="event.stopPropagation();actionNodeBootstrap(\''+esc(n.id)+'\')">BOOTSTRAP</button>'
         +'<button class="btn sm" onclick="event.stopPropagation();openNodeModal(\''+esc(n.id)+'\')">EDIT</button>'
         +'<button class="btn sm red" onclick="event.stopPropagation();deleteNodeFlow(\''+esc(n.id)+'\')">DEL</button>'
       +'</td>'
@@ -6847,3 +6848,4 @@ function sendTicketReply(){
 </script>
 </body>
 </html>
+
