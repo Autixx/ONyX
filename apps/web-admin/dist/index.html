@@ -1573,7 +1573,8 @@ async function showNodeTraffic(nodeId){
       + '<div class="dp-actions">'
         +'<button class="btn" onclick="actionNodeTrafficReset(\''+esc(nodeId)+'\')">RESET</button>'
         +'<button class="btn red" onclick="actionNodeTrafficRollover(\''+esc(nodeId)+'\')">ROLLOVER</button>'
-      +'</div>'
+      +'</div>',
+      { kind:'node-traffic', id:nodeId }
     );
     loadNodeTrafficEvents(nodeId, 'nodeTrafficEventsBox');
   }catch(e){
@@ -1619,7 +1620,8 @@ function showLink(id){
       +'<button class="btn pri" onclick="actionLinkApply(\''+esc(l.id)+'\')">APPLY</button>'
       +'<button class="btn" onclick="openLinkModal(\''+esc(l.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteLinkFlow(\''+esc(l.id)+'\')">DELETE</button>'
-    +'</div>'
+    +'</div>',
+    { kind:'link', id:l.id }
   );
 }
 function showRoutePolicy(id){
@@ -1645,7 +1647,8 @@ function showRoutePolicy(id){
       +'<button class="btn pri" onclick="actionRoutePolicyApply(\''+esc(p.id)+'\')">APPLY</button>'
       +'<button class="btn" onclick="openRoutePolicyModal(\''+esc(p.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteRoutePolicyFlow(\''+esc(p.id)+'\')">DELETE</button>'
-    +'</div>'
+    +'</div>',
+    { kind:'route-policy', id:p.id }
   );
 }
 function showDNSPolicy(id){
@@ -1664,7 +1667,8 @@ function showDNSPolicy(id){
       +'<button class="btn pri" onclick="actionDNSPolicyApply(\''+esc(p.id)+'\')">APPLY</button>'
       +'<button class="btn" onclick="openDNSPolicyModal(\''+esc(p.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteDNSPolicyFlow(\''+esc(p.id)+'\')">DELETE</button>'
-    +'</div>'
+    +'</div>',
+    { kind:'dns-policy', id:p.id }
   );
 }
 function showGeoPolicy(id){
@@ -1682,7 +1686,8 @@ function showGeoPolicy(id){
       +'<button class="btn pri" onclick="actionGeoPolicyApply(\''+esc(p.id)+'\')">APPLY</button>'
       +'<button class="btn" onclick="openGeoPolicyModal(\''+esc(p.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteGeoPolicyFlow(\''+esc(p.id)+'\')">DELETE</button>'
-    +'</div>'
+    +'</div>',
+    { kind:'geo-policy', id:p.id }
   );
 }
 function showBalancer(id){
@@ -1709,7 +1714,8 @@ function showBalancer(id){
       +'<button class="btn pri" onclick="actionBalancerPick(\''+esc(b.id)+'\')">PICK</button>'
       +'<button class="btn" onclick="openBalancerModal(\''+esc(b.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteBalancerFlow(\''+esc(b.id)+'\')">DELETE</button>'
-    +'</div>'
+    +'</div>',
+    { kind:'balancer', id:b.id }
   );
 }
 function showJob(id){
@@ -1734,7 +1740,8 @@ function showJob(id){
     rows([['ID',j.id],['Target',j.tt+':'+j.ti],['State',j.state],['Created',j.ts],['Step',j.step || '-'],['Error',j.errorText || '-']])
     +(actions ? '<div class="dp-actions">'+actions+'</div>' : '')
     +'<div class="stitle">Execution Log</div>'
-    +'<div class="jlog">'+logHtml+'</div>'
+    +'<div class="jlog">'+logHtml+'</div>',
+    { kind:'job', id:j.id }
   );
 }
 function pushEv(type, msg){
@@ -2574,7 +2581,7 @@ async function actionNodeTrafficReset(nodeId){
     await refreshNodes();
     await refreshNodeTrafficSummary();
     await refreshTopology();
-    if(document.getElementById('dp').classList.contains('open')){ showNodeTraffic(nodeId); }
+    if(document.getElementById('dp').classList.contains('open') && detailContextIs('node-traffic', nodeId)){ showNodeTraffic(nodeId); }
   }catch(err){
     pushEv('node.traffic.reset.error', 'traffic reset failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
@@ -2588,7 +2595,7 @@ async function actionNodeTrafficRollover(nodeId){
     await refreshNodes();
     await refreshNodeTrafficSummary();
     await refreshTopology();
-    if(document.getElementById('dp').classList.contains('open')){ showNodeTraffic(nodeId); }
+    if(document.getElementById('dp').classList.contains('open') && detailContextIs('node-traffic', nodeId)){ showNodeTraffic(nodeId); }
   }catch(err){
     pushEv('node.traffic.rollover.error', 'traffic rollover failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
@@ -2602,7 +2609,7 @@ async function actionLinkValidate(linkId){
     pushEv(result.valid ? 'link.validate.ok' : 'link.validate.fail', 'validate ' + (link ? link.name : linkId) + ': ' + (result.valid ? 'valid' : 'invalid') + warnings);
     await refreshLinks();
     await refreshTopology();
-    if(link){ showLink(linkId); }
+    if(link && document.getElementById('dp').classList.contains('open') && detailContextIs('link', linkId)){ showLink(linkId); }
   }catch(err){
     pushEv('link.validate.error', 'validate failed for ' + linkId + ': ' + (err && err.message ? err.message : err));
   }
@@ -2614,7 +2621,7 @@ async function actionLinkApply(linkId){
     pushEv('job.created', 'apply queued for ' + (link ? link.name : linkId) + ' [' + job.id + ']');
     await refreshJobs();
     setTimeout(function(){ refreshLinks().catch(function(){}); refreshJobs().catch(function(){}); refreshTopology().catch(function(){}); }, 800);
-    if(link){ showLink(linkId); }
+    if(link && document.getElementById('dp').classList.contains('open') && detailContextIs('link', linkId)){ showLink(linkId); }
   }catch(err){
     pushEv('link.apply.error', 'apply failed for ' + linkId + ': ' + (err && err.message ? err.message : err));
   }
@@ -2624,7 +2631,7 @@ async function actionJobCancel(jobId){
     var job = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(jobId) + '/cancel', { method:'POST', body:{} });
     pushEv('job.cancel.requested', 'cancel requested for ' + jobId);
     await refreshJobs();
-    if(document.getElementById('dp').classList.contains('open')){ showJob(job.id); }
+    if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', job.id)){ showJob(job.id); }
   }catch(err){
     pushEv('job.cancel.error', 'cancel failed for ' + jobId + ': ' + (err && err.message ? err.message : err));
   }
@@ -2634,7 +2641,7 @@ async function actionJobRetry(jobId){
     var job = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(jobId) + '/retry-now', { method:'POST', body:{} });
     pushEv('job.retry.requested', 'retry queued for ' + jobId);
     await refreshJobs();
-    if(document.getElementById('dp').classList.contains('open')){ showJob(job.id); }
+    if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', job.id)){ showJob(job.id); }
   }catch(err){
     pushEv('job.retry.error', 'retry failed for ' + jobId + ': ' + (err && err.message ? err.message : err));
   }
@@ -2644,7 +2651,7 @@ async function actionJobForceCancel(jobId){
     var job = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(jobId) + '/force-cancel', { method:'POST', body:{} });
     pushEv('job.force_cancel.requested', 'force-cancel requested for ' + jobId);
     await refreshJobs();
-    if(document.getElementById('dp').classList.contains('open')){ showJob(job.id); }
+    if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', job.id)){ showJob(job.id); }
   }catch(err){
     pushEv('job.force_cancel.error', 'force-cancel failed for ' + jobId + ': ' + (err && err.message ? err.message : err));
   }
