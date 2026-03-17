@@ -420,6 +420,30 @@ class JobService:
 
         return self.cancel(db, job, reason)
 
+    def request_release_target(
+        self,
+        db: Session,
+        job: Job,
+        reason: str = "Administrative target release requested.",
+    ) -> Job:
+        if job.state in (
+            JobState.SUCCEEDED,
+            JobState.FAILED,
+            JobState.ROLLED_BACK,
+            JobState.CANCELLED,
+            JobState.DEAD,
+        ):
+            raise ValueError(f"Job is already terminal with state '{job.state.value}'.")
+
+        return self.cancel(
+            db,
+            job,
+            reason=(
+                f"{reason} ONX released the target lock and marked the job as cancelled. "
+                "This does not guarantee remote execution was terminated."
+            ),
+        )
+
     def cancel(self, db: Session, job: Job, reason: str = "Job cancelled.") -> Job:
         now = datetime.now(timezone.utc)
         job.state = JobState.CANCELLED

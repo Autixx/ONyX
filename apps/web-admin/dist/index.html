@@ -1354,6 +1354,9 @@ function renderJobs(){
     if(isJobForceCancelable(j)){
       actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobForceCancel(\''+esc(j.id)+'\')">MARK CANCELLED</button>';
     }
+    if(isJobTargetReleasable(j)){
+      actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobReleaseTarget(\''+esc(j.id)+'\')">RELEASE TARGET</button>';
+    }
     if(j.state === 'failed' || j.state === 'dead' || j.state === 'cancelled'){
       actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobRetry(\''+esc(j.id)+'\')">RETRY</button>';
     }
@@ -1774,6 +1777,9 @@ function showJob(id){
   if(isJobForceCancelable(j)){
     actions += '<button class="btn red" onclick="actionJobForceCancel(\''+esc(j.id)+'\')">MARK AS CANCELLED</button>';
   }
+  if(isJobTargetReleasable(j)){
+    actions += '<button class="btn red" onclick="actionJobReleaseTarget(\''+esc(j.id)+'\')">RELEASE TARGET</button>';
+  }
   if(j.state === 'failed' || j.state === 'dead' || j.state === 'cancelled'){
     actions += '<button class="btn" onclick="actionJobRetry(\''+esc(j.id)+'\')">RETRY NOW</button>';
   }
@@ -1798,6 +1804,9 @@ function isJobForceCancelable(job){
 }
 function isJobRemoteAbortable(job){
   return !!job && job.state === 'running' && job.tt === 'node' && (job.kind === 'bootstrap' || job.kind === 'discover');
+}
+function isJobTargetReleasable(job){
+  return !!job && job.tt === 'node' && (job.state === 'pending' || job.state === 'running');
 }
 function fmtDurationSeconds(totalSeconds){
   var sec = Math.max(0, Math.floor(Number(totalSeconds) || 0));
@@ -2792,6 +2801,18 @@ async function actionJobAbortRemote(jobId){
     if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', job.id)){ showJob(job.id); }
   }catch(err){
     pushEv('job.abort_remote.error', 'remote abort failed for ' + jobId + ': ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function actionJobReleaseTarget(jobId){
+  try{
+    if(!confirm('Release this job target and clear the blocking job state? This is an administrative override for stuck jobs. ONX will mark the job as cancelled and release its lock, but this does not guarantee remote execution was terminated.')) return;
+    var job = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(jobId) + '/release-target', { method:'POST', body:{} });
+    pushEv('job.release_target.requested', 'target release requested for ' + jobId);
+    await refreshJobs();
+    if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', job.id)){ showJob(job.id); }
+  }catch(err){
+    pushEv('job.release_target.error', 'target release failed for ' + jobId + ': ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
   }
 }
@@ -5611,6 +5632,7 @@ var LITERAL_TEXT = {
     'RETRY NOW': 'ПОВТОРИТЬ',
     'MARK CANCELLED': 'ПОМЕТИТЬ КАК ОТМЕНЁННУЮ',
     'MARK AS CANCELLED': 'ПОМЕТИТЬ КАК ОТМЕНЁННУЮ',
+    'RELEASE TARGET': 'СНЯТЬ БЛОКИРОВКУ ЦЕЛИ',
     'ABORT REMOTE': 'ПРЕРВАТЬ НА УЗЛЕ',
     'PAUSE': 'ПАУЗА',
     'RESUME': 'ПРОДОЛЖИТЬ',
