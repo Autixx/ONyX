@@ -17,6 +17,7 @@ from onx.api.routers.client_registrations import router as client_registrations_
 from onx.api.routers.client_routing import router as client_routing_router
 from onx.api.routers.devices import router as devices_router
 from onx.api.routers.dns_policies import router as dns_policies_router
+from onx.api.routers.fail2ban import router as fail2ban_router
 from onx.api.routers.geo_policies import router as geo_policies_router
 from onx.api.routers.health import router as health_router
 from onx.api.routers.jobs import router as jobs_router
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
         return await call_next(request)
 
     app.include_router(health_router, prefix=settings.api_prefix)
+    app.include_router(fail2ban_router, prefix=settings.api_prefix)
     app.include_router(admin_web_auth_router, prefix=settings.api_prefix)
     app.include_router(agent_metrics_router, prefix=settings.api_prefix)
     app.include_router(client_auth_router, prefix=settings.api_prefix)

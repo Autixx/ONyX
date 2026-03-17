@@ -3652,6 +3652,8 @@ async function bootApp(){
   await refreshHealth();
   await loadData();
   startHealthPolling();
+  startFailbanPolling();
+  refreshFailban().catch(function(){});
   connectWS();
   setTimeout(drawTopo, 60);
   scheduleLocaleRefresh();
@@ -6550,50 +6552,86 @@ function showPage(pageId){
 
   // Trigger refresh if needed
   if(pageId==='topology'){ refreshTopology().then(drawTopo); }
+  if(pageId==='failban'){ refreshFailban().catch(function(){}); }
 }
 
 // Patch old nav click wiring — the flat navtabs is gone, use showPage directly
 // Any external calls to showPage() or data-p are now routed here.
 
 // ═══════════════════════════════════════
-// FAILBAN LIVE SIMULATION
+// FAIL2BAN
 // ═══════════════════════════════════════
 var _failbanPaused = false;
 var _failbanTimer = null;
-var FAILBAN_DEMO = [
-  {cls:'info',    msg:'[sshd] Started monitoring /var/log/auth.log'},
-  {cls:'warning', msg:'[sshd] 3 failures from 185.220.101.44 in 300s'},
-  {cls:'banned',  msg:'[sshd] BANNED 185.220.101.44 for 3600s'},
-  {cls:'info',    msg:'[sshd] 1 failure from 91.108.56.12 in 300s'},
-  {cls:'warning', msg:'[sshd] 4 failures from 46.232.132.5 in 300s'},
-  {cls:'banned',  msg:'[sshd] BANNED 46.232.132.5 for 3600s'},
-  {cls:'unbanned',msg:'[sshd] UNBANNED 185.220.101.44 (ban time expired)'},
-  {cls:'info',    msg:'[sshd] 2 failures from 178.62.1.99 in 300s'},
-  {cls:'warning', msg:'[awg-auth] Invalid key from 103.21.44.8'},
-  {cls:'banned',  msg:'[awg-auth] BANNED 103.21.44.8 for 7200s'},
-  {cls:'info',    msg:'[sshd] 0 failures from 8.8.8.8 — OK'},
-];
-var _failbanIdx = 0;
-function failbanTick(){
-  if(_failbanPaused) return;
+function failbanEntryClass(entry){
+  var level = String((entry && entry.level) || 'info').toLowerCase();
+  if(level === 'banned') return 'banned';
+  if(level === 'unbanned') return 'unbanned';
+  if(level === 'warning' || level === 'error') return 'warning';
+  return 'info';
+}
+function renderFailban(summary){
   var el = document.getElementById('failban-log');
   if(!el) return;
-  var entry = FAILBAN_DEMO[_failbanIdx % FAILBAN_DEMO.length];
-  _failbanIdx++;
-  var now = new Date();
-  var ts = now.toTimeString().slice(0,8);
-  var line = document.createElement('div');
-  line.className = 'fline ' + entry.cls;
-  line.innerHTML = '<span class="ftime">' + ts + '</span><span>' + entry.msg + '</span>';
-  el.appendChild(line);
+  var lines = [];
+  var labelStatus = LANG === 'ru' ? 'статус' : 'status';
+  var labelJails = LANG === 'ru' ? 'jails' : 'jails';
+  var textLoadFailed = LANG === 'ru' ? 'Не удалось загрузить статус fail2ban.' : 'Failed to load fail2ban status.';
+  var textNoLogs = LANG === 'ru' ? 'Нет свежих записей fail2ban.' : 'No recent fail2ban log entries.';
+  var textActive = LANG === 'ru' ? 'active' : 'active';
+  var textInactive = LANG === 'ru' ? 'inactive' : 'inactive';
+  var textEnabled = LANG === 'ru' ? 'enabled' : 'enabled';
+  var textDisabled = LANG === 'ru' ? 'disabled' : 'disabled';
+  var textNotInstalled = LANG === 'ru' ? 'not installed' : 'not installed';
+  if(!summary){
+    lines.push('<div class="fline warning"><span class="ftime">--</span><span>'+esc(textLoadFailed)+'</span></div>');
+    el.innerHTML = lines.join('');
+    return;
+  }
+  var statusText = summary.installed
+    ? ((summary.active ? textActive : textInactive) + (summary.enabled === true ? ', ' + textEnabled : summary.enabled === false ? ', ' + textDisabled : ''))
+    : textNotInstalled;
+  var jailNames = (summary.jails || []).map(function(j){ return j.name; }).join(', ') || '-';
+  lines.push('<div class="fline info"><span class="ftime">'+esc(fmtDateTime(summary.timestamp))+'</span><span>'+esc(labelStatus)+': '+esc(statusText)+'; '+esc(labelJails)+': '+esc(jailNames)+'</span></div>');
+  if(summary.message){
+    lines.push('<div class="fline warning"><span class="ftime">'+esc(fmtDateTime(summary.timestamp))+'</span><span>'+esc(summary.message)+'</span></div>');
+  }
+  if((summary.recent_logs || []).length){
+    lines = lines.concat(summary.recent_logs.map(function(entry){
+      var source = entry.source ? ('[' + entry.source + '] ') : '';
+      return '<div class="fline '+failbanEntryClass(entry)+'"><span class="ftime">'+esc(entry.created_at ? fmtDateTime(entry.created_at) : '--')+'</span><span>'+esc(source + entry.message)+'</span></div>';
+    }));
+  }else{
+    lines.push('<div class="fline info"><span class="ftime">--</span><span>'+esc(textNoLogs)+'</span></div>');
+  }
+  el.innerHTML = lines.join('');
   el.scrollTop = el.scrollHeight;
-  if(el.children.length > 200) el.removeChild(el.children[0]);
+}
+async function refreshFailban(){
+  if(_failbanPaused) return;
+  try{
+    var summary = await apiFetch(API_PREFIX + '/fail2ban/summary');
+    renderFailban(summary);
+  }catch(err){
+    renderFailban({
+      installed: false,
+      active: false,
+      enabled: null,
+      jails: [],
+      recent_logs: [],
+      timestamp: new Date().toISOString(),
+      message: err && err.message ? err.message : String(err || 'Failed to load fail2ban status.'),
+    });
+  }
 }
 function failbanPauseToggle(){
   _failbanPaused = !_failbanPaused;
   document.getElementById('failbanPauseLabel').textContent = _failbanPaused ? 'RESUME' : 'PAUSE';
 }
-setInterval(failbanTick, 2200);
+function startFailbanPolling(){
+  if(_failbanTimer) clearInterval(_failbanTimer);
+  _failbanTimer = setInterval(function(){ refreshFailban().catch(function(){}); }, 10000);
+}
 
 // ═══════════════════════════════════════
 // SUPPORT TICKETS STUB
