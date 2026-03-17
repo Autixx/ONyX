@@ -195,14 +195,14 @@ td.m{color:var(--t0);}
 .topo-meta{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;}
 
 /* в”Ђв”Ђ MODAL FORM в”Ђв”Ђ */
-.modal{position:fixed;inset:0;background:rgba(3,8,12,.72);display:none;align-items:center;justify-content:center;z-index:120;}
+.modal{position:fixed;inset:0;background:rgba(3,8,12,.72);display:none;align-items:center;justify-content:center;z-index:120;padding:24px;box-sizing:border-box;}
 .modal.open{display:flex;}
-.modal-box{width:min(1240px,98vw);max-height:90vh;overflow-y:auto;overflow-x:hidden;background:var(--bg2);border:1px solid var(--bdr2);border-radius:4px;box-shadow:0 20px 60px rgba(0,0,0,.45);}
+.modal-box{width:min(1480px,calc(100vw - 48px));max-height:90vh;overflow-y:auto;overflow-x:hidden;background:var(--bg2);border:1px solid var(--bdr2);border-radius:4px;box-shadow:0 20px 60px rgba(0,0,0,.45);}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--bdr);min-width:0;gap:10px;}
 .modal-title{font-size:18px;font-weight:700;color:var(--t0);letter-spacing:.05em;}
 .modal-close{background:none;border:none;color:var(--t1);font-size:20px;cursor:pointer;line-height:1;}
 .modal-body{padding:16px;min-width:0;}
-.modal-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;}
+.modal-grid{display:grid;grid-template-columns:repeat(2,minmax(320px,1fr));gap:12px;}
 .modal-grid.one{grid-template-columns:1fr;}
 .mf-row{display:flex;flex-direction:column;gap:6px;min-width:0;}
 .mf-row.full{grid-column:1 / -1;}
@@ -211,7 +211,7 @@ td.m{color:var(--t0);}
 .mf-textarea{min-height:84px;resize:vertical;}
 .mf-input:focus,.mf-select:focus,.mf-textarea:focus{border-color:var(--acc);}
 .mf-help{font-size:13px;color:var(--t2);line-height:1.5;}
-.mf-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 16px 16px;flex-wrap:wrap;}
+.mf-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 16px 16px;flex-wrap:nowrap;}
 .empty-state{padding:12px 14px;color:var(--t1);font-size:15px;}
 
 /* ── TOPBAR ADDITIONS ── */
