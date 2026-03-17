@@ -2833,6 +2833,34 @@ function splitCsv(value){
     .map(function(x){ return x.trim(); })
     .filter(Boolean);
 }
+function awgGenerateOrderedHValues(maxInclusive){
+  var max = Math.max(3, Math.min(15000000, Number(maxInclusive) || 15000000));
+  var picked = {};
+  while(Object.keys(picked).length < 4){
+    var value = Math.floor(Math.random() * (max + 1));
+    picked[value] = true;
+  }
+  return Object.keys(picked).map(function(x){ return Number(x); }).sort(function(a, b){ return a - b; });
+}
+function awgDefaultObfuscation(){
+  var hs = awgGenerateOrderedHValues(15000000);
+  return {
+    jc: 4,
+    jmin: 40,
+    jmax: 120,
+    s1: 20,
+    s2: 40,
+    s3: 80,
+    s4: 120,
+    h1: hs[0],
+    h2: hs[1],
+    h3: hs[2],
+    h4: hs[3]
+  };
+}
+function obfValue(obf, key, fallback){
+  return obf && obf[key] != null ? obf[key] : fallback;
+}
 async function createNodeFlow(){
   try{
     var name = promptRequired('Node name'); if(name === null) return;
@@ -2914,10 +2942,11 @@ async function createLinkFlow(){
     var s2 = promptRequired('AWG S2', '40'); if(s2 === null) return;
     var s3 = promptRequired('AWG S3', '80'); if(s3 === null) return;
     var s4 = promptRequired('AWG S4', '120'); if(s4 === null) return;
-    var h1 = promptRequired('AWG H1', '10101'); if(h1 === null) return;
-    var h2 = promptRequired('AWG H2', '20202'); if(h2 === null) return;
-    var h3 = promptRequired('AWG H3', '30303'); if(h3 === null) return;
-    var h4 = promptRequired('AWG H4', '40404'); if(h4 === null) return;
+    var hDefaults = awgGenerateOrderedHValues(15000000);
+    var h1 = promptRequired('AWG H1', String(hDefaults[0])); if(h1 === null) return;
+    var h2 = promptRequired('AWG H2', String(hDefaults[1])); if(h2 === null) return;
+    var h3 = promptRequired('AWG H3', String(hDefaults[2])); if(h3 === null) return;
+    var h4 = promptRequired('AWG H4', String(hDefaults[3])); if(h4 === null) return;
 
     var link = await apiFetch(API_PREFIX + '/links', {
       method:'POST',
@@ -3109,6 +3138,7 @@ function openLinkModal(linkId){
   var right = spec.right || {};
   var peer = spec.peer || {};
   var obf = spec.awg_obfuscation || {};
+  var obfDefaults = awgDefaultObfuscation();
   var nodeOptions = NODES.map(function(n){ return {value:n.id, label:n.name}; });
   var body = '<form id="linkForm"><div class="modal-grid">'
     +formInput('Link name', 'name', link ? link.name : '', {required:true})
@@ -3129,17 +3159,17 @@ function openLinkModal(linkId){
     +formInput('Peer MTU', 'peer_mtu', peer.mtu || '1420', {required:true, type:'number'})
     +formTextarea('Left allowed IPs (CSV)', 'left_allowed_ips', (peer.left_allowed_ips || ['10.77.77.2/32']).join(','), {full:false})
     +formTextarea('Right allowed IPs (CSV)', 'right_allowed_ips', (peer.right_allowed_ips || ['10.77.77.1/32']).join(','), {full:false})
-    +formInput('Jc', 'jc', obf.jc || '4', {type:'number'})
-    +formInput('Jmin', 'jmin', obf.jmin || '40', {type:'number'})
-    +formInput('Jmax', 'jmax', obf.jmax || '120', {type:'number'})
-    +formInput('S1', 's1', obf.s1 || '20', {type:'number'})
-    +formInput('S2', 's2', obf.s2 || '40', {type:'number'})
-    +formInput('S3', 's3', obf.s3 || '80', {type:'number'})
-    +formInput('S4', 's4', obf.s4 || '120', {type:'number'})
-    +formInput('H1', 'h1', obf.h1 || '10101', {type:'number'})
-    +formInput('H2', 'h2', obf.h2 || '20202', {type:'number'})
-    +formInput('H3', 'h3', obf.h3 || '30303', {type:'number'})
-    +formInput('H4', 'h4', obf.h4 || '40404', {type:'number'})
+    +formInput('Jc', 'jc', obfValue(obf, 'jc', obfDefaults.jc), {type:'number'})
+    +formInput('Jmin', 'jmin', obfValue(obf, 'jmin', obfDefaults.jmin), {type:'number'})
+    +formInput('Jmax', 'jmax', obfValue(obf, 'jmax', obfDefaults.jmax), {type:'number'})
+    +formInput('S1', 's1', obfValue(obf, 's1', obfDefaults.s1), {type:'number'})
+    +formInput('S2', 's2', obfValue(obf, 's2', obfDefaults.s2), {type:'number'})
+    +formInput('S3', 's3', obfValue(obf, 's3', obfDefaults.s3), {type:'number'})
+    +formInput('S4', 's4', obfValue(obf, 's4', obfDefaults.s4), {type:'number'})
+    +formInput('H1', 'h1', obfValue(obf, 'h1', obfDefaults.h1), {type:'number'})
+    +formInput('H2', 'h2', obfValue(obf, 'h2', obfDefaults.h2), {type:'number'})
+    +formInput('H3', 'h3', obfValue(obf, 'h3', obfDefaults.h3), {type:'number'})
+    +formInput('H4', 'h4', obfValue(obf, 'h4', obfDefaults.h4), {type:'number'})
     +'</div></form>';
   openModal(link ? 'Edit Link' : 'Create Link', body, {
     buttons:[
@@ -5192,7 +5222,7 @@ async function submitOpenvpnCloakAssignPeer(serviceId, fd){
 function openAwgServiceModal(serviceId){
   var service = serviceId ? awgServiceById(serviceId) : null;
   var nodeOptions = NODES.map(function(node){ return {value:node.id, label:node.name}; });
-  var obfJson = service && service.awg_obfuscation_json ? JSON.stringify(service.awg_obfuscation_json, null, 2) : JSON.stringify({jc:4,jmin:40,jmax:120,s1:20,s2:40,s3:80,s4:120,h1:10101,h2:20202,h3:30303,h4:40404}, null, 2);
+  var obfJson = service && service.awg_obfuscation_json ? JSON.stringify(service.awg_obfuscation_json, null, 2) : JSON.stringify(awgDefaultObfuscation(), null, 2);
   var body = '<form id="awgServiceForm"><div class="modal-grid">'
     +formInput('Name', 'name', service ? service.name : '', {required:true})
     +formSelect('Node', 'node_id', service ? service.node_id : (NODES[0] ? NODES[0].id : ''), nodeOptions, {help:'Managed node where AWG will run.'})

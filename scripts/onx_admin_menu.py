@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import shlex
 import shutil
 import subprocess
@@ -30,6 +31,12 @@ AWG_READY_CAPABILITIES = (
     "systemctl",
     "onx_link_runtime",
 )
+
+
+def _generate_awg_h_values(max_inclusive: int = 15_000_000) -> tuple[int, int, int, int]:
+    upper_bound = max(3, min(int(max_inclusive), 15_000_000))
+    values = sorted(random.sample(range(upper_bound + 1), 4))
+    return values[0], values[1], values[2], values[3]
 
 
 def _read_primary_token(path: Path) -> str | None:
@@ -1157,6 +1164,7 @@ def _create_link_screen(base_url: str, admin_token: str | None) -> None:
     if right_node is None:
         return
     name = nodes_cli._prompt("Link name")
+    h1, h2, h3, h4 = _generate_awg_h_values()
     payload = {
         "name": name,
         "driver_name": "awg",
@@ -1193,10 +1201,10 @@ def _create_link_screen(base_url: str, admin_token: str | None) -> None:
                 "s2": 40,
                 "s3": 80,
                 "s4": 120,
-                "h1": 10101,
-                "h2": 20202,
-                "h3": 30303,
-                "h4": 40404,
+                "h1": h1,
+                "h2": h2,
+                "h3": h3,
+                "h4": h4,
             },
         },
     }
