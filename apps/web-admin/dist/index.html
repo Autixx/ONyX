@@ -1734,7 +1734,17 @@ function showBalancer(id){
 }
 function showJob(id){
   var j = jobById(id); if(!j) return;
-  var events = JOB_EVENTS[j.id] || [];
+  var previousLog = null;
+  var previousScrollTop = 0;
+  if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', j.id)){
+    previousLog = document.querySelector('#dpb .jlog');
+    if(previousLog){ previousScrollTop = previousLog.scrollTop; }
+  }
+  var events = (JOB_EVENTS[j.id] || []).slice().sort(function(a, b){
+    var at = a && a.created_at ? new Date(a.created_at).getTime() : 0;
+    var bt = b && b.created_at ? new Date(b.created_at).getTime() : 0;
+    return bt - at;
+  });
   var logHtml = events.length ? events.map(function(ev){
     var level = String(ev.level || 'info').toUpperCase();
     var msg = ev.message || '';
@@ -1766,6 +1776,12 @@ function showJob(id){
     +'<div class="jlog">'+logHtml+'</div>',
     { kind:'job', id:j.id }
   );
+  var nextLog = document.querySelector('#dpb .jlog');
+  if(nextLog && previousLog){
+    nextLog.scrollTop = previousScrollTop;
+  }else if(nextLog){
+    nextLog.scrollTop = 0;
+  }
 }
 function isJobForceCancelable(job){
   if(!job || job.state !== 'running' || !job.lease_expires_at) return false;
