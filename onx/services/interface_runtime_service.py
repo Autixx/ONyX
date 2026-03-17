@@ -934,6 +934,16 @@ class InterfaceRuntimeService:
             ONX_NODE_AGENT_VERSION={self._settings.onx_node_agent_version}
             """
         )
+        self._executor.run(
+            node,
+            management_secret,
+            "sh -lc '"
+            "systemctl stop onx-node-agent.timer >/dev/null 2>&1 || true; "
+            "systemctl stop onx-node-agent.service >/dev/null 2>&1 || true; "
+            "systemctl disable onx-node-agent.timer >/dev/null 2>&1 || true; "
+            "systemctl reset-failed onx-node-agent.timer onx-node-agent.service >/dev/null 2>&1 || true"
+            "'",
+        )
         self._executor.write_file(node, management_secret, self._settings.onx_node_agent_path, agent_script)
         self._executor.run(node, management_secret, f"sh -lc 'chmod 755 \"{self._settings.onx_node_agent_path}\"'")
         self._executor.write_file(node, management_secret, self._settings.onx_node_agent_env_path, env_content)
