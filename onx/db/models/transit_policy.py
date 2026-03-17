@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,7 +29,7 @@ class TransitPolicy(Base):
         index=True,
     )
     state: Mapped[TransitPolicyState] = mapped_column(
-        Enum(TransitPolicyState, name="transit_policy_state"),
+        Enum(TransitPolicyState, name="transit_policy_state", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=TransitPolicyState.PLANNED,
         index=True,

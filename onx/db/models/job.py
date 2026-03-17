@@ -1,5 +1,5 @@
 from datetime import datetime
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, Enum, Integer, JSON, String, Text, func
@@ -40,15 +40,15 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    kind: Mapped[JobKind] = mapped_column(Enum(JobKind, name="job_kind"), nullable=False, index=True)
+    kind: Mapped[JobKind] = mapped_column(Enum(JobKind, name="job_kind", values_callable=enum_values, validate_strings=True), nullable=False, index=True)
     target_type: Mapped[JobTargetType] = mapped_column(
-        Enum(JobTargetType, name="job_target_type"),
+        Enum(JobTargetType, name="job_target_type", values_callable=enum_values, validate_strings=True),
         nullable=False,
         index=True,
     )
     target_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     state: Mapped[JobState] = mapped_column(
-        Enum(JobState, name="job_state"),
+        Enum(JobState, name="job_state", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=JobState.PENDING,
         index=True,

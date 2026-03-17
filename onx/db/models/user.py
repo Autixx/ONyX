@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, Enum, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from onx.db.base import Base
 
 
@@ -23,7 +23,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[UserStatus] = mapped_column(
-        Enum(UserStatus, name="user_status"),
+        Enum(UserStatus, name="user_status", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=UserStatus.ACTIVE,
     )

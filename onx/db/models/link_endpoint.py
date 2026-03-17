@@ -1,5 +1,5 @@
 from datetime import datetime
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from uuid import uuid4
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
@@ -23,7 +23,7 @@ class LinkEndpoint(Base):
     link_id: Mapped[str] = mapped_column(String(36), ForeignKey("links.id", ondelete="CASCADE"), nullable=False, index=True)
     node_id: Mapped[str] = mapped_column(String(36), ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False, index=True)
     side: Mapped[LinkSide] = mapped_column(
-        Enum(LinkSide, name="link_side"),
+        Enum(LinkSide, name="link_side", values_callable=enum_values, validate_strings=True),
         nullable=False,
     )
     interface_name: Mapped[str | None] = mapped_column(String(64), nullable=True)

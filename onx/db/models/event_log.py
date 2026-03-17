@@ -1,5 +1,5 @@
 from datetime import datetime
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from uuid import uuid4
 
 from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text, func
@@ -27,7 +27,7 @@ class EventLog(Base):
     entity_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     entity_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     level: Mapped[EventLevel] = mapped_column(
-        Enum(EventLevel, name="event_level"),
+        Enum(EventLevel, name="event_level", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=EventLevel.INFO,
         index=True,

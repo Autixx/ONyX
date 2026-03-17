@@ -1,5 +1,5 @@
 from datetime import datetime
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstraint, func
@@ -28,7 +28,7 @@ class GeoPolicy(Base):
     )
     country_code: Mapped[str] = mapped_column(String(2), nullable=False)
     mode: Mapped[GeoPolicyMode] = mapped_column(
-        Enum(GeoPolicyMode, name="geo_policy_mode"),
+        Enum(GeoPolicyMode, name="geo_policy_mode", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=GeoPolicyMode.DIRECT,
     )

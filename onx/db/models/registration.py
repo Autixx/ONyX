@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from onx.db.base import Base
 
 
@@ -27,7 +27,7 @@ class Registration(Base):
     usage_goal: Mapped[str | None] = mapped_column(String(32), nullable=True)
     device_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[RegistrationStatus] = mapped_column(
-        Enum(RegistrationStatus, name="registration_status"),
+        Enum(RegistrationStatus, name="registration_status", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=RegistrationStatus.PENDING,
     )

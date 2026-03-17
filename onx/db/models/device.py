@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from onx.db.base import Base
 
 
@@ -29,7 +29,7 @@ class Device(Base):
     platform: Mapped[str | None] = mapped_column(String(64), nullable=True)
     app_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[DeviceStatus] = mapped_column(
-        Enum(DeviceStatus, name="device_status"),
+        Enum(DeviceStatus, name="device_status", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=DeviceStatus.PENDING,
     )

@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import BigInteger, Boolean, DateTime, Enum, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from onx.db.base import Base
 
 
@@ -24,7 +24,7 @@ class Plan(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     billing_mode: Mapped[BillingMode] = mapped_column(
-        Enum(BillingMode, name="billing_mode"),
+        Enum(BillingMode, name="billing_mode", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=BillingMode.MANUAL,
     )

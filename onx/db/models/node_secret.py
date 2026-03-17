@@ -1,5 +1,5 @@
 from datetime import datetime
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text, func
@@ -21,7 +21,7 @@ class NodeSecret(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     node_id: Mapped[str] = mapped_column(String(36), ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False, index=True)
     kind: Mapped[NodeSecretKind] = mapped_column(
-        Enum(NodeSecretKind, name="node_secret_kind"),
+        Enum(NodeSecretKind, name="node_secret_kind", values_callable=enum_values, validate_strings=True),
         nullable=False,
     )
     secret_ref: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)

@@ -5,7 +5,7 @@ from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, 
 from sqlalchemy.orm import Mapped, mapped_column
 
 from onx.db.models.plan import BillingMode
-from onx.compat import StrEnum
+from onx.compat import StrEnum, enum_values
 from onx.db.base import Base
 
 
@@ -34,12 +34,12 @@ class Subscription(Base):
         index=True,
     )
     status: Mapped[SubscriptionStatus] = mapped_column(
-        Enum(SubscriptionStatus, name="subscription_status"),
+        Enum(SubscriptionStatus, name="subscription_status", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=SubscriptionStatus.ACTIVE,
     )
     billing_mode: Mapped[BillingMode] = mapped_column(
-        Enum(BillingMode, name="billing_mode"),
+        Enum(BillingMode, name="billing_mode", values_callable=enum_values, validate_strings=True),
         nullable=False,
         default=BillingMode.MANUAL,
     )
