@@ -3638,6 +3638,12 @@ document.getElementById('modalClose').addEventListener('click', closeModal);
 document.getElementById('modal').addEventListener('click', function(event){
   if(event.target && event.target.id === 'modal'){ closeModal(); }
 });
+document.addEventListener('mousedown', function(event){
+  var dp = document.getElementById('dp');
+  if(!dp || !dp.classList.contains('open')) return;
+  if(dp.contains(event.target)) return;
+  closeDP();
+}, true);
 // ── SYS STATS ───────────────────────────────────────────────────────────────
 var _healthPollTimer = null;
 function startHealthPolling(){
