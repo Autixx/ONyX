@@ -1347,7 +1347,7 @@ function renderJobs(){
     if(j.state === 'pending' || j.state === 'running'){
       actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobCancel(\''+esc(j.id)+'\')">CANCEL</button>';
     }
-    if(j.state === 'running'){
+    if(isJobForceCancelable(j)){
       actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobForceCancel(\''+esc(j.id)+'\')">MARK CANCELLED</button>';
     }
     if(j.state === 'failed' || j.state === 'dead' || j.state === 'cancelled'){
@@ -1745,19 +1745,24 @@ function showJob(id){
   if(j.state === 'pending' || j.state === 'running'){
     actions += '<button class="btn red" onclick="actionJobCancel(\''+esc(j.id)+'\')">CANCEL</button>';
   }
-  if(j.state === 'running'){
+  if(isJobForceCancelable(j)){
     actions += '<button class="btn red" onclick="actionJobForceCancel(\''+esc(j.id)+'\')">MARK AS CANCELLED</button>';
   }
   if(j.state === 'failed' || j.state === 'dead' || j.state === 'cancelled'){
     actions += '<button class="btn" onclick="actionJobRetry(\''+esc(j.id)+'\')">RETRY NOW</button>';
   }
   openDP(j.kind,
-    rows([['ID',j.id],['Target',j.tt+':'+j.ti],['State',j.state],['Created',j.ts],['Step',j.step || '-'],['Error',j.errorText || '-']])
+    rows([['ID',j.id],['Target',j.tt+':'+j.ti],['State',j.state],['Created',j.ts],['Worker',j.worker_owner || '-'],['Heartbeat',j.heartbeat_at ? fmtDateTime(j.heartbeat_at) : '-'],['Lease Expires',j.lease_expires_at ? fmtDateTime(j.lease_expires_at) : '-'],['Cancel Requested',j.cancel_requested ? 'yes' : 'no'],['Step',j.step || '-'],['Error',j.errorText || '-']])
     +(actions ? '<div class="dp-actions">'+actions+'</div>' : '')
     +'<div class="stitle">Execution Log</div>'
     +'<div class="jlog">'+logHtml+'</div>',
     { kind:'job', id:j.id }
   );
+}
+function isJobForceCancelable(job){
+  if(!job || job.state !== 'running' || !job.lease_expires_at) return false;
+  var leaseMs = new Date(job.lease_expires_at).getTime();
+  return !isNaN(leaseMs) && leaseMs < Date.now();
 }
 function pushEv(type, msg, createdAt){
   var now = createdAt ? new Date(createdAt) : new Date();
@@ -1930,7 +1935,11 @@ async function refreshJobs(){
       ts: fmtTime(job.created_at),
       step: job.current_step || '',
       errorText: job.error_text || '',
-      created_at: job.created_at
+      created_at: job.created_at,
+      lease_expires_at: job.lease_expires_at || null,
+      heartbeat_at: job.heartbeat_at || null,
+      cancel_requested: !!job.cancel_requested,
+      worker_owner: job.worker_owner || ''
     };
   });
   await Promise.all(JOBS.slice(0, 20).map(async function(job){
@@ -2688,6 +2697,7 @@ async function actionJobForceCancel(jobId){
     if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', job.id)){ showJob(job.id); }
   }catch(err){
     pushEv('job.force_cancel.error', 'force-cancel failed for ' + jobId + ': ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
   }
 }
 function promptRequired(label, fallback){

@@ -414,8 +414,8 @@ class JobService:
             raise ValueError("Cannot force-cancel job without lease expiration timestamp.")
         if job.lease_expires_at >= now:
             raise ValueError(
-                "Cannot force-cancel active job before lease expiration. "
-                "Use regular cancel or wait until lease expires."
+                "Cannot mark job as cancelled before lease expiration "
+                f"({job.lease_expires_at.isoformat()}). Use regular cancel or wait until the lease expires."
             )
 
         return self.cancel(db, job, reason)
