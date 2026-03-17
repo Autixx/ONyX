@@ -1041,6 +1041,9 @@ var GRAPH_DATA = {nodes:[], edges:[], generated_at:null};
 var TOPO_HITBOXES = {nodes:[], edges:[]};
 var TOPO_PATH = null;
 var TOPO_AUTO_REFRESH_ENABLED = false;
+var TOPO_ZOOM = 1.0;
+var TOPO_ZOOM_MIN = 0.35;
+var TOPO_ZOOM_MAX = 2.5;
 var _topologyAutoTimer = null;
 var _topologyAutoInFlight = false;
 
@@ -2269,6 +2272,29 @@ function toggleTopologyAutoRefresh(){
     stopTopologyAutoRefresh();
   }
 }
+function clampTopologyZoom(value){
+  return Math.max(TOPO_ZOOM_MIN, Math.min(TOPO_ZOOM_MAX, value));
+}
+function applyTopologyZoom(svg){
+  if(!svg || !svg._topoWorld) return;
+  var W = svg._viewWidth || (svg.getBoundingClientRect().width || 900);
+  var H = svg._viewHeight || 480;
+  var s = clampTopologyZoom(TOPO_ZOOM);
+  TOPO_ZOOM = s;
+  var cx = W / 2;
+  var cy = H / 2;
+  svg._topoWorld.setAttribute('transform', 'translate(' + cx + ' ' + cy + ') scale(' + s + ') translate(' + (-cx) + ' ' + (-cy) + ')');
+}
+function bindTopologyZoom(svg){
+  if(!svg || svg._zoomBound) return;
+  svg.addEventListener('wheel', function(event){
+    event.preventDefault();
+    var factor = event.deltaY < 0 ? 1.1 : 0.9;
+    TOPO_ZOOM = clampTopologyZoom(TOPO_ZOOM * factor);
+    applyTopologyZoom(svg);
+  }, { passive:false });
+  svg._zoomBound = true;
+}
 function buildNodePositions(width, height, nodes){
   var positions = {};
   var source = nodes || [];
@@ -2386,6 +2412,8 @@ function drawTopo(){
   var H = 480;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   svg.setAttribute('height', H);
+  svg._viewWidth = W;
+  svg._viewHeight = H;
 
   var graphNodes = GRAPH_DATA.nodes || [];
   var graphEdges = GRAPH_DATA.edges || [];
@@ -2431,12 +2459,16 @@ function drawTopo(){
   defs.appendChild(marker);
   svg.appendChild(defs);
 
+  var worldG = mk('g',{id:'topo-world'});
+  svg._topoWorld = worldG;
+  svg.appendChild(worldG);
+
   // Edge layer group
   var edgeG = mk('g',{id:'topo-edges'});
-  svg.appendChild(edgeG);
+  worldG.appendChild(edgeG);
   // Node layer group (on top)
   var nodeG = mk('g',{id:'topo-nodes'});
-  svg.appendChild(nodeG);
+  worldG.appendChild(nodeG);
 
   renderTopologyEdges(pos, graphEdges, edgeG, mk);
 
@@ -2572,8 +2604,9 @@ function drawTopo(){
     });
     svg.addEventListener('mousemove', function(e){
       if(!dragging) return;
-      var dx = e.clientX - dragStart.mx;
-      var dy = e.clientY - dragStart.my;
+      var scale = clampTopologyZoom(TOPO_ZOOM || 1);
+      var dx = (e.clientX - dragStart.mx) / scale;
+      var dy = (e.clientY - dragStart.my) / scale;
       if(Math.abs(dx) > 3 || Math.abs(dy) > 3) g._dragged = true;
       pos[n.id].x = Math.max(R+4, Math.min(W-R-4, dragStart.px + dx));
       pos[n.id].y = Math.max(R+4, Math.min(H-R-20, dragStart.py + dy));
@@ -2602,6 +2635,8 @@ function drawTopo(){
     svg.appendChild(scoreT);
   }
 
+  bindTopologyZoom(svg);
+  applyTopologyZoom(svg);
   renderTopologyMeta();
 }
 
