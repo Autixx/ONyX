@@ -2617,6 +2617,7 @@ function renderTopologyEdges(pos, graphEdges, edgeG, mk){
     var edgeWidth = inPath ? 3 : 1.5;
     var edgeDash = inPath ? 'none' : '6,5';
     var g = mk('g', {'data-edge-id': l.id});
+    edgeG.appendChild(g);
 
     var line = mk('line',{
       x1:a.x, y1:a.y, x2:b.x, y2:b.y,
@@ -2696,7 +2697,6 @@ function renderTopologyEdges(pos, graphEdges, edgeG, mk){
       tmet.textContent = lat + (metrics.loss_pct != null ? ' / '+Number(metrics.loss_pct).toFixed(1)+'%' : '');
       g.appendChild(tmet);
     }
-    edgeG.appendChild(g);
   });
 }
 
