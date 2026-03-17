@@ -546,7 +546,7 @@ td.m{color:var(--t0);}
         </div>
         <div class="tw">
           <table>
-            <thead><tr><th>ID</th><th>Kind</th><th>Target</th><th>State</th><th>Created</th><th></th></tr></thead>
+            <thead><tr><th>ID</th><th>Kind</th><th>Target</th><th>State</th><th>Created</th><th>Age</th><th>Lease</th><th></th></tr></thead>
             <tbody id="jtb"></tbody>
           </table>
         </div>
@@ -1347,6 +1347,9 @@ function renderJobs(){
     if(j.state === 'pending' || j.state === 'running'){
       actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobCancel(\''+esc(j.id)+'\')">CANCEL</button>';
     }
+    if(isJobRemoteAbortable(j)){
+      actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobAbortRemote(\''+esc(j.id)+'\')">ABORT REMOTE</button>';
+    }
     if(isJobForceCancelable(j)){
       actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobForceCancel(\''+esc(j.id)+'\')">MARK CANCELLED</button>';
     }
@@ -1359,6 +1362,8 @@ function renderJobs(){
       +'<td style="font-size:13px;color:var(--t1);">'+esc(j.tt+':'+j.ti)+'</td>'
       +'<td>'+sp(j.state)+'</td>'
       +'<td style="color:var(--t2);">'+esc(j.ts)+'</td>'
+      +'<td style="color:var(--t1);">'+esc(jobAgeText(j))+'</td>'
+      +'<td style="color:var(--t1);">'+esc(jobLeaseText(j))+'</td>'
       +'<td style="display:flex;gap:5px;">'+actions+'</td>'
       +'</tr>';
   }).join('');
@@ -1745,6 +1750,9 @@ function showJob(id){
   if(j.state === 'pending' || j.state === 'running'){
     actions += '<button class="btn red" onclick="actionJobCancel(\''+esc(j.id)+'\')">CANCEL</button>';
   }
+  if(isJobRemoteAbortable(j)){
+    actions += '<button class="btn red" onclick="actionJobAbortRemote(\''+esc(j.id)+'\')">ABORT REMOTE</button>';
+  }
   if(isJobForceCancelable(j)){
     actions += '<button class="btn red" onclick="actionJobForceCancel(\''+esc(j.id)+'\')">MARK AS CANCELLED</button>';
   }
@@ -1763,6 +1771,33 @@ function isJobForceCancelable(job){
   if(!job || job.state !== 'running' || !job.lease_expires_at) return false;
   var leaseMs = new Date(job.lease_expires_at).getTime();
   return !isNaN(leaseMs) && leaseMs < Date.now();
+}
+function isJobRemoteAbortable(job){
+  return !!job && job.state === 'running' && job.tt === 'node' && (job.kind === 'bootstrap' || job.kind === 'discover');
+}
+function fmtDurationSeconds(totalSeconds){
+  var sec = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  var h = Math.floor(sec / 3600);
+  var m = Math.floor((sec % 3600) / 60);
+  var s = sec % 60;
+  if(h > 0) return h + 'h ' + String(m).padStart(2,'0') + 'm ' + String(s).padStart(2,'0') + 's';
+  return m + 'm ' + String(s).padStart(2,'0') + 's';
+}
+function jobAgeText(job){
+  if(!job || !job.created_at) return '-';
+  var created = new Date(job.created_at).getTime();
+  if(isNaN(created)) return '-';
+  return fmtDurationSeconds((Date.now() - created) / 1000);
+}
+function jobLeaseText(job){
+  if(!job) return '-';
+  if(job.state !== 'running') return '-';
+  if(!job.lease_expires_at) return 'no lease';
+  var lease = new Date(job.lease_expires_at).getTime();
+  if(isNaN(lease)) return '-';
+  var delta = Math.floor((lease - Date.now()) / 1000);
+  if(delta < 0) return 'stale ' + fmtDurationSeconds(Math.abs(delta));
+  return 'in ' + fmtDurationSeconds(delta);
 }
 function pushEv(type, msg, createdAt){
   var now = createdAt ? new Date(createdAt) : new Date();
@@ -2697,6 +2732,18 @@ async function actionJobForceCancel(jobId){
     if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', job.id)){ showJob(job.id); }
   }catch(err){
     pushEv('job.force_cancel.error', 'force-cancel failed for ' + jobId + ': ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+async function actionJobAbortRemote(jobId){
+  try{
+    if(!confirm('Send best-effort remote stop commands to the target node and mark this job as cancel-requested? This is intended for stuck node bootstrap/discover jobs.')) return;
+    var job = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(jobId) + '/abort-remote', { method:'POST', body:{} });
+    pushEv('job.abort_remote.requested', 'remote abort requested for ' + jobId);
+    await refreshJobs();
+    if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', job.id)){ showJob(job.id); }
+  }catch(err){
+    pushEv('job.abort_remote.error', 'remote abort failed for ' + jobId + ': ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
   }
 }
@@ -3663,6 +3710,7 @@ async function bootApp(){
   await loadData();
   startHealthPolling();
   startFailbanPolling();
+  startJobsTicker();
   refreshFailban().catch(function(){});
   connectWS();
   setTimeout(drawTopo, 60);
@@ -5473,6 +5521,8 @@ var LITERAL_TEXT = {
     'Worker': 'Worker',
     'Nodes Online': 'Узлы онлайн',
     'Active Links': 'Активные связи',
+    'Age': 'Возраст',
+    'Lease': 'Лиз',
     'Live Event Stream ” WS /api/v1/ws/admin/events': 'Поток событий ” WS /api/v1/ws/admin/events',
     'PROBE HEALTH': 'ПРОВЕРИТЬ СОСТОЯНИЕ',
     'all statuses': 'все статусы',
@@ -5513,6 +5563,7 @@ var LITERAL_TEXT = {
     'RETRY NOW': 'ПОВТОРИТЬ',
     'MARK CANCELLED': 'ПОМЕТИТЬ КАК ОТМЕНЁННУЮ',
     'MARK AS CANCELLED': 'ПОМЕТИТЬ КАК ОТМЕНЁННУЮ',
+    'ABORT REMOTE': 'ПРЕРВАТЬ НА УЗЛЕ',
     'PAUSE': 'ПАУЗА',
     'RESUME': 'ПРОДОЛЖИТЬ',
     'SEND': 'ОТПРАВИТЬ',
@@ -6573,6 +6624,7 @@ function showPage(pageId){
 // ═══════════════════════════════════════
 var _failbanPaused = false;
 var _failbanTimer = null;
+var _jobsTicker = null;
 function failbanEntryClass(entry){
   var level = String((entry && entry.level) || 'info').toLowerCase();
   if(level === 'banned') return 'banned';
@@ -6641,6 +6693,15 @@ function failbanPauseToggle(){
 function startFailbanPolling(){
   if(_failbanTimer) clearInterval(_failbanTimer);
   _failbanTimer = setInterval(function(){ refreshFailban().catch(function(){}); }, 10000);
+}
+function startJobsTicker(){
+  if(_jobsTicker) clearInterval(_jobsTicker);
+  _jobsTicker = setInterval(function(){
+    if(_currentPage === 'jobs'){ renderJobs(); }
+    if(document.getElementById('dp').classList.contains('open') && DP_CONTEXT.kind === 'job' && jobById(DP_CONTEXT.id)){
+      showJob(DP_CONTEXT.id);
+    }
+  }, 1000);
 }
 
 // ═══════════════════════════════════════

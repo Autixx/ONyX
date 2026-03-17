@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
 from onx.schemas.jobs import EventLogRead, JobLockCleanupResult, JobLockRead, JobRead
+from onx.services.job_abort_service import JobAbortService
 from onx.services.event_log_service import EventLogService
 from onx.services.job_service import JobService
 
@@ -10,6 +11,7 @@ from onx.services.job_service import JobService
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 job_service = JobService()
 event_log_service = EventLogService()
+job_abort_service = JobAbortService()
 
 
 @router.get("", response_model=list[JobRead])
@@ -69,6 +71,23 @@ def force_cancel(job_id: str, db: Session = Depends(get_database_session)) -> ob
     try:
         return job_service.request_force_cancel(db, job)
     except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post("/{job_id}/abort-remote", response_model=JobRead)
+def abort_remote(job_id: str, db: Session = Depends(get_database_session)) -> object:
+    job = job_service.get_job(db, job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found.")
+    try:
+        job_abort_service.abort_remote_execution(db, job)
+        db.refresh(job)
+        return job_service.request_cancel(
+            db,
+            job,
+            reason="Remote abort requested by user. ONX sent best-effort stop commands to the target node.",
+        )
+    except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
