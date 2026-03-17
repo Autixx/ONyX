@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
+from onx.db.models.event_log import EventLevel
 from onx.db.models.node import Node
 from onx.db.models.job import Job, JobKind, JobState, JobTargetType
 from onx.db.models.node_capability import NodeCapability
@@ -11,6 +12,7 @@ from onx.schemas.jobs import JobEnqueueOptions, JobRead
 from onx.schemas.node_traffic import NodeTrafficCycleRead, NodeTrafficOverviewRead
 from onx.schemas.nodes import (
     NodeCapabilityRead,
+    NodeActionResult,
     NodeCreate,
     NodeRead,
     NodeSecretRead,
@@ -18,15 +20,20 @@ from onx.schemas.nodes import (
     NodeUpdate,
     serialize_node_read,
 )
+from onx.services.event_log_service import EventLogService
 from onx.services.job_service import JobConflictError, JobService
+from onx.services.node_control_service import NodeControlService
 from onx.services.node_agent_service import NodeAgentService
 from onx.services.node_traffic_accounting_service import NodeTrafficAccountingService
+from onx.services.realtime_service import realtime_service
 from onx.services.secret_service import SecretService
 
 
 router = APIRouter(prefix="/nodes", tags=["nodes"])
 secret_service = SecretService()
 job_service = JobService()
+event_log_service = EventLogService()
+node_control_service = NodeControlService()
 node_agent_service = NodeAgentService()
 node_traffic_accounting_service = NodeTrafficAccountingService()
 
@@ -258,3 +265,32 @@ def bootstrap_node_runtime(
             },
         ) from exc
     return job
+
+
+@router.post("/{node_id}/force-reboot", response_model=NodeActionResult, status_code=status.HTTP_202_ACCEPTED)
+def force_reboot_node(node_id: str, db: Session = Depends(get_database_session)) -> NodeActionResult:
+    node = db.get(Node, node_id)
+    if node is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found.")
+
+    try:
+        rebooted = node_control_service.force_reboot(db, node)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    event_log_service.log(
+        db,
+        entity_type="node",
+        entity_id=rebooted.id,
+        level=EventLevel.WARNING,
+        message=f"Force reboot requested for node '{rebooted.name}' over SSH",
+        details={"node_name": rebooted.name, "ssh_host": rebooted.ssh_host},
+    )
+    realtime_service.publish("node.reboot_requested", {"id": rebooted.id, "name": rebooted.name})
+    return NodeActionResult(
+        node_id=rebooted.id,
+        accepted=True,
+        message="Node reboot requested over SSH.",
+    )

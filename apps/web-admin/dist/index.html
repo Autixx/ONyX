@@ -1087,6 +1087,12 @@ function fmtTime(value){
   if(isNaN(d.getTime())) return value;
   return d.toLocaleTimeString();
 }
+function fmtDateTime(value){
+  if(!value) return '-';
+  var d = new Date(value);
+  if(isNaN(d.getTime())) return value;
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+}
 function authRedirect(message){
   isAuthenticated = false;
   disconnectWS();
@@ -1177,6 +1183,7 @@ function renderNodes(){
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="event.stopPropagation();actionNodeDiscover(\''+esc(n.id)+'\')">PROBE</button>'
         +'<button class="btn sm pri" onclick="event.stopPropagation();actionNodeBootstrap(\''+esc(n.id)+'\')">BOOTSTRAP</button>'
+        +'<button class="btn sm red" onclick="event.stopPropagation();actionNodeForceReboot(\''+esc(n.id)+'\')">REBOOT</button>'
         +'<button class="btn sm" onclick="event.stopPropagation();openNodeModal(\''+esc(n.id)+'\')">EDIT</button>'
         +'<button class="btn sm red" onclick="event.stopPropagation();deleteNodeFlow(\''+esc(n.id)+'\')">DEL</button>'
       +'</td>'
@@ -1341,7 +1348,7 @@ function renderJobs(){
       actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobCancel(\''+esc(j.id)+'\')">CANCEL</button>';
     }
     if(j.state === 'running'){
-      actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobForceCancel(\''+esc(j.id)+'\')">FORCE</button>';
+      actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobForceCancel(\''+esc(j.id)+'\')">MARK CANCELLED</button>';
     }
     if(j.state === 'failed' || j.state === 'dead' || j.state === 'cancelled'){
       actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobRetry(\''+esc(j.id)+'\')">RETRY</button>';
@@ -1513,6 +1520,7 @@ function showNode(id){
     +'<div class="dp-actions">'
       +'<button class="btn" onclick="actionNodeDiscover(\''+esc(n.id)+'\')">PROBE SSH</button>'
       +'<button class="btn pri" onclick="actionNodeBootstrap(\''+esc(n.id)+'\')">BOOTSTRAP</button>'
+      +'<button class="btn red" onclick="actionNodeForceReboot(\''+esc(n.id)+'\')">FORCE REBOOT</button>'
       +'<button class="btn" onclick="openNodeModal(\''+esc(n.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteNodeFlow(\''+esc(n.id)+'\')">DELETE</button>'
     +'</div>';
@@ -1723,16 +1731,22 @@ function showJob(id){
   var j = jobById(id); if(!j) return;
   var events = JOB_EVENTS[j.id] || [];
   var logHtml = events.length ? events.map(function(ev){
-    var msg = '['+String(ev.level || 'info').toUpperCase()+'] '+(ev.message || '');
+    var level = String(ev.level || 'info').toUpperCase();
+    var msg = ev.message || '';
     var c = ev.level === 'error' ? 'er' : ev.level === 'warning' ? 'inf' : 'ok';
-    return '<div class="'+c+'">'+esc(msg)+'</div>';
+    var ts = ev.created_at ? fmtDateTime(ev.created_at) : '-';
+    return '<div class="eline">'
+      +'<span class="et">'+esc(ts)+'</span>'
+      +'<span class="ety '+esc(c)+'">['+esc(level)+']</span>'
+      +'<span style="color:var(--t1);">'+esc(msg)+'</span>'
+      +'</div>';
   }).join('') : '<div class="inf">No job events loaded.</div>';
   var actions = '';
   if(j.state === 'pending' || j.state === 'running'){
     actions += '<button class="btn red" onclick="actionJobCancel(\''+esc(j.id)+'\')">CANCEL</button>';
   }
   if(j.state === 'running'){
-    actions += '<button class="btn red" onclick="actionJobForceCancel(\''+esc(j.id)+'\')">FORCE CANCEL</button>';
+    actions += '<button class="btn red" onclick="actionJobForceCancel(\''+esc(j.id)+'\')">MARK AS CANCELLED</button>';
   }
   if(j.state === 'failed' || j.state === 'dead' || j.state === 'cancelled'){
     actions += '<button class="btn" onclick="actionJobRetry(\''+esc(j.id)+'\')">RETRY NOW</button>';
@@ -1745,9 +1759,9 @@ function showJob(id){
     { kind:'job', id:j.id }
   );
 }
-function pushEv(type, msg){
-  var now = new Date();
-  var t = now.toTimeString().slice(0,8);
+function pushEv(type, msg, createdAt){
+  var now = createdAt ? new Date(createdAt) : new Date();
+  var t = fmtDateTime(now);
   var cls = (type.indexOf('fail') !== -1 || type.indexOf('error') !== -1 || type.indexOf('err') !== -1) ? 'err' : type.indexOf('system') === 0 ? 'sys' : type.indexOf('audit') === 0 ? 'aud' : 'job';
   AUDIT_EVTS.push({t:t,type:type,cls:cls,msg:msg});
   if(AUDIT_EVTS.length > 200){ AUDIT_EVTS.shift(); }
@@ -1784,7 +1798,7 @@ function connectWS(){
       if(type === 'system.ping'){ return; }
       var payload = data.payload || {};
       var msg = payload.message || payload.detail || payload.id || JSON.stringify(payload);
-      pushEv(type, msg);
+      pushEv(type, msg, payload.created_at);
       if(type.indexOf('job.') === 0){ refreshJobs().catch(function(){}); }
       if(type.indexOf('link.') === 0){ refreshLinks().catch(function(){}); refreshTopology().catch(function(){}); }
       if(type.indexOf('node.') === 0){ refreshNodes().catch(function(){}); refreshTopology().catch(function(){}); }
@@ -1927,12 +1941,15 @@ async function refreshJobs(){
     }
   }));
   renderJobs();
+  if(document.getElementById('dp').classList.contains('open') && DP_CONTEXT.kind === 'job' && jobById(DP_CONTEXT.id)){
+    showJob(DP_CONTEXT.id);
+  }
 }
 async function refreshAudit(){
   var events = await apiFetch(API_PREFIX + '/audit-logs?limit=50');
   AUDIT_EVTS = (events || []).map(function(evt){
     return {
-      t: fmtTime(evt.created_at),
+      t: fmtDateTime(evt.created_at),
       type: evt.entity_type === 'job' ? 'job.event' : 'audit.event',
       cls: evt.level === 'error' ? 'err' : evt.entity_type === 'job' ? 'job' : 'aud',
       msg: evt.message || evt.entity_type
@@ -2574,6 +2591,21 @@ async function actionNodeBootstrap(nodeId){
     alert(err && err.message ? err.message : err);
   }
 }
+async function actionNodeForceReboot(nodeId){
+  if(!confirm('Request immediate node reboot over SSH? For non-root SSH users, passwordless sudo is required.')) return;
+  try{
+    var node = nById(nodeId);
+    var result = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/force-reboot', { method:'POST', body:{} });
+    pushEv('node.reboot_requested', (result && result.message) || ('reboot requested for ' + (node ? node.name : nodeId)));
+    alert('Reboot requested: ' + (node ? node.name : nodeId));
+    await refreshNodes();
+    await refreshTopology();
+    if(document.getElementById('dp').classList.contains('open') && detailContextIs('node', nodeId)){ showNode(nodeId); }
+  }catch(err){
+    pushEv('node.reboot.error', 'reboot failed for ' + nodeId + ': ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
 async function actionNodeTrafficReset(nodeId){
   if(!confirm('Reset current traffic cycle counters for this node?')) return;
   try{
@@ -2649,8 +2681,9 @@ async function actionJobRetry(jobId){
 }
 async function actionJobForceCancel(jobId){
   try{
+    if(!confirm('Mark this stale running job as cancelled? This clears the stuck job state after lease timeout and does not kill remote execution already in progress.')) return;
     var job = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(jobId) + '/force-cancel', { method:'POST', body:{} });
-    pushEv('job.force_cancel.requested', 'force-cancel requested for ' + jobId);
+    pushEv('job.force_cancel.requested', 'mark-cancelled requested for ' + jobId);
     await refreshJobs();
     if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', job.id)){ showJob(job.id); }
   }catch(err){
@@ -5466,11 +5499,15 @@ var LITERAL_TEXT = {
     'APPLY': 'ПРИМЕНИТЬ',
     'GUIDE': 'МАСТЕР',
     'RETRY NOW': 'ПОВТОРИТЬ',
+    'MARK CANCELLED': 'ПОМЕТИТЬ КАК ОТМЕНЁННУЮ',
+    'MARK AS CANCELLED': 'ПОМЕТИТЬ КАК ОТМЕНЁННУЮ',
     'PAUSE': 'ПАУЗА',
     'RESUME': 'ПРОДОЛЖИТЬ',
     'SEND': 'ОТПРАВИТЬ',
     'PROBE SSH': 'ПРОВЕРИТЬ SSH',
     'BOOTSTRAP': 'ПОДГОТОВИТЬ',
+    'REBOOT': 'ПЕРЕЗАГРУЗИТЬ',
+    'FORCE REBOOT': 'ПРИНУДИТЕЛЬНАЯ ПЕРЕЗАГРУЗКА',
     'VALIDATE': 'ПРОВЕРИТЬ',
     'PICK': 'ВЫБРАТЬ',
     'VIEW CONFIG': 'ПОКАЗАТЬ КОНФИГ',

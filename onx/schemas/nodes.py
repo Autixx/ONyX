@@ -143,3 +143,9 @@ class NodeDiscoverResponse(ONXBaseModel):
     node: NodeRead
     interfaces: list[str]
     capabilities: list[NodeCapabilityRead]
+
+
+class NodeActionResult(ONXBaseModel):
+    node_id: str
+    accepted: bool
+    message: str
