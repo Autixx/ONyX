@@ -3148,6 +3148,54 @@ function openLinkModal(linkId){
     ]
   });
   bindModalForm('linkForm', function(fd){ saveLinkForm(fd, linkId); });
+  var form = document.getElementById('linkForm');
+  if(!form) return;
+  var leftNodeSelect = form.querySelector('[name="left_node_id"]');
+  var rightNodeSelect = form.querySelector('[name="right_node_id"]');
+  var leftEndpointInput = form.querySelector('[name="left_endpoint_host"]');
+  var rightEndpointInput = form.querySelector('[name="right_endpoint_host"]');
+
+  function nodeMgmtHost(nodeId){
+    var node = nById(String(nodeId || '').trim());
+    return node ? String(node.management_address || node.ssh_host || '').trim() : '';
+  }
+
+  function syncEndpointDefault(input, nodeId){
+    if(!input) return;
+    var current = String(input.value || '').trim();
+    var fallback = nodeMgmtHost(nodeId);
+    var initial = String(input.getAttribute('data-initial-value') || '').trim();
+    var dirty = input.getAttribute('data-dirty') === '1';
+    if(!dirty || current === '' || current === initial){
+      input.value = fallback;
+      input.setAttribute('data-initial-value', fallback);
+      input.setAttribute('data-dirty', '0');
+    }
+  }
+
+  [leftEndpointInput, rightEndpointInput].forEach(function(input){
+    if(!input) return;
+    input.setAttribute('data-initial-value', String(input.value || '').trim());
+    input.setAttribute('data-dirty', '0');
+    input.addEventListener('input', function(){
+      var current = String(input.value || '').trim();
+      var initial = String(input.getAttribute('data-initial-value') || '').trim();
+      input.setAttribute('data-dirty', current !== initial ? '1' : '0');
+    });
+  });
+
+  if(leftNodeSelect){
+    leftNodeSelect.addEventListener('change', function(){
+      syncEndpointDefault(leftEndpointInput, leftNodeSelect.value);
+    });
+    syncEndpointDefault(leftEndpointInput, leftNodeSelect.value);
+  }
+  if(rightNodeSelect){
+    rightNodeSelect.addEventListener('change', function(){
+      syncEndpointDefault(rightEndpointInput, rightNodeSelect.value);
+    });
+    syncEndpointDefault(rightEndpointInput, rightNodeSelect.value);
+  }
 }
 async function saveLinkForm(fd, linkId){
   try{
