@@ -957,6 +957,7 @@ class InterfaceRuntimeService:
         }
 
     def ensure_awg_stack(self, node: Node, management_secret: str) -> dict:
+        install_timeout = max(60, int(self._settings.ssh_install_timeout_seconds))
         script_content = (
             AWG_INSTALL_SCRIPT
             .replace("__AWG_TOOLS_REPO__", self._settings.onx_awg_tools_repo)
@@ -971,6 +972,7 @@ class InterfaceRuntimeService:
             node,
             management_secret,
             f"sh -lc 'chmod 700 \"{remote_script_path}\" && \"{remote_script_path}\"; rm -f \"{remote_script_path}\"'",
+            timeout_seconds=install_timeout,
         )
         if code != 0:
             raise RuntimeError(stderr or stdout or f"Failed to install AWG stack on node {node.name}")
@@ -980,12 +982,14 @@ class InterfaceRuntimeService:
         }
 
     def ensure_wg_stack(self, node: Node, management_secret: str) -> dict:
+        install_timeout = max(60, int(self._settings.ssh_install_timeout_seconds))
         remote_script_path = "/tmp/onx-install-wg-stack.sh"
         self._executor.write_file(node, management_secret, remote_script_path, WG_INSTALL_SCRIPT)
         code, stdout, stderr = self._executor.run(
             node,
             management_secret,
             f"sh -lc 'chmod 700 \"{remote_script_path}\" && \"{remote_script_path}\"; rm -f \"{remote_script_path}\"'",
+            timeout_seconds=install_timeout,
         )
         if code != 0:
             raise RuntimeError(stderr or stdout or f"Failed to install WG stack on node {node.name}")
@@ -995,6 +999,7 @@ class InterfaceRuntimeService:
         }
 
     def ensure_openvpn_cloak_stack(self, node: Node, management_secret: str) -> dict:
+        install_timeout = max(60, int(self._settings.ssh_install_timeout_seconds))
         script_content = (
             OPENVPN_CLOAK_INSTALL_SCRIPT
             .replace("__CLOAK_VERSION__", self._settings.onx_cloak_version)
@@ -1006,6 +1011,7 @@ class InterfaceRuntimeService:
             node,
             management_secret,
             f"sh -lc 'chmod 700 \"{remote_script_path}\" && \"{remote_script_path}\"; rm -f \"{remote_script_path}\"'",
+            timeout_seconds=install_timeout,
         )
         if code != 0:
             raise RuntimeError(stderr or stdout or f"Failed to install OpenVPN+Cloak stack on node {node.name}")
@@ -1015,6 +1021,7 @@ class InterfaceRuntimeService:
         }
 
     def ensure_xray_stack(self, node: Node, management_secret: str) -> dict:
+        install_timeout = max(60, int(self._settings.ssh_install_timeout_seconds))
         script_content = XRAY_INSTALL_SCRIPT.replace(
             "__XRAY_INSTALL_SCRIPT_URL__",
             self._settings.onx_xray_install_script_url,
@@ -1025,6 +1032,7 @@ class InterfaceRuntimeService:
             node,
             management_secret,
             f"sh -lc 'chmod 700 \"{remote_script_path}\" && \"{remote_script_path}\"; rm -f \"{remote_script_path}\"'",
+            timeout_seconds=install_timeout,
         )
         if code != 0:
             raise RuntimeError(stderr or stdout or f"Failed to install Xray stack on node {node.name}")
@@ -1034,12 +1042,14 @@ class InterfaceRuntimeService:
         }
 
     def ensure_transit_stack(self, node: Node, management_secret: str) -> dict:
+        install_timeout = max(60, int(self._settings.ssh_install_timeout_seconds))
         remote_script_path = "/tmp/onx-install-transit-stack.sh"
         self._executor.write_file(node, management_secret, remote_script_path, TRANSIT_INSTALL_SCRIPT)
         code, stdout, stderr = self._executor.run(
             node,
             management_secret,
             f"sh -lc 'chmod 700 \"{remote_script_path}\" && \"{remote_script_path}\"; rm -f \"{remote_script_path}\"'",
+            timeout_seconds=install_timeout,
         )
         if code != 0:
             raise RuntimeError(stderr or stdout or f"Failed to install transit stack on node {node.name}")

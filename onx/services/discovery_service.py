@@ -18,7 +18,10 @@ class DiscoveryService:
         self._secrets = SecretService()
 
     async def _run_remote_command(self, conn: asyncssh.SSHClientConnection, command: str) -> tuple[bool, str]:
-        result = await conn.run(command, check=False)
+        result = await asyncio.wait_for(
+            conn.run(command, check=False),
+            timeout=max(1, int(self._settings.ssh_command_timeout_seconds)),
+        )
         if result.exit_status == 0:
             return True, result.stdout.strip()
         return False, (result.stderr or result.stdout).strip()

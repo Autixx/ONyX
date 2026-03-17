@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     )
     master_key: str = "onx-dev-master-key-change-me"
     ssh_connect_timeout_seconds: int = 10
+    ssh_command_timeout_seconds: int = 120
+    ssh_install_timeout_seconds: int = 1800
     worker_poll_interval_seconds: int = 2
     worker_lease_seconds: int = 300
     admin_api_auth_mode: str = "disabled"
