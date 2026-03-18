@@ -1,7 +1,7 @@
 """add device bans and subscription access windows
 
 Revision ID: 0027_device_bans_and_subscription_windows
-Revises: 0026_registration_referral_snapshot
+Revises: 0026_registration_ref
 Create Date: 2026-03-18 12:30:00
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "0027_device_bans_and_subscription_windows"
-down_revision = "0026_registration_referral_snapshot"
+down_revision = "0026_registration_ref"
 branch_labels = None
 depends_on = None
 
