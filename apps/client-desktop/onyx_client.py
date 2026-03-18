@@ -11,6 +11,7 @@ Dependencies:
 import argparse
 import asyncio
 import base64
+import ctypes
 import ipaddress
 import json
 import os
@@ -19,6 +20,8 @@ import secrets
 import shutil
 import subprocess
 import sys
+import time
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,7 +32,7 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from PyQt6.QtCore import (
-    QEasingCurve, QPropertyAnimation, QRect, QSize, Qt, QThread, QTimer,
+    QRect, QSize, Qt, QThread, QTimer,
     pyqtSignal, QObject,
 )
 from PyQt6.QtGui import (
@@ -41,8 +44,8 @@ from runtime.models import CommandEnvelope, DaemonCommand
 from runtime.paths import expected_binary_layout
 
 from PyQt6.QtWidgets import (
-    QApplication, QButtonGroup, QComboBox, QDialog, QFrame,
-    QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QFrame,
+    QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QPushButton, QRadioButton, QScrollArea,
     QStackedWidget, QSystemTrayIcon, QTextEdit, QVBoxLayout, QWidget,
     QMessageBox, QMenu,
@@ -206,9 +209,21 @@ def open_tools_directory() -> None:
     subprocess.run(["xdg-open", str(target)], check=False)
 
 
+def daemon_executable_path() -> Path | None:
+    candidates: list[Path] = []
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates.append(exe_dir / "ONyXClientDaemon.exe")
+    candidates.append(APP_ROOT / "ONyXClientDaemon.exe")
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def test_api_health(base_url: str) -> dict:
     normalized = normalize_api_base_url(base_url)
-    with httpx.Client(timeout=10) as client:
+    with httpx_client(timeout=10, base_url=normalized) as client:
         response = client.get(normalized + "/health")
     if response.status_code >= 400:
         try:
@@ -222,6 +237,30 @@ def test_api_health(base_url: str) -> dict:
         "status": payload.get("status", "ok"),
         "payload": payload,
     }
+
+
+def _is_direct_tls_endpoint(base_url: str) -> bool:
+    try:
+        parsed = urlparse(normalize_api_base_url(base_url))
+    except Exception:
+        return False
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").strip()
+    if not host:
+        return False
+    if host.lower() == "localhost":
+        return True
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
+def httpx_client(*, timeout: float | int, base_url: str | None = None) -> httpx.Client:
+    verify = not _is_direct_tls_endpoint(base_url or "")
+    return httpx.Client(timeout=timeout, trust_env=False, verify=verify)
 
 
 def b64u_encode(raw: bytes) -> str:
@@ -276,13 +315,18 @@ class ClientState:
         self.active_profile_id  = ""
         self.active_config_path = ""
         self.active_runtime_mode = ""
+        self.lang = "en"
+        self.remember_me = False
+        self.saved_username = ""
+        self.saved_password = ""
 
     def load(self):
         if not STATE_PATH.exists(): return
         d = json.loads(STATE_PATH.read_text(encoding="utf-8"))
         for k in ("base_url","session_token","user","subscription",
                   "device_id","device_private_key","device_public_key","last_bundle",
-                  "active_transport","active_interface","active_profile_id","active_config_path","active_runtime_mode"):
+                  "active_transport","active_interface","active_profile_id","active_config_path","active_runtime_mode",
+                  "lang","remember_me","saved_username","saved_password"):
             setattr(self, k, d.get(k, getattr(self, k)))
         self.base_url = normalize_api_base_url(self.base_url)
 
@@ -295,7 +339,8 @@ class ClientState:
             "device_public_key":self.device_public_key,"last_bundle":self.last_bundle,
             "active_transport":self.active_transport,"active_interface":self.active_interface,
             "active_profile_id":self.active_profile_id,"active_config_path":self.active_config_path,
-            "active_runtime_mode":self.active_runtime_mode,
+            "active_runtime_mode":self.active_runtime_mode,"lang":self.lang,
+            "remember_me":self.remember_me,"saved_username":self.saved_username,"saved_password":self.saved_password,
         },indent=2,ensure_ascii=False),encoding="utf-8")
 
     def clear_session(self):
@@ -380,10 +425,10 @@ class LocalTunnelRuntime:
         if not profiles:
             raise RuntimeError("No AWG/WG/Xray/OpenVPN+Cloak runtime profiles are available in the issued bundle.")
 
-        if self._must_use_daemon(profiles) and not self._can_use_daemon():
+        if self._must_use_daemon(profiles) and not self._ensure_daemon_available(profiles):
             raise RuntimeError(
                 "WG/AWG/Xray/OpenVPN+Cloak bundled runtime is configured for daemon mode, but the ONyX daemon pipe is unavailable.\n"
-                "Start `onyx_daemon_service.py --console` or install the Windows service first."
+                "Start ONyXClientDaemon.exe as Administrator or install the Windows service first."
             )
 
         if self._can_use_daemon():
@@ -685,6 +730,20 @@ class LocalTunnelRuntime:
         info = self._daemon_status()
         return bool(info.get("available"))
 
+    def _ensure_daemon_available(self, profiles: list[dict]) -> bool:
+        if self._can_use_daemon():
+            return True
+        if not self._must_use_daemon(profiles):
+            return False
+        if not self._start_daemon_elevated():
+            return False
+        deadline = time.time() + 8.0
+        while time.time() < deadline:
+            if self._can_use_daemon():
+                return True
+            time.sleep(0.25)
+        return False
+
     def _must_use_daemon(self, profiles: list[dict]) -> bool:
         if platform.system() != "Windows":
             return False
@@ -714,6 +773,35 @@ class LocalTunnelRuntime:
             return {"available": True, "service": (response.result or {}).get("service", "onyx-client-daemon")}
         except Exception as exc:
             return {"available": False, "error": str(exc)}
+
+    def _start_daemon_elevated(self) -> bool:
+        if platform.system() != "Windows":
+            return False
+        daemon_exe = daemon_executable_path()
+        if daemon_exe is not None:
+            result = ctypes.windll.shell32.ShellExecuteW(  # type: ignore[attr-defined]
+                None,
+                "runas",
+                str(daemon_exe),
+                "--console",
+                str(daemon_exe.parent),
+                1,
+            )
+            return int(result) > 32
+        script_path = APP_ROOT / "onyx_daemon_service.py"
+        python_exe = Path(sys.executable).resolve()
+        if not script_path.exists() or not python_exe.exists():
+            return False
+        params = f'"{script_path}" --console'
+        result = ctypes.windll.shell32.ShellExecuteW(  # type: ignore[attr-defined]
+            None,
+            "runas",
+            str(python_exe),
+            params,
+            str(APP_ROOT),
+            1,
+        )
+        return int(result) > 32
 
     def _connect_via_daemon(self, profiles: list[dict]) -> dict:
         apply_payload = {
@@ -991,9 +1079,9 @@ class FormInput(QWidget):
         super().__init__(parent)
         self.setStyleSheet("background:transparent;")
         lay=QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(4)
-        lbl=QLabel(label.upper())
-        lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;")
-        lay.addWidget(lbl)
+        self._lbl=QLabel(label.upper())
+        self._lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;")
+        lay.addWidget(self._lbl)
         self.edit=QLineEdit()
         self.edit.setPlaceholderText(placeholder)
         if password: self.edit.setEchoMode(QLineEdit.EchoMode.Password)
@@ -1001,6 +1089,7 @@ class FormInput(QWidget):
 
     def value(self): return self.edit.text().strip()
     def set_value(self,v): self.edit.setText(v)
+    def set_label(self,text): self._lbl.setText(text.upper())
 
 class StatCard(QFrame):
     def __init__(self,title,parent=None):
@@ -1043,6 +1132,124 @@ class Divider(QFrame):
         self.setStyleSheet(f"color:{C_BDR};background:{C_BDR};")
         self.setFixedHeight(1)
 
+# ── Translations ───────────────────────────────────────────────────────────────
+
+_STRINGS = {
+    "en": {
+        # Login
+        "secure_network":  "Secure Network",
+        "username":        "Username",
+        "password":        "Password",
+        "connect":         "CONNECT",
+        "connecting":      "CONNECTING...",
+        "no_account":      "No account?",
+        "request_access":  "Request access",
+        "api_host":        "API HOST",
+        "test_api":        "Test API",
+        "err_empty":       "Enter username and password.",
+        "remember_me":     "Remember me",
+        # Register
+        "back":            "← Back",
+        "req_access_title":"Request Access",
+        "fld_username":    "Username",
+        "fld_password":    "Password",
+        "fld_confirm_pw":  "Confirm Password",
+        "fld_first_name":  "First Name",
+        "fld_last_name":   "Last Name",
+        "fld_email":       "Email",
+        "fld_referral":    "Referral Code",
+        "devices_lbl":     "DEVICES (1–3)",
+        "usage_lbl":       "USAGE GOAL",
+        "usage_internet":  "Internet",
+        "usage_gaming":    "Gaming",
+        "usage_dev":       "Dev",
+        "submit":          "SUBMIT REQUEST",
+        "submitting":      "SUBMITTING...",
+        "review_note":     "Your request will be reviewed.\nYou will be notified once approved.",
+        "err_usr_req":     "Username required.",
+        "err_email_req":   "Valid email required.",
+        "err_pw_req":      "Password required.",
+        "err_pw_match":    "Passwords don't match.",
+        "submitted_title": "Submitted",
+        "submitted_msg":   "Request submitted.\nYou'll be notified once approved.",
+        "sending_to":      "Sending to:",
+    },
+    "ru": {
+        # Login
+        "secure_network":  "Защищённая сеть",
+        "username":        "Логин",
+        "password":        "Пароль",
+        "connect":         "ВОЙТИ",
+        "connecting":      "ПОДКЛЮЧЕНИЕ...",
+        "no_account":      "Нет аккаунта?",
+        "request_access":  "Запросить доступ",
+        "api_host":        "API СЕРВЕР",
+        "test_api":        "Проверить API",
+        "err_empty":       "Введите логин и пароль.",
+        "remember_me":     "Запомнить меня",
+        # Register
+        "back":            "← Назад",
+        "req_access_title":"Запросить доступ",
+        "fld_username":    "Логин",
+        "fld_password":    "Пароль",
+        "fld_confirm_pw":  "Подтвердите пароль",
+        "fld_first_name":  "Имя",
+        "fld_last_name":   "Фамилия",
+        "fld_email":       "Email",
+        "fld_referral":    "Реферальный код",
+        "devices_lbl":     "УСТРОЙСТВА (1–3)",
+        "usage_lbl":       "ЦЕЛЬ ИСПОЛЬЗОВАНИЯ",
+        "usage_internet":  "Интернет",
+        "usage_gaming":    "Игры",
+        "usage_dev":       "Разработка",
+        "submit":          "ОТПРАВИТЬ ЗАПРОС",
+        "submitting":      "ОТПРАВКА...",
+        "review_note":     "Ваш запрос будет рассмотрен.\nВы получите уведомление после одобрения.",
+        "err_usr_req":     "Укажите логин.",
+        "err_email_req":   "Укажите корректный email.",
+        "err_pw_req":      "Укажите пароль.",
+        "err_pw_match":    "Пароли не совпадают.",
+        "submitted_title": "Отправлено",
+        "submitted_msg":   "Запрос отправлен.\nВы получите уведомление после одобрения.",
+        "sending_to":      "Отправка на:",
+    },
+}
+
+class LangToggle(QWidget):
+    lang_changed = pyqtSignal(str)
+
+    def __init__(self, lang="en", parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("background:transparent;")
+        self._lang = lang
+        lay = QHBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(2)
+        self._btn_en = QPushButton("EN")
+        sep = QLabel("·"); sep.setStyleSheet(f"color:{C_T3};font-size:10px;background:transparent;")
+        self._btn_ru = QPushButton("RU")
+        for btn in (self._btn_en, self._btn_ru):
+            btn.setFlat(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(18)
+        self._btn_en.clicked.connect(lambda: self._set("en"))
+        self._btn_ru.clicked.connect(lambda: self._set("ru"))
+        lay.addWidget(self._btn_en); lay.addWidget(sep); lay.addWidget(self._btn_ru)
+        self._style()
+
+    def _style(self):
+        for code, btn in (("en", self._btn_en), ("ru", self._btn_ru)):
+            active = code == self._lang
+            color  = C_T1 if active else C_T3
+            weight = "bold" if active else "normal"
+            btn.setStyleSheet(f"QPushButton{{background:transparent;border:none;"
+                              f"color:{color};font-family:'Courier New';font-size:10px;"
+                              f"font-weight:{weight};letter-spacing:2px;padding:0 3px;}}")
+
+    def _set(self, lang):
+        if self._lang == lang: return
+        self._lang = lang
+        self._style()
+        self.lang_changed.emit(lang)
+
 # ── Login screen ───────────────────────────────────────────────────────────────
 
 class LoginScreen(QWidget):
@@ -1050,10 +1257,19 @@ class LoginScreen(QWidget):
     go_register = pyqtSignal()
 
     def __init__(self,st,parent=None):
-        super().__init__(parent); self.st=st; self._build()
+        super().__init__(parent); self.st=st
+        self._lang = getattr(st, "lang", "en")
+        self._build()
 
     def _build(self):
         outer=QVBoxLayout(self); outer.setContentsMargins(0,0,0,0)
+
+        # Lang toggle — top centre, subtle
+        self._lang_toggle = LangToggle(self._lang)
+        self._lang_toggle.lang_changed.connect(self._on_lang_change)
+        lw=QHBoxLayout(); lw.addStretch(); lw.addWidget(self._lang_toggle); lw.addStretch()
+        outer.addSpacing(14); outer.addLayout(lw)
+
         outer.addStretch(2)
 
         # Logo
@@ -1061,28 +1277,41 @@ class LoginScreen(QWidget):
         lo=QLabel("ONyX"); lo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lo.setStyleSheet(f"color:{C_ACC2};font-size:30px;font-weight:bold;letter-spacing:5px;")
         ll.addWidget(lo)
-        ls=QLabel("Secure Network"); ls.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ls.setStyleSheet(f"color:{C_T2};font-size:11px;letter-spacing:3px;")
-        ll.addWidget(ls)
+        self._subtitle=QLabel(); self._subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._subtitle.setStyleSheet(f"color:{C_T2};font-size:11px;letter-spacing:3px;")
+        ll.addWidget(self._subtitle)
         outer.addWidget(lb); outer.addSpacing(28)
 
         # Card
         card=QFrame()
         card.setStyleSheet(f"QFrame{{background:{C_BG2};border:1px solid {C_BDR};border-radius:6px;}}")
         cl=QVBoxLayout(card); cl.setContentsMargins(28,26,28,26); cl.setSpacing(14)
-        self._ui=FormInput("Username"); cl.addWidget(self._ui)
-        self._pi=FormInput("Password",password=True)
+        self._ui=FormInput(""); cl.addWidget(self._ui)
+        self._pi=FormInput("",password=True)
         self._pi.edit.returnPressed.connect(self._do_login)
         cl.addWidget(self._pi)
         cl.addSpacing(2)
-        self._err=QLabel(""); self._err.setStyleSheet(f"color:{C_RED};font-size:12px;")
+        self._remember=QCheckBox()
+        self._remember.setStyleSheet(f"QCheckBox{{color:{C_T2};font-size:11px;background:transparent;spacing:6px;}}"
+                                     f"QCheckBox::indicator{{width:13px;height:13px;border:1px solid {C_BDR};border-radius:2px;background:{C_BG1};}}"
+                                     f"QCheckBox::indicator:checked{{background:{C_ACC};border-color:{C_ACC};}}")
+        cl.addWidget(self._remember)
+        self._err=QLabel(""); self._err.setStyleSheet(f"color:{C_RED};font-size:12px;background:transparent;")
         self._err.setWordWrap(True); self._err.hide(); cl.addWidget(self._err)
-        self._btn=AccentButton("CONNECT"); self._btn.clicked.connect(self._do_login); cl.addWidget(self._btn)
+        self._btn=AccentButton(""); self._btn.clicked.connect(self._do_login); cl.addWidget(self._btn)
 
-        rw=QWidget(); rl=QHBoxLayout(rw); rl.setContentsMargins(0,0,0,0); rl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        rl.addWidget(QLabel("No account?"))
-        lnk=QLabel(f'<a href="#" style="color:{C_ACC};text-decoration:none;"> Request access</a>')
-        lnk.linkActivated.connect(lambda _: self.go_register.emit()); rl.addWidget(lnk); cl.addWidget(rw)
+        if self.st.remember_me:
+            self._ui.set_value(self.st.saved_username)
+            self._pi.set_value(self.st.saved_password)
+            self._remember.setChecked(True)
+
+        rw=QWidget(); rw.setStyleSheet("background:transparent;")
+        rl=QHBoxLayout(rw); rl.setContentsMargins(0,0,0,0); rl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._noacct_lbl=QLabel(); self._noacct_lbl.setStyleSheet("background:transparent;")
+        rl.addWidget(self._noacct_lbl)
+        self._req_lnk=QLabel(); self._req_lnk.setStyleSheet("background:transparent;")
+        self._req_lnk.linkActivated.connect(lambda _: self.go_register.emit())
+        rl.addWidget(self._req_lnk); cl.addWidget(rw)
 
         wrap=QHBoxLayout(); wrap.addStretch(); wrap.addWidget(card); wrap.addStretch()
         card.setMinimumWidth(310); card.setMaximumWidth(350)
@@ -1090,8 +1319,8 @@ class LoginScreen(QWidget):
 
         # URL
         ub=QWidget(); ul=QVBoxLayout(ub); ul.setContentsMargins(0,0,0,0); ul.setSpacing(3)
-        sl=QLabel("API HOST"); sl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sl.setStyleSheet(f"color:{C_T3};font-size:9px;letter-spacing:2px;"); ul.addWidget(sl)
+        self._api_host_lbl=QLabel(); self._api_host_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._api_host_lbl.setStyleSheet(f"color:{C_T3};font-size:9px;letter-spacing:2px;"); ul.addWidget(self._api_host_lbl)
         self._url=QLineEdit(self.st.base_url); self._url.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._url.setPlaceholderText("api.example.com, 203.0.113.10:8081 or full https://.../api/v1")
         self._url.setToolTip("API host examples:\napi.example.com\n203.0.113.10:8081\nhttps://api.example.com/api/v1")
@@ -1099,11 +1328,32 @@ class LoginScreen(QWidget):
             border-bottom:1px solid {C_T3};border-radius:0;color:{C_T3};font-size:11px;padding:2px 0;}}
             QLineEdit:focus{{border-bottom:1px solid {C_ACC};color:{C_T2};}}""")
         self._url.editingFinished.connect(self._save_url); ul.addWidget(self._url)
-        self._test_api_btn = GhostButton("Test API")
+        self._test_api_btn = GhostButton("")
         self._test_api_btn.clicked.connect(self._test_api)
         ul.addWidget(self._test_api_btn, alignment=Qt.AlignmentFlag.AlignCenter)
         uw=QHBoxLayout(); uw.addStretch(); ub.setMaximumWidth(350); uw.addWidget(ub); uw.addStretch()
         outer.addLayout(uw); outer.addStretch(3)
+
+        self._retranslate(self._lang)
+
+    def _on_lang_change(self, lang):
+        self._lang = lang
+        self.st.lang = lang
+        self.st.save()
+        self._retranslate(lang)
+
+    def _retranslate(self, lang):
+        S = _STRINGS[lang]
+        self._subtitle.setText(S["secure_network"])
+        self._ui.set_label(S["username"])
+        self._pi.set_label(S["password"])
+        if self._btn.isEnabled():
+            self._btn.setText(S["connect"])
+        self._noacct_lbl.setText(S["no_account"])
+        self._req_lnk.setText(f'<a href="#" style="color:{C_ACC};text-decoration:none;"> {S["request_access"]}</a>')
+        self._api_host_lbl.setText(S["api_host"])
+        self._test_api_btn.setText(S["test_api"])
+        self._remember.setText(S["remember_me"])
 
     def _save_url(self):
         self.st.base_url = normalize_api_base_url(self._url.text())
@@ -1113,14 +1363,14 @@ class LoginScreen(QWidget):
     def _test_api(self):
         self._save_url()
         self._test_api_btn.setEnabled(False)
-        self._test_api_btn.setText("TESTING...")
+        self._test_api_btn.setText("..." if self._lang == "en" else "...")
 
         def _c():
             return test_api_health(self.st.base_url)
 
         def _d(data, err):
             self._test_api_btn.setEnabled(True)
-            self._test_api_btn.setText("Test API")
+            self._test_api_btn.setText(_STRINGS[self._lang]["test_api"])
             if err:
                 QMessageBox.critical(self, "API Test Failed", str(err))
                 return
@@ -1133,18 +1383,23 @@ class LoginScreen(QWidget):
         run_async(self, _c, _d)
 
     def _do_login(self):
+        S = _STRINGS[self._lang]
         self._save_url(); u=self._ui.value(); pw=self._pi.value()
-        if not u or not pw: self._err.setText("Enter username and password."); self._err.show(); return
-        self._err.hide(); self._btn.setEnabled(False); self._btn.setText("CONNECTING...")
+        if not u or not pw: self._err.setText(S["err_empty"]); self._err.show(); return
+        self._err.hide(); self._btn.setEnabled(False); self._btn.setText(S["connecting"])
         base=self.st.base_url
         def _call():
-            with httpx.Client(timeout=20) as c:
+            with httpx_client(timeout=20, base_url=base) as c:
                 r=c.post(base+"/client/auth/login",json={"username":u,"password":pw})
             if r.status_code>=400: raise RuntimeError(r.json().get("detail",r.text))
             return r.json()
         def _done(data,err):
-            self._btn.setEnabled(True); self._btn.setText("CONNECT")
+            self._btn.setEnabled(True); self._btn.setText(_STRINGS[self._lang]["connect"])
             if err: self._err.setText(str(err)); self._err.show(); return
+            if self._remember.isChecked():
+                self.st.remember_me=True; self.st.saved_username=u; self.st.saved_password=pw
+            else:
+                self.st.remember_me=False; self.st.saved_username=""; self.st.saved_password=""
             self.st.session_token=data["session_token"]; self.st.user=data["user"]
             self.st.subscription=data.get("active_subscription"); self.st.save()
             self.login_ok.emit()
@@ -1156,17 +1411,44 @@ class RegisterScreen(QWidget):
     go_back  = pyqtSignal()
     reg_done = pyqtSignal()
 
+    # field order: (state_key, string_key, is_password)
+    _FIELDS = [
+        ("username",        "fld_username",   False),
+        ("password",        "fld_password",   True),
+        ("password_confirm","fld_confirm_pw",  True),
+        ("first_name",      "fld_first_name",  False),
+        ("last_name",       "fld_last_name",   False),
+        ("email",           "fld_email",       False),
+        ("referral_code",   "fld_referral",    False),
+    ]
+
     def __init__(self,st,parent=None):
-        super().__init__(parent); self.st=st; self._build()
+        super().__init__(parent); self.st=st
+        self._lang = getattr(st, "lang", "en")
+        self._build()
+
+    def set_lang(self, lang):
+        self._lang = lang
+        self._retranslate(lang)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        lang = getattr(self.st, "lang", "en")
+        if lang != self._lang:
+            self._lang = lang
+        self._retranslate(self._lang)
+        self._reg_url.setText(self.st.base_url)
 
     def _build(self):
         outer=QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
+
+        # Header
         hdr=QFrame(); hdr.setStyleSheet(f"background:{C_BG1};border-bottom:1px solid {C_BDR};")
         hl=QHBoxLayout(hdr); hl.setContentsMargins(20,12,20,12)
-        bk=QLabel(f'<a href="#" style="color:{C_ACC};text-decoration:none;">← Back</a>')
-        bk.linkActivated.connect(lambda _: self.go_back.emit()); hl.addWidget(bk)
-        ti=QLabel("Request Access"); ti.setStyleSheet(f"color:{C_T0};font-size:14px;font-weight:bold;margin-left:12px;")
-        hl.addWidget(ti); hl.addStretch(); outer.addWidget(hdr)
+        self._bk=QLabel(); self._bk.linkActivated.connect(lambda _: self.go_back.emit()); hl.addWidget(self._bk)
+        self._ti=QLabel(); self._ti.setStyleSheet(f"color:{C_T0};font-size:14px;font-weight:bold;margin-left:12px;")
+        hl.addWidget(self._ti); hl.addStretch()
+        outer.addWidget(hdr)
 
         scroll=QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -1175,14 +1457,11 @@ class RegisterScreen(QWidget):
         lay=QVBoxLayout(inner); lay.setContentsMargins(36,22,36,28); lay.setSpacing(11)
 
         self._inp={}
-        for key,lbl,pw in [("username","Username",False),("password","Password",True),
-                            ("password_confirm","Confirm Password",True),("first_name","First Name",False),
-                            ("last_name","Last Name",False),("email","Email",False),
-                            ("referral_code","Referral Code",False)]:
-            fi=FormInput(lbl,password=pw); self._inp[key]=fi; lay.addWidget(fi)
+        for key, str_key, pw in self._FIELDS:
+            fi=FormInput("", password=pw); self._inp[key]=fi; lay.addWidget(fi)
 
-        dc_lbl=QLabel("DEVICES (1–3)")
-        dc_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:6px;"); lay.addWidget(dc_lbl)
+        self._dc_lbl=QLabel()
+        self._dc_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:6px;"); lay.addWidget(self._dc_lbl)
         dc_row=QWidget(); dr=QHBoxLayout(dc_row); dr.setContentsMargins(0,0,0,0); dr.setSpacing(14)
         self._dc=QButtonGroup(self)
         for i,v in enumerate(["1","2","3"]):
@@ -1191,45 +1470,81 @@ class RegisterScreen(QWidget):
             self._dc.addButton(rb,i); dr.addWidget(rb)
         dr.addStretch(); lay.addWidget(dc_row)
 
-        ug_lbl=QLabel("USAGE GOAL")
-        ug_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:6px;"); lay.addWidget(ug_lbl)
+        self._ug_lbl=QLabel()
+        self._ug_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:6px;"); lay.addWidget(self._ug_lbl)
         ug_row=QWidget(); ur=QHBoxLayout(ug_row); ur.setContentsMargins(0,0,0,0); ur.setSpacing(14)
         self._ug=QButtonGroup(self)
-        for i,(v,l) in enumerate([("internet","Internet"),("gaming","Gaming"),("development","Dev")]):
-            rb=QRadioButton(l); rb.setProperty("gv",v)
+        self._ug_btns=[]
+        for i,(v,sk) in enumerate([("internet","usage_internet"),("gaming","usage_gaming"),("development","usage_dev")]):
+            rb=QRadioButton(""); rb.setProperty("gv",v); rb.setProperty("sk",sk)
             if i==0: rb.setChecked(True)
-            self._ug.addButton(rb,i); ur.addWidget(rb)
+            self._ug.addButton(rb,i); ur.addWidget(rb); self._ug_btns.append(rb)
         ur.addStretch(); lay.addWidget(ug_row)
         lay.addSpacing(6)
 
         self._err=QLabel(""); self._err.setStyleSheet(f"color:{C_RED};font-size:12px;")
         self._err.setWordWrap(True); self._err.hide(); lay.addWidget(self._err)
-        self._btn=AccentButton("SUBMIT REQUEST"); self._btn.clicked.connect(self._do_reg); lay.addWidget(self._btn)
-        note=QLabel("Your request will be reviewed.\nYou will be notified once approved.")
-        note.setStyleSheet(f"color:{C_T2};font-size:11px;"); lay.addWidget(note)
+        self._btn=AccentButton(""); self._btn.clicked.connect(self._do_reg); lay.addWidget(self._btn)
+        self._note=QLabel(); self._note.setStyleSheet(f"color:{C_T2};font-size:11px;"); lay.addWidget(self._note)
+
+        # API host — editable, same layout as login screen
+        lay.addSpacing(14)
+        self._reg_api_lbl=QLabel(); self._reg_api_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._reg_api_lbl.setStyleSheet(f"color:{C_T3};font-size:9px;letter-spacing:2px;"); lay.addWidget(self._reg_api_lbl)
+        self._reg_url=QLineEdit(self.st.base_url); self._reg_url.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._reg_url.setPlaceholderText("api.example.com or https://.../api/v1")
+        self._reg_url.setStyleSheet(f"""QLineEdit{{background:transparent;border:none;
+            border-bottom:1px solid {C_T3};border-radius:0;color:{C_T3};font-size:11px;padding:2px 0;}}
+            QLineEdit:focus{{border-bottom:1px solid {C_ACC};color:{C_T2};}}""")
+        self._reg_url.editingFinished.connect(self._save_reg_url); lay.addWidget(self._reg_url)
+
+        self._retranslate(self._lang)
+
+    def _save_reg_url(self):
+        self.st.base_url = normalize_api_base_url(self._reg_url.text())
+        self._reg_url.setText(self.st.base_url)
+        self.st.save()
+
+    def _retranslate(self, lang):
+        S = _STRINGS[lang]
+        self._bk.setText(f'<a href="#" style="color:{C_ACC};text-decoration:none;">{S["back"]}</a>')
+        self._ti.setText(S["req_access_title"])
+        for key, str_key, _ in self._FIELDS:
+            self._inp[key].set_label(S[str_key])
+        self._dc_lbl.setText(S["devices_lbl"])
+        self._ug_lbl.setText(S["usage_lbl"])
+        for rb in self._ug_btns:
+            rb.setText(S[rb.property("sk")])
+        if self._btn.isEnabled():
+            self._btn.setText(S["submit"])
+        self._note.setText(S["review_note"])
+        self._reg_api_lbl.setText(S["api_host"])
 
     def _do_reg(self):
+        S = _STRINGS[self._lang]
+        self._save_reg_url()
         u=self._inp["username"].value(); em=self._inp["email"].value()
         pw=self._inp["password"].value(); pwc=self._inp["password_confirm"].value()
-        if not u: self._show_err("Username required."); return
-        if not em or "@" not in em: self._show_err("Valid email required."); return
-        if not pw: self._show_err("Password required."); return
-        if pw!=pwc: self._show_err("Passwords don't match."); return
+        if not u: self._show_err(S["err_usr_req"]); return
+        if not em or "@" not in em: self._show_err(S["err_email_req"]); return
+        if not pw: self._show_err(S["err_pw_req"]); return
+        if pw!=pwc: self._show_err(S["err_pw_match"]); return
         dc=str(self._dc.checkedId()+1)
         ub=self._ug.checkedButton(); ug=ub.property("gv") if ub else "internet"
         payload={k:v.value() for k,v in self._inp.items() if k!="password_confirm"}
         payload["requested_device_count"]=int(dc); payload["usage_goal"]=ug
-        self._err.hide(); self._btn.setEnabled(False); self._btn.setText("SUBMITTING...")
+        self._err.hide(); self._btn.setEnabled(False); self._btn.setText(S["submitting"])
         base=self.st.base_url
         def _call():
-            with httpx.Client(timeout=20) as c:
+            with httpx_client(timeout=20, base_url=base) as c:
                 r=c.post(base+"/client/registrations",json=payload)
             if r.status_code>=400: raise RuntimeError(r.json().get("detail",r.text))
             return r.json()
         def _done(_,err):
-            self._btn.setEnabled(True); self._btn.setText("SUBMIT REQUEST")
+            self._btn.setEnabled(True); self._btn.setText(_STRINGS[self._lang]["submit"])
             if err: self._show_err(str(err)); return
-            QMessageBox.information(self,"Submitted","Request submitted.\nYou'll be notified once approved.")
+            sl = _STRINGS[self._lang]
+            QMessageBox.information(self, sl["submitted_title"], sl["submitted_msg"])
             self.reg_done.emit()
         run_async(self,_call,_done)
 
@@ -1409,7 +1724,7 @@ class DashboardScreen(QWidget):
     def _refresh_me(self):
         base=self.st.base_url
         def _c():
-            with httpx.Client(timeout=20) as c:
+            with httpx_client(timeout=20, base_url=base) as c:
                 r=c.get(base+"/client/auth/me",headers=self._hdrs())
             if r.status_code>=400: raise RuntimeError(r.text)
             return r.json()
@@ -1435,7 +1750,7 @@ class DashboardScreen(QWidget):
                  "metadata":{"hostname_hint":secrets.token_hex(4)}}
         base=self.st.base_url; hdrs=self._hdrs()
         def _c():
-            with httpx.Client(timeout=20) as c:
+            with httpx_client(timeout=20, base_url=base) as c:
                 r=c.post(base+"/client/devices/register",json=payload,headers=hdrs)
             if r.status_code>=400: raise RuntimeError(r.json().get("detail",r.text))
             return r.json()
@@ -1457,7 +1772,7 @@ class DashboardScreen(QWidget):
         if not self.st.device_id: QMessageBox.warning(self,"Verify","Register device first."); return
         base=self.st.base_url; did=self.st.device_id; hdrs=self._hdrs()
         def _c():
-            with httpx.Client(timeout=20) as c:
+            with httpx_client(timeout=20, base_url=base) as c:
                 ch=c.post(base+"/client/devices/challenge",json={"device_id":did},headers=hdrs)
                 if ch.status_code>=400: raise RuntimeError(ch.text)
                 dec=self._dec_env(ch.json()["envelope"])
@@ -1473,7 +1788,7 @@ class DashboardScreen(QWidget):
         if not self.st.device_id: QMessageBox.warning(self,"Bundle","Register device first."); return
         base=self.st.base_url; did=self.st.device_id; hdrs=self._hdrs()
         def _c():
-            with httpx.Client(timeout=20) as c:
+            with httpx_client(timeout=20, base_url=base) as c:
                 current = c.get(base + "/client/bundles/current", params={"device_id": did}, headers=hdrs)
                 if current.status_code >= 400:
                     raise RuntimeError(current.json().get("detail", current.text))
@@ -1837,6 +2152,7 @@ class ONyXClient(QMainWindow):
 
         self._ls.login_ok.connect(self._on_login)
         self._ls.go_register.connect(lambda: self._go(1))
+        self._ls._lang_toggle.lang_changed.connect(self._rs.set_lang)
         self._rs.go_back.connect(lambda: self._go(0))
         self._rs.reg_done.connect(lambda: self._go(0))
         self._ds.logout_requested.connect(self._on_logout)
@@ -1853,10 +2169,27 @@ class ONyXClient(QMainWindow):
 
         self._update_tray_state()
 
+        # Create splash before show() so the first paint already has it on top
+        self._splash = None
+        if not self._start_hidden:
+            self._splash = SplashScreen(self)
+            self._splash.setGeometry(self.rect())
+            self._splash.show()
+            self._splash.finished.connect(self._on_splash_done)
+
         if self._start_hidden and self._tray is not None:
             self.hide()
         else:
             self.show()
+
+        if self._splash is not None:
+            self._splash.raise_()
+
+    def _on_splash_done(self):
+        if self._splash is not None:
+            self._splash.hide()
+            self._splash.deleteLater()
+            self._splash = None
 
     def _create_tray(self):
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -1946,7 +2279,7 @@ class ONyXClient(QMainWindow):
         def _c():
             if tok:
                 try:
-                    with httpx.Client(timeout=10) as c:
+                    with httpx_client(timeout=10, base_url=base) as c:
                         c.post(base+"/client/auth/logout", headers={"Authorization":f"Bearer {tok}"})
                 except Exception:
                     pass
@@ -1992,36 +2325,10 @@ if __name__=="__main__":
     if not app_icon.isNull():
         app.setWindowIcon(app_icon)
 
-    _main_win = None
-
-    def _launch():
-        global _main_win
-        APP_DIR.mkdir(parents=True, exist_ok=True)
-        _main_win = ONyXClient(start_hidden=args.background)
-        eff = QGraphicsOpacityEffect(_main_win)
-        _main_win.setGraphicsEffect(eff)
-        _fade = QPropertyAnimation(eff, b"opacity")
-        _fade.setDuration(300)
-        _fade.setStartValue(0.0)
-        _fade.setEndValue(1.0)
-        _fade.setEasingCurve(QEasingCurve.Type.InQuad)
-        if not args.background or _main_win._tray is None:
-            _main_win.show()
-            _main_win.raise_()
-            _main_win.activateWindow()
-        _fade.start()
-        _main_win._fade = _fade
-    show_splash = not args.background
-
-    if show_splash:
-        splash = SplashScreen()
-        if not app_icon.isNull():
-            splash.setWindowIcon(app_icon)
-        splash.finished.connect(lambda: QTimer.singleShot(0, _launch))
-        screen = app.primaryScreen().geometry()
-        splash.move((screen.width()-410)//2, (screen.height()-670)//2)
-        splash.show()
-    else:
-        _launch()
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    _main_win = ONyXClient(start_hidden=args.background)
+    if not args.background or _main_win._tray is None:
+        _main_win.raise_()
+        _main_win.activateWindow()
 
     sys.exit(app.exec())
