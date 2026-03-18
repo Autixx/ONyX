@@ -78,6 +78,7 @@ COMMON_PUBLIC_DNS_IPS = [
     "45.90.28.0/24",
     "45.90.30.0/24",
 ]
+WINDOWS_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 C_BG0  = "#0d131b"
 C_BG1  = "#121b25"
@@ -160,7 +161,12 @@ def autostart_launch_parts(background: bool = True) -> list[str]:
 def is_autostart_installed() -> bool:
     if platform.system() != "Windows":
         return False
-    result = subprocess.run(["schtasks", "/Query", "/TN", AUTOSTART_TASK_NAME], capture_output=True, text=True)
+    result = subprocess.run(
+        ["schtasks", "/Query", "/TN", AUTOSTART_TASK_NAME],
+        capture_output=True,
+        text=True,
+        **_subprocess_hidden_kwargs(),
+    )
     return result.returncode == 0
 
 
@@ -168,7 +174,12 @@ def install_autostart() -> None:
     if platform.system() != "Windows":
         raise RuntimeError("Autostart task is only supported on Windows.")
     command = subprocess.list2cmdline(autostart_launch_parts(background=True))
-    result = subprocess.run(["schtasks", "/Create", "/TN", AUTOSTART_TASK_NAME, "/SC", "ONLOGON", "/RL", "LIMITED", "/F", "/TR", command], capture_output=True, text=True)
+    result = subprocess.run(
+        ["schtasks", "/Create", "/TN", AUTOSTART_TASK_NAME, "/SC", "ONLOGON", "/RL", "LIMITED", "/F", "/TR", command],
+        capture_output=True,
+        text=True,
+        **_subprocess_hidden_kwargs(),
+    )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Failed to install autostart task.")
 
@@ -176,7 +187,12 @@ def install_autostart() -> None:
 def uninstall_autostart() -> None:
     if platform.system() != "Windows":
         raise RuntimeError("Autostart task is only supported on Windows.")
-    result = subprocess.run(["schtasks", "/Delete", "/TN", AUTOSTART_TASK_NAME, "/F"], capture_output=True, text=True)
+    result = subprocess.run(
+        ["schtasks", "/Delete", "/TN", AUTOSTART_TASK_NAME, "/F"],
+        capture_output=True,
+        text=True,
+        **_subprocess_hidden_kwargs(),
+    )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Failed to remove autostart task.")
 
@@ -219,6 +235,12 @@ def daemon_executable_path() -> Path | None:
         if candidate.exists():
             return candidate
     return None
+
+
+def _subprocess_hidden_kwargs() -> dict:
+    if platform.system() != "Windows" or not WINDOWS_CREATE_NO_WINDOW:
+        return {}
+    return {"creationflags": WINDOWS_CREATE_NO_WINDOW}
 
 
 def test_api_health(base_url: str) -> dict:
@@ -478,6 +500,7 @@ class LocalTunnelRuntime:
             capture_output=True,
             text=True,
             timeout=8,
+            **_subprocess_hidden_kwargs(),
         )
         if result.returncode != 0:
             return None
@@ -567,6 +590,7 @@ class LocalTunnelRuntime:
             capture_output=True,
             text=True,
             timeout=20,
+            **_subprocess_hidden_kwargs(),
         )
         if result.returncode != 0 and not allow_fail:
             message = result.stderr.strip() or result.stdout.strip() or f"{quick_cmd} {action} failed."
@@ -578,6 +602,7 @@ class LocalTunnelRuntime:
             capture_output=True,
             text=True,
             timeout=20,
+            **_subprocess_hidden_kwargs(),
         )
         if result.returncode != 0:
             message = result.stderr.strip() or result.stdout.strip() or f"{manager_cmd} /installtunnelservice failed."
@@ -589,6 +614,7 @@ class LocalTunnelRuntime:
             capture_output=True,
             text=True,
             timeout=20,
+            **_subprocess_hidden_kwargs(),
         )
         if result.returncode != 0 and not allow_fail:
             message = result.stderr.strip() or result.stdout.strip() or f"{manager_cmd} /uninstalltunnelservice failed."
@@ -618,6 +644,7 @@ class LocalTunnelRuntime:
                 capture_output=True,
                 text=True,
                 timeout=15,
+                **_subprocess_hidden_kwargs(),
             )
             if result.returncode != 0:
                 message = result.stderr.strip() or result.stdout.strip() or "Failed to apply DNS policy."
@@ -645,6 +672,7 @@ class LocalTunnelRuntime:
                 capture_output=True,
                 text=True,
                 timeout=15,
+                **_subprocess_hidden_kwargs(),
             )
 
     def _apply_dns_enforcement(self, resolver: str) -> None:
@@ -684,7 +712,13 @@ class LocalTunnelRuntime:
                 ]
             )
         for command in commands:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                **_subprocess_hidden_kwargs(),
+            )
             if result.returncode != 0:
                 message = result.stderr.strip() or result.stdout.strip() or "Failed to apply DNS enforcement rules."
                 raise RuntimeError(message)
@@ -703,6 +737,7 @@ class LocalTunnelRuntime:
                 capture_output=True,
                 text=True,
                 timeout=15,
+                **_subprocess_hidden_kwargs(),
             )
 
     @staticmethod
@@ -2126,7 +2161,7 @@ class ONyXClient(QMainWindow):
 
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setFixedSize(410, 670)
+        self.setFixedSize(410, 760)
         self.setStyleSheet(APP_STYLE + f"QMainWindow{{border:1px solid {C_BDR};}}")
         if not self._app_icon.isNull():
             self.setWindowIcon(self._app_icon)

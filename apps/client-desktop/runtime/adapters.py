@@ -4,11 +4,20 @@ import asyncio
 import json
 import os
 import platform
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from .models import AdapterDiagnostics, RuntimeProfile, TransportKind
 from .paths import RUNTIME_DIR, ensure_runtime_dirs, expected_binary_layout
+
+WINDOWS_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def _async_subprocess_hidden_kwargs() -> dict:
+    if platform.system() != "Windows" or not WINDOWS_CREATE_NO_WINDOW:
+        return {}
+    return {"creationflags": WINDOWS_CREATE_NO_WINDOW}
 
 
 @dataclass(slots=True)
@@ -51,6 +60,7 @@ class BaseRuntimeAdapter:
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **_async_subprocess_hidden_kwargs(),
         )
         stdout, stderr = await proc.communicate()
         return proc.returncode, stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace")
@@ -154,6 +164,7 @@ class OpenVpnCloakAdapter(BaseRuntimeAdapter):
             *cloak_args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **_async_subprocess_hidden_kwargs(),
         )
         try:
             await asyncio.wait_for(cloak_proc.wait(), timeout=1.0)
@@ -176,6 +187,7 @@ class OpenVpnCloakAdapter(BaseRuntimeAdapter):
             *openvpn_args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **_async_subprocess_hidden_kwargs(),
         )
         try:
             await asyncio.wait_for(openvpn_proc.wait(), timeout=1.0)
@@ -265,6 +277,7 @@ class OpenVpnCloakAdapter(BaseRuntimeAdapter):
                 "/F",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **_async_subprocess_hidden_kwargs(),
             )
             stdout, stderr = await proc.communicate()
             if proc.returncode not in (0, 128):
@@ -292,6 +305,7 @@ class XrayAdapter(BaseRuntimeAdapter):
             str(config_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **_async_subprocess_hidden_kwargs(),
         )
         try:
             await asyncio.wait_for(proc.wait(), timeout=1.0)
@@ -325,6 +339,7 @@ class XrayAdapter(BaseRuntimeAdapter):
                     "/F",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
+                    **_async_subprocess_hidden_kwargs(),
                 )
                 stdout, stderr = await proc.communicate()
                 if proc.returncode not in (0, 128):
