@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
+from onx.db.models.event_log import EventLevel
 from onx.schemas.client_auth import (
     ClientAuthLoginRequest,
     ClientAuthLoginResponse,
@@ -12,9 +13,11 @@ from onx.schemas.client_auth import (
 )
 from onx.schemas.users import UserRead
 from onx.services.client_auth_service import client_auth_service
+from onx.services.event_log_service import EventLogService
 
 
 router = APIRouter(prefix="/client/auth", tags=["client-auth"])
+event_log_service = EventLogService()
 
 
 def _client_ip(request: Request) -> str | None:
@@ -75,6 +78,20 @@ def login(
         user_agent=request.headers.get("user-agent"),
     )
     active_subscription = client_auth_service.get_active_subscription(db, user_id=user.id)
+    event_log_service.log(
+        db,
+        entity_type="client_auth",
+        entity_id=session.id,
+        level=EventLevel.INFO,
+        message=f"Client login for '{user.username}' succeeded.",
+        details={
+            "user_id": user.id,
+            "username": user.username,
+            "client_ip": _client_ip(request),
+            "user_agent": request.headers.get("user-agent"),
+            "session_id": session.id,
+        },
+    )
     return ClientAuthLoginResponse(
         user=_serialize_user(user),
         session=_serialize_session(session),
