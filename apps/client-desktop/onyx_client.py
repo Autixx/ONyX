@@ -1169,24 +1169,29 @@ class Divider(QFrame):
         self.setFixedHeight(1)
 
 
-class NetworkBackdrop(QWidget):
+class NetworkBackdrop(QLabel):
     def __init__(self, parent=None, *, node_count: int = 72):
         super().__init__(parent)
         self._node_count = node_count
         self._nodes: list[tuple[float, float]] = []
         self._edges: list[tuple[int, int]] = []
-        self._phase = 0.0
-        self._signal_count = 7
-        self._speed = 0.0105
+        self._render_size = QSize()
+        self._rebuilding = False
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setStyleSheet("background:transparent;")
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(33)
+        self.setScaledContents(False)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._rebuild()
+        size = event.size()
+        if self._rebuilding or size == self._render_size:
+            return
+        self._render_size = size
+        self._rebuilding = True
+        try:
+            self._rebuild()
+        finally:
+            self._rebuilding = False
 
     def _rebuild(self):
         width = max(1, self.width())
@@ -1203,19 +1208,17 @@ class NetworkBackdrop(QWidget):
         )
         self._nodes = nodes
         self._edges = [tuple(sorted(tuple(edge))) for edge in edges]
-        self.update()
+        self._render_frame()
 
-    def _tick(self):
-        if not self._edges:
+    def _render_frame(self):
+        if self.width() <= 0 or self.height() <= 0:
             return
-        self._phase = (self._phase + self._speed) % 1.0
-        self.update()
+        from PyQt6.QtGui import QPixmap
 
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        p = QPainter(self)
+        pix = QPixmap(self.size())
+        pix.fill(QColor(C_BG0))
+        p = QPainter(pix)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor(C_BG0))
 
         edge_pen = QPen(QColor(8, 18, 14, 52), 0.7, Qt.PenStyle.DashLine)
         edge_pen.setDashPattern([3.0, 4.0])
@@ -1225,7 +1228,7 @@ class NetworkBackdrop(QWidget):
             bx, by = self._nodes[right]
             p.drawLine(QPointF(ax, ay), QPointF(bx, by))
 
-        p.setPen(Qt.PenStyle.NoPen)
+        p.setPen(QPen(Qt.PenStyle.NoPen))
         for x, y in self._nodes:
             glow = QRadialGradient(QPointF(x, y), 11)
             glow.setColorAt(0, QColor(0, 200, 180, 18))
@@ -1235,35 +1238,8 @@ class NetworkBackdrop(QWidget):
             p.setBrush(QColor(0, 200, 180, 48))
             p.drawEllipse(QPointF(x, y), 1.8, 1.8)
 
-        for index in range(min(self._signal_count, len(self._edges))):
-            edge_idx = int((self._phase * len(self._edges) + index * (len(self._edges) / max(1, self._signal_count))) % len(self._edges))
-            left, right = self._edges[edge_idx]
-            ax, ay = self._nodes[left]
-            bx, by = self._nodes[right]
-            progress = (self._phase * 1.7 + index * 0.173) % 1.0
-            segment = 0.18
-            head = progress
-            tail = max(0.0, head - segment)
-            sx = ax + (bx - ax) * tail
-            sy = ay + (by - ay) * tail
-            ex = ax + (bx - ax) * head
-            ey = ay + (by - ay) * head
-
-            node_glow = QRadialGradient(QPointF(sx, sy), 9)
-            node_glow.setColorAt(0, QColor(0, 200, 180, 34))
-            node_glow.setColorAt(1, QColor(0, 200, 180, 0))
-            p.setBrush(QBrush(node_glow))
-            p.drawEllipse(QPointF(sx, sy), 9, 9)
-
-            active_pen = QPen(QColor(0, 200, 180, 198), 1.2, Qt.PenStyle.DashLine)
-            active_pen.setDashPattern([4.0, 3.0])
-            p.setPen(active_pen)
-            p.drawLine(QPointF(sx, sy), QPointF(ex, ey))
-
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(0, 200, 180, 210))
-            p.drawEllipse(QPointF(ex, ey), 2.2, 2.2)
         p.end()
+        self.setPixmap(pix)
 
 # ── Translations ───────────────────────────────────────────────────────────────
 
@@ -2292,9 +2268,7 @@ class ONyXClient(QMainWindow):
         root_lay.setSpacing(0)
         self.setCentralWidget(root)
 
-        self._backdrop = NetworkBackdrop(root, node_count=72)
-        self._backdrop.setGeometry(root.rect())
-        self._backdrop.lower()
+        self._backdrop = None
 
         self._titlebar = TitleBar(self)
         root_lay.addWidget(self._titlebar)
