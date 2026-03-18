@@ -684,6 +684,7 @@ td.m{color:var(--t0);}
 
       <!-- REGISTRATIONS -->
       <div class="page" id="page-registrations">
+        <div id="registrationsPanel">
         <div class="ph">
           <span class="ptitle" data-i18n="page.registrations">Registrations / Identity</span>
           <div class="pbtn-row">
@@ -712,7 +713,9 @@ td.m{color:var(--t0);}
             <tbody id="regtb"></tbody>
           </table>
         </div>
+        </div>
 
+        <div id="usersPanel">
         <div class="ph" style="margin-top:18px">
           <span class="ptitle">Users</span>
           <div class="pbtn-row">
@@ -799,6 +802,7 @@ td.m{color:var(--t0);}
             <thead><tr><th>User</th><th>Enabled</th><th>Priority</th><th>Preferred Services</th><th>Last Reconciled</th><th>Actions</th></tr></thead>
             <tbody id="tptb"></tbody>
           </table>
+        </div>
         </div>
       </div>
 
@@ -1596,7 +1600,10 @@ function formSelect(label, name, value, options, extra){
 function formTextarea(label, name, value, extra){
   return '<div class=\"mf-row '+((extra && extra.full !== false) ? 'full' : '')+'\">'
     +'<label class=\"mf-label\" for=\"'+esc(name)+'\">'+esc(label)+'</label>'
-    +'<textarea class=\"mf-textarea\" id=\"'+esc(name)+'\" name=\"'+esc(name)+'\" '+(extra && extra.placeholder ? 'placeholder=\"'+esc(extra.placeholder)+'\"' : '')+'>'+esc(value || '')+'</textarea>'
+    +'<textarea class=\"mf-textarea\" id=\"'+esc(name)+'\" name=\"'+esc(name)+'\" '
+      +(extra && extra.placeholder ? 'placeholder=\"'+esc(extra.placeholder)+'\" ' : '')
+      +(extra && extra.readonly ? 'readonly ' : '')
+      +'>'+esc(value || '')+'</textarea>'
     +(extra && extra.help ? '<div class=\"mf-help\">'+esc(extra.help)+'</div>' : '')
     +'</div>';
 }
@@ -6058,6 +6065,15 @@ var LITERAL_TEXT = {
     'WG Services': 'WG-сервисы',
     'OpenVPN+CLOAK Services': 'OpenVPN+Cloak-сервисы',
     'OpenVPN+Cloak Services': 'OpenVPN+Cloak-сервисы',
+    'CODE GEN': 'ГЕН КОДОВ',
+    'Generate': 'Сгенерировать',
+    'Generate Referral Codes': 'Генерация реферальных кодов',
+    'Generated Referral Codes': 'Сгенерированные реферальные коды',
+    'Length': 'Длина',
+    'Quantity': 'Количество',
+    'Lifetime days': 'Срок жизни, дни',
+    'Codes': 'Коды',
+    'Expires': 'Истекает',
     'Route Policy': 'Политика маршрутизации',
     'DNS Policy': 'DNS-политика',
     'DNS Policies': 'DNS-политики',
@@ -6429,6 +6445,7 @@ function renderPlans(){
       +'<td>'+esc(String(p.default_device_limit || '-'))+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="showPlan(\''+esc(p.id)+'\')">VIEW</button>'
+        +'<button class="btn sm" onclick="openPlanCodeGenModal(\''+esc(p.id)+'\')">CODE GEN</button>'
         +'<button class="btn sm" onclick="openPlanModal(\''+esc(p.id)+'\')">EDIT</button>'
         +'<button class="btn sm red" onclick="deletePlanFlow(\''+esc(p.id)+'\')">DEL</button>'
       +'</td>'
@@ -6843,6 +6860,47 @@ function openPlanModal(planId){
   bindModalForm('planForm', function(fd){ savePlanForm(fd, planId); });
 }
 
+function openPlanCodeGenModal(planId){
+  var plan = planById(planId); if(!plan) return;
+  var body = '<form id="planCodeGenForm"><div class="modal-grid">'
+    +formInput('Length', 'code_length', '10', {type:'number', required:true})
+    +formInput('Quantity', 'quantity', '10', {type:'number', required:true})
+    +formInput('Lifetime days', 'lifetime_days', '', {type:'number'})
+    +'</div></form>';
+  openModal('Generate Referral Codes', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:'Generate', className:'btn pri', onClick:function(){ document.getElementById('planCodeGenForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('planCodeGenForm', function(fd){ generatePlanReferralCodes(planId, fd); });
+}
+
+async function generatePlanReferralCodes(planId, fd){
+  var result = await apiFetch(API_PREFIX + '/plans/' + encodeURIComponent(planId) + '/generate-referral-codes', {
+    method:'POST',
+    body:{
+      code_length: Number(fd.get('code_length') || 10),
+      quantity: Number(fd.get('quantity') || 10),
+      lifetime_days: String(fd.get('lifetime_days') || '').trim() ? Number(fd.get('lifetime_days')) : null
+    }
+  });
+  closeModal();
+  await loadReferralCodes();
+  var codesText = (result.codes || []).join('\n');
+  var summaryHtml = '<div class="modal-grid one">'
+    +'<div><label class="mf-label">Plan</label><div class="muted mono">'+esc(result.plan_code || planId)+'</div></div>'
+    +'<div><label class="mf-label">Quantity</label><div class="muted mono">'+esc(String(result.quantity || 0))+'</div></div>'
+    +'<div><label class="mf-label">Expires</label><div class="muted mono">'+esc(result.expires_at ? fmtDateTime(result.expires_at) : 'never')+'</div></div>'
+    +formTextarea('Codes', 'generated_referral_codes', codesText, {full:true, readonly:true})
+    +'</div>';
+  openModal('Generated Referral Codes', summaryHtml, {
+    buttons:[
+      {label:'Close', className:'btn pri', onClick:closeModal}
+    ]
+  });
+}
+
 async function savePlanForm(fd, planId){
   var body = {
     name: String(fd.get('name') || '').trim(),
@@ -7070,10 +7128,11 @@ var NAV_GROUPS = {
                 {p:'transit',  label:'Transit Policies'},
                 {p:'jobs',     label:'Jobs',             badge:'jbn'},
               ]},
-  access:   { label:'Access Control', pages:['peers','registrations','failban','audit'],
+  access:   { label:'Access Control', pages:['peers','registrations','users','failban','audit'],
               subs:[
                 {p:'peers',         label:'Peers',         badge:'peersBadge'},
                 {p:'registrations', label:'Registrations', badge:'regBadge'},
+                {p:'users',         label:'Users'},
                 {p:'failban',       label:'Fail2Ban',      dot:'red'},
                 {p:'audit',         label:'Audit / Access'},
               ]},
@@ -7161,11 +7220,20 @@ function switchGroup(groupName){
 
 function showPage(pageId){
   _currentPage = pageId;
+  var pageDomId = pageId === 'users' ? 'registrations' : pageId;
 
   // Hide all pages, show target
   document.querySelectorAll('.page').forEach(function(p){
-    p.classList.toggle('active', p.id === 'page-' + pageId);
+    p.classList.toggle('active', p.id === 'page-' + pageDomId);
   });
+
+  var registrationsPanel = document.getElementById('registrationsPanel');
+  var usersPanel = document.getElementById('usersPanel');
+  if(registrationsPanel && usersPanel){
+    var showUsersPanel = pageId === 'users';
+    registrationsPanel.style.display = showUsersPanel ? 'none' : '';
+    usersPanel.style.display = showUsersPanel ? '' : 'none';
+  }
 
   // Activate correct sub-tab
   document.querySelectorAll('.nav-sub-item').forEach(function(el){

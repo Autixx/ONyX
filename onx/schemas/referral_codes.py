@@ -46,3 +46,20 @@ class ReferralCodeUpdate(BaseModel):
     usage_goal_override: str | None = Field(default=None, max_length=32)
     expires_at: datetime | None = None
     note: str | None = None
+
+
+class ReferralCodePoolGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code_length: int = Field(default=10, ge=4, le=64)
+    quantity: int = Field(default=10, ge=1, le=1000)
+    lifetime_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class ReferralCodePoolGenerateResponse(ONXBaseModel):
+    plan_id: str
+    plan_code: str
+    quantity: int
+    code_length: int
+    expires_at: datetime | None
+    codes: list[str]

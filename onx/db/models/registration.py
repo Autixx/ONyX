@@ -24,6 +24,11 @@ class Registration(Base):
     first_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     referral_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    resolved_plan_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    consumed_referral_code_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    referral_device_limit_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    referral_usage_goal_override: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    referral_consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     usage_goal: Mapped[str | None] = mapped_column(String(32), nullable=True)
     device_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[RegistrationStatus] = mapped_column(

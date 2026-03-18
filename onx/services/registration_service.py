@@ -18,6 +18,7 @@ from onx.services.subscription_service import subscription_service
 
 class RegistrationService:
     def create_admin_registration(self, db: Session, payload: RegistrationCreate) -> Registration:
+        referral = self._resolve_referral_code(db, payload.referral_code)
         registration = Registration(
             username=payload.username.strip(),
             email=payload.email.strip().lower(),
@@ -25,12 +26,18 @@ class RegistrationService:
             first_name=(payload.first_name or None),
             last_name=(payload.last_name or None),
             referral_code=(payload.referral_code or None),
+            resolved_plan_id=referral.plan_id if referral is not None else None,
+            consumed_referral_code_id=referral.id if referral is not None else None,
+            referral_device_limit_override=referral.device_limit_override if referral is not None else None,
+            referral_usage_goal_override=referral.usage_goal_override if referral is not None else None,
+            referral_consumed_at=datetime.now(timezone.utc) if referral is not None else None,
             usage_goal=(payload.usage_goal or None),
             device_count=int(payload.device_count),
             note=payload.note,
         )
         db.add(registration)
         db.flush()
+        self._consume_referral_code(db, referral)
         self._auto_approve_if_allowed(db, registration=registration)
         db.commit()
         db.refresh(registration)
@@ -40,6 +47,7 @@ class RegistrationService:
         if payload.password != payload.password_confirm:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password confirmation does not match.")
         self._ensure_username_email_available(db, username=payload.username, email=payload.email)
+        referral = self._resolve_referral_code(db, payload.referral_code)
         registration = Registration(
             username=payload.username.strip(),
             email=payload.email.strip().lower(),
@@ -47,11 +55,17 @@ class RegistrationService:
             first_name=payload.first_name.strip(),
             last_name=payload.last_name.strip(),
             referral_code=(payload.referral_code or None),
+            resolved_plan_id=referral.plan_id if referral is not None else None,
+            consumed_referral_code_id=referral.id if referral is not None else None,
+            referral_device_limit_override=referral.device_limit_override if referral is not None else None,
+            referral_usage_goal_override=referral.usage_goal_override if referral is not None else None,
+            referral_consumed_at=datetime.now(timezone.utc) if referral is not None else None,
             usage_goal=payload.usage_goal.strip().lower(),
             device_count=int(payload.requested_device_count),
         )
         db.add(registration)
         db.flush()
+        self._consume_referral_code(db, referral)
         self._auto_approve_if_allowed(db, registration=registration)
         db.commit()
         db.refresh(registration)
@@ -93,18 +107,19 @@ class RegistrationService:
         db.add(user)
         db.flush()
 
-        plan = self._resolve_plan(db, plan_id=plan_id, referral_code_value=registration.referral_code)
-        referral = self._resolve_referral_code(db, registration.referral_code)
+        plan = self._resolve_plan(
+            db,
+            plan_id=plan_id,
+            resolved_plan_id=registration.resolved_plan_id,
+            referral_code_value=registration.referral_code,
+        )
         if plan is not None:
             subscription_service.build_from_plan(
                 db,
                 user=user,
                 plan=plan,
-                device_limit_override=referral.device_limit_override if referral is not None else None,
+                device_limit_override=registration.referral_device_limit_override,
             )
-        if referral is not None:
-            referral.used_count += 1
-            db.add(referral)
 
         registration.status = RegistrationStatus.APPROVED
         registration.reviewed_by = reviewed_by
@@ -126,7 +141,7 @@ class RegistrationService:
         return registration
 
     def _auto_approve_if_allowed(self, db: Session, *, registration: Registration) -> None:
-        referral = self._resolve_referral_code(db, registration.referral_code)
+        referral = self._resolve_consumed_referral_code(db, registration) or self._resolve_referral_code(db, registration.referral_code)
         if referral is None or not referral.auto_approve:
             return
         self.approve(
@@ -151,12 +166,31 @@ class RegistrationService:
             return None
         return row
 
-    def _resolve_plan(self, db: Session, *, plan_id: str | None, referral_code_value: str | None) -> Plan | None:
+    @staticmethod
+    def _resolve_consumed_referral_code(db: Session, registration: Registration) -> ReferralCode | None:
+        if not registration.consumed_referral_code_id:
+            return None
+        return db.get(ReferralCode, registration.consumed_referral_code_id)
+
+    @staticmethod
+    def _consume_referral_code(db: Session, referral: ReferralCode | None) -> None:
+        if referral is None:
+            return
+        referral.used_count += 1
+        if referral.max_uses is not None and referral.used_count >= referral.max_uses:
+            referral.enabled = False
+        db.add(referral)
+
+    def _resolve_plan(self, db: Session, *, plan_id: str | None, resolved_plan_id: str | None, referral_code_value: str | None) -> Plan | None:
         if plan_id:
             plan = db.get(Plan, plan_id)
             if plan is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found.")
             return plan
+        if resolved_plan_id:
+            plan = db.get(Plan, resolved_plan_id)
+            if plan is not None:
+                return plan
         referral = self._resolve_referral_code(db, referral_code_value)
         if referral is not None and referral.plan_id:
             return db.get(Plan, referral.plan_id)
