@@ -33,11 +33,12 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from PyQt6.QtCore import (
-    QRect, QSize, Qt, QThread, QTimer,
+    QPointF, QRect, QSize, Qt, QThread, QTimer,
     pyqtSignal, QObject,
 )
 from PyQt6.QtGui import (
     QAction, QColor, QFont, QIcon, QPainter, QPen, QRadialGradient, QBrush,
+    QPalette, QPixmap,
 )
 from onyx_splash import SplashScreen, build_bg_network
 from runtime.ipc import DaemonPipeClient
@@ -1116,7 +1117,10 @@ class FormInput(QWidget):
         self.setStyleSheet("background:transparent;")
         lay=QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(4)
         self._lbl=QLabel(label.upper())
-        self._lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;")
+        self._lbl.setStyleSheet(
+            f"color:{C_T2};font-size:10px;letter-spacing:2px;"
+            "background:transparent;border:none;padding:0;margin:0;"
+        )
         lay.addWidget(self._lbl)
         self.edit=QLineEdit()
         self.edit.setPlaceholderText(placeholder)
@@ -1170,9 +1174,10 @@ class Divider(QFrame):
 
 
 class NetworkBackdrop(QLabel):
-    def __init__(self, parent=None, *, node_count: int = 72):
+    def __init__(self, parent=None, *, node_count: int = 72, seed: int | None = None):
         super().__init__(parent)
         self._node_count = node_count
+        self._seed = seed if seed is not None else secrets.randbelow(1_000_000)
         self._nodes: list[tuple[float, float]] = []
         self._edges: list[tuple[int, int]] = []
         self._render_size = QSize()
@@ -1204,7 +1209,7 @@ class NetworkBackdrop(QLabel):
             icon_r=min(width, height) * 0.22,
             n_nodes=self._node_count,
             min_dist=54,
-            seed=13,
+            seed=self._seed,
         )
         self._nodes = nodes
         self._edges = [tuple(sorted(tuple(edge))) for edge in edges]
@@ -1240,6 +1245,47 @@ class NetworkBackdrop(QLabel):
 
         p.end()
         self.setPixmap(pix)
+
+
+def render_network_backdrop(width: int, height: int, *, node_count: int = 46, seed: int | None = None) -> QPixmap:
+    width = max(1, width)
+    height = max(1, height)
+    nodes, edges = build_bg_network(
+        width,
+        height,
+        icon_cx=width / 2,
+        icon_cy=height / 2,
+        icon_r=min(width, height) * 0.22,
+        n_nodes=node_count,
+        min_dist=54,
+        seed=seed if seed is not None else secrets.randbelow(1_000_000),
+    )
+    pix = QPixmap(width, height)
+    pix.fill(QColor(C_BG0))
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    edge_pen = QPen(QColor(8, 18, 14, 52), 0.7, Qt.PenStyle.DashLine)
+    edge_pen.setDashPattern([3.0, 4.0])
+    p.setPen(edge_pen)
+    for edge in edges:
+        left, right = tuple(edge)
+        ax, ay = nodes[left]
+        bx, by = nodes[right]
+        p.drawLine(QPointF(ax, ay), QPointF(bx, by))
+
+    p.setPen(QPen(Qt.PenStyle.NoPen))
+    for x, y in nodes:
+        glow = QRadialGradient(QPointF(x, y), 11)
+        glow.setColorAt(0, QColor(0, 200, 180, 18))
+        glow.setColorAt(1, QColor(0, 200, 180, 0))
+        p.setBrush(QBrush(glow))
+        p.drawEllipse(QPointF(x, y), 11, 11)
+        p.setBrush(QColor(0, 200, 180, 48))
+        p.drawEllipse(QPointF(x, y), 1.8, 1.8)
+
+    p.end()
+    return pix
 
 # ── Translations ───────────────────────────────────────────────────────────────
 
@@ -1367,8 +1413,9 @@ class LoginScreen(QWidget):
 
     def __init__(self,st,parent=None):
         super().__init__(parent); self.st=st
-        self.setStyleSheet("background:transparent;")
+        self.setStyleSheet("background:none;")
         self._lang = getattr(st, "lang", "en")
+        self._bg_seed = secrets.randbelow(1_000_000)
         self._build()
 
     def _build(self):
@@ -1400,21 +1447,6 @@ class LoginScreen(QWidget):
         self._pi=FormInput("",password=True)
         self._pi.edit.returnPressed.connect(self._do_login)
         cl.addWidget(self._pi)
-        line_edit_style = f"""QLineEdit{{
-            background:transparent;
-            border:none;
-            border-bottom:1px solid {C_BDR};
-            border-radius:0;
-            padding:9px 2px 6px 2px;
-            color:{C_T0};
-            font-family:'Courier New';
-            font-size:13px;
-        }}
-        QLineEdit:focus{{
-            border-bottom:1px solid {C_ACC};
-        }}"""
-        self._ui.edit.setStyleSheet(line_edit_style)
-        self._pi.edit.setStyleSheet(line_edit_style)
         cl.addSpacing(2)
         self._remember=QCheckBox()
         self._remember.setStyleSheet(f"QCheckBox{{color:{C_T2};font-size:11px;background:transparent;spacing:6px;}}"
@@ -1460,6 +1492,18 @@ class LoginScreen(QWidget):
         outer.addLayout(uw); outer.addStretch(3)
 
         self._retranslate(self._lang)
+        self._apply_backdrop()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_backdrop()
+
+    def _apply_backdrop(self):
+        pix = render_network_backdrop(self.width(), self.height(), node_count=46, seed=self._bg_seed)
+        pal = self.palette()
+        pal.setBrush(QPalette.ColorRole.Window, QBrush(pix))
+        self.setAutoFillBackground(True)
+        self.setPalette(pal)
 
     def _on_lang_change(self, lang):
         self._lang = lang
@@ -2302,30 +2346,42 @@ class ONyXClient(QMainWindow):
 
         self._update_tray_state()
 
-        # Create splash before show() so the first paint already has it on top
         self._splash = None
-        if not self._start_hidden:
-            self._splash = SplashScreen(self)
-            self._splash.setGeometry(self.rect())
-            self._splash.show()
-            self._splash.finished.connect(self._on_splash_done)
 
         if self._start_hidden and self._tray is not None:
             self.hide()
         else:
             self.show()
 
-        if self._splash is not None:
+        if not self._start_hidden:
+            self._splash = SplashScreen(None)
+            self._splash.finished.connect(self._on_splash_done)
+            self._sync_splash_geometry()
+            self._splash.show()
             self._splash.raise_()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "_backdrop") and self._backdrop is not None:
             self._backdrop.setGeometry(self.centralWidget().rect())
+        self._sync_splash_geometry()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._sync_splash_geometry()
+
+    def _sync_splash_geometry(self):
+        if self._splash is None:
+            return
+        frame = self.frameGeometry()
+        sx = frame.x() + max(0, (frame.width() - self._splash.width()) // 2)
+        sy = frame.y() + max(0, (frame.height() - self._splash.height()) // 2)
+        self._splash.move(sx, sy)
 
     def _on_splash_done(self):
         if self._splash is not None:
             self._splash.hide()
+            self._splash.close()
             self._splash.deleteLater()
             self._splash = None
 
