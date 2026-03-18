@@ -6203,7 +6203,8 @@ function applyLiteralTranslations(root){
   if(!scope) return;
   var dynamicIdSkip = {
     sb:true, sw:true, sn:true, snSub:true, sl:true, slSub:true,
-    sysCpu:true, sysRam:true, wsl:true, ubtn:true, lerr:true, topoZoomLabel:true
+    sysCpu:true, sysRam:true, wsl:true, ubtn:true, lerr:true, topoZoomLabel:true,
+    'failban-scope-line':true
   };
   scope.querySelectorAll('*').forEach(function(el){
     if(el.hasAttribute('data-i18n')) return;
