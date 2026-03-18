@@ -1412,6 +1412,15 @@ class LoginScreen(QWidget):
     login_ok    = pyqtSignal()
     go_register = pyqtSignal()
 
+    # Signal propagation constants
+    _SIG_SPEED    = 80.0   # px/sec
+    _MAX_SIGNALS  = 14
+    _BASE_SIGNALS = 6
+    _BRANCH_PROB  = 0.20
+    _MAX_BRANCH_HOPS = 3
+    _TRAIL_LIFE   = 10.0   # seconds
+    _GLOW_LIFE    = 2.5    # seconds
+
     def __init__(self,st,parent=None):
         super().__init__(parent); self.st=st
         self.setStyleSheet("background:transparent;")
@@ -1419,10 +1428,14 @@ class LoginScreen(QWidget):
         self._bg_seed = secrets.randbelow(1_000_000)
         self._bg_nodes: list[tuple[float, float]] = []
         self._bg_edges: list[tuple[int, int]] = []
-        self._bg_phase = 0.0
+        self._bg_adj:   list[list[int]] = []
+        self._signals:  list[dict] = []
+        self._trails:   list[dict] = []
+        self._node_glows: list[dict] = []
+        self._last_tick: float | None = None
         self._bg_timer = QTimer(self)
         self._bg_timer.timeout.connect(self._tick_backdrop)
-        self._bg_timer.start(70)
+        self._bg_timer.start(16)
         self._build()
 
     def _build(self):
@@ -1506,69 +1519,174 @@ class LoginScreen(QWidget):
         self._rebuild_backdrop()
 
     def _tick_backdrop(self):
-        self._bg_phase = (self._bg_phase + 0.035) % 1.0
+        now = time.monotonic()
+        if self._last_tick is None:
+            self._last_tick = now
+            return
+        dt = min(now - self._last_tick, 0.05)
+        self._last_tick = now
+
+        if not self._bg_nodes:
+            return
+
+        # Advance signals
+        finished = []
+        spawned  = []
+        for sig in self._signals:
+            fn, tn = sig['from'], sig['to']
+            fx, fy = self._bg_nodes[fn]
+            tx, ty = self._bg_nodes[tn]
+            edge_len = math.hypot(tx - fx, ty - fy)
+            sig['progress'] += (self._SIG_SPEED * dt) / max(edge_len, 1.0)
+            if sig['progress'] >= 1.0:
+                self._node_glows.append({'node': tn, 'born': now})
+                self._trails.append({'from': fn, 'to': tn, 'born': now})
+                history = sig['history']
+                avoid   = set(history[-8:])
+                nexts   = [n for n in self._bg_adj[tn] if n not in avoid] or self._bg_adj[tn]
+                if nexts:
+                    nxt = random.choice(nexts)
+                    new_history = (history + [tn])[-15:]
+                    # Maybe branch
+                    total = len(self._signals) + len(spawned)
+                    if (not sig.get('is_branch') and total < self._MAX_SIGNALS
+                            and random.random() < self._BRANCH_PROB):
+                        others = [n for n in nexts if n != nxt]
+                        if others:
+                            bn = random.choice(others)
+                            spawned.append({'from': tn, 'to': bn, 'progress': 0.0,
+                                            'history': new_history[:], 'is_branch': True,
+                                            'branch_hops': self._MAX_BRANCH_HOPS})
+                    # Continue signal
+                    sig['from'] = tn; sig['to'] = nxt
+                    sig['progress'] = 0.0; sig['history'] = new_history
+                    if sig.get('is_branch'):
+                        sig['branch_hops'] -= 1
+                        if sig['branch_hops'] <= 0:
+                            finished.append(sig)
+                else:
+                    finished.append(sig)
+
+        for s in finished:
+            if s in self._signals:
+                self._signals.remove(s)
+        self._signals.extend(spawned)
+
+        # Expire trails / glows
+        self._trails     = [t for t in self._trails     if now - t['born'] < self._TRAIL_LIFE]
+        self._node_glows = [g for g in self._node_glows if now - g['born'] < self._GLOW_LIFE]
+
+        # Replenish base signals
+        base = sum(1 for s in self._signals if not s.get('is_branch'))
+        while base < self._BASE_SIGNALS:
+            self._spawn_signal()
+            base += 1
+
         self.update()
 
+    def _spawn_signal(self):
+        if not self._bg_nodes or not self._bg_edges:
+            return
+        n = random.randrange(len(self._bg_nodes))
+        nbrs = self._bg_adj[n]
+        if not nbrs:
+            return
+        self._signals.append({'from': n, 'to': random.choice(nbrs),
+                              'progress': random.random(),
+                              'history': [n], 'is_branch': False, 'branch_hops': 0})
+
     def _rebuild_backdrop(self):
-        width = max(1, self.width())
+        width  = max(1, self.width())
         height = max(1, self.height())
         nodes, edges = build_bg_network(
-            width,
-            height,
+            width, height,
             icon_cx=width / 2,
             icon_cy=height * 0.42,
             icon_r=min(width, height) * 0.22,
-            n_nodes=46,
-            min_dist=54,
+            n_nodes=48, min_dist=52,
             seed=self._bg_seed,
         )
         self._bg_nodes = nodes
-        self._bg_edges = [tuple(sorted(tuple(edge))) for edge in edges]
+        self._bg_edges = [tuple(sorted(tuple(e))) for e in edges]
+        # Build adjacency list
+        adj: list[list[int]] = [[] for _ in nodes]
+        for a, b in self._bg_edges:
+            adj[a].append(b)
+            adj[b].append(a)
+        self._bg_adj = adj
+        # Reset animation state
+        self._signals.clear()
+        self._trails.clear()
+        self._node_glows.clear()
+        self._last_tick = None
+        for _ in range(self._BASE_SIGNALS):
+            self._spawn_signal()
 
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.fillRect(self.rect(), QColor(C_BG0))
 
-        if self._bg_nodes:
-            base_pen = QPen(QColor(8, 18, 14, 58), 0.8, Qt.PenStyle.DashLine)
-            base_pen.setDashPattern([3.0, 4.0])
-            base_pen.setDashOffset(-self._bg_phase * 36.0)
-            p.setPen(base_pen)
-            for left, right in self._bg_edges:
-                ax, ay = self._bg_nodes[left]
-                bx, by = self._bg_nodes[right]
-                p.drawLine(QPointF(ax, ay), QPointF(bx, by))
+        if not self._bg_nodes:
+            p.end(); super().paintEvent(event); return
 
-            for idx, (left, right) in enumerate(self._bg_edges):
-                ax, ay = self._bg_nodes[left]
-                bx, by = self._bg_nodes[right]
-                pulse = (self._bg_phase + idx * 0.073) % 1.0
-                seg_start = max(0.0, pulse - 0.10)
-                seg_end = min(1.0, pulse + 0.10)
-                if seg_end <= seg_start:
-                    continue
-                sx = ax + (bx - ax) * seg_start
-                sy = ay + (by - ay) * seg_start
-                ex = ax + (bx - ax) * seg_end
-                ey = ay + (by - ay) * seg_end
-                hi_pen = QPen(QColor(0, 229, 204, 148), 1.1, Qt.PenStyle.DashLine)
-                hi_pen.setDashPattern([3.0, 3.0])
-                hi_pen.setDashOffset(-(self._bg_phase * 52.0 + idx * 4.0))
-                hi_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-                p.setPen(hi_pen)
-                p.drawLine(QPointF(sx, sy), QPointF(ex, ey))
+        now = time.monotonic()
 
-            p.setPen(QPen(Qt.PenStyle.NoPen))
-            for idx, (x, y) in enumerate(self._bg_nodes):
-                glow = QRadialGradient(QPointF(x, y), 11)
-                pulse = 0.45 + 0.55 * (0.5 + 0.5 * math.sin((self._bg_phase * 2.0 * math.pi) + idx * 0.37))
-                glow.setColorAt(0, QColor(0, 200, 180, int(10 + 14 * pulse)))
-                glow.setColorAt(1, QColor(0, 200, 180, 0))
-                p.setBrush(QBrush(glow))
-                p.drawEllipse(QPointF(x, y), 11, 11)
-                p.setBrush(QColor(0, 229, 204, int(28 + 36 * pulse)))
-                p.drawEllipse(QPointF(x, y), 1.8, 1.8)
+        # Base edges — dim dashed
+        base_pen = QPen(QColor(8, 18, 14, 48), 0.8, Qt.PenStyle.DashLine)
+        base_pen.setDashPattern([3.0, 4.0])
+        p.setPen(base_pen)
+        for a, b in self._bg_edges:
+            ax, ay = self._bg_nodes[a]; bx, by = self._bg_nodes[b]
+            p.drawLine(QPointF(ax, ay), QPointF(bx, by))
+
+        # Fading trails
+        for trail in self._trails:
+            age   = now - trail['born']
+            alpha = max(0.0, 1.0 - age / self._TRAIL_LIFE)
+            if alpha <= 0.0: continue
+            ax, ay = self._bg_nodes[trail['from']]
+            bx, by = self._bg_nodes[trail['to']]
+            tp = QPen(QColor(0, 200, 180, int(110 * alpha)), 0.9, Qt.PenStyle.DashLine)
+            tp.setDashPattern([3.0, 4.0])
+            p.setPen(tp)
+            p.drawLine(QPointF(ax, ay), QPointF(bx, by))
+
+        # Active signals — draw from edge start to current head (progressive)
+        for sig in self._signals:
+            fn, tn = sig['from'], sig['to']
+            prog   = sig['progress']
+            ax, ay = self._bg_nodes[fn]; bx, by = self._bg_nodes[tn]
+            ex = ax + (bx - ax) * prog;  ey = ay + (by - ay) * prog
+            # Progressively drawn portion
+            dp = QPen(QColor(0, 229, 204, 150), 1.0, Qt.PenStyle.DashLine)
+            dp.setDashPattern([3.0, 3.0])
+            dp.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(dp); p.drawLine(QPointF(ax, ay), QPointF(ex, ey))
+            # Bright leading dot
+            p.setPen(Qt.PenStyle.NoPen)
+            hg = QRadialGradient(QPointF(ex, ey), 9)
+            hg.setColorAt(0, QColor(0, 229, 204, 210))
+            hg.setColorAt(1, QColor(0, 229, 204, 0))
+            p.setBrush(QBrush(hg)); p.drawEllipse(QPointF(ex, ey), 9, 9)
+
+        # Node glows triggered by signal arrival
+        for glow in self._node_glows:
+            age   = now - glow['born']
+            alpha = max(0.0, 1.0 - age / self._GLOW_LIFE)
+            if alpha <= 0.0: continue
+            nx, ny = self._bg_nodes[glow['node']]
+            ng = QRadialGradient(QPointF(nx, ny), 16)
+            ng.setColorAt(0, QColor(0, 200, 180, int(90 * alpha)))
+            ng.setColorAt(1, QColor(0, 200, 180, 0))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(ng)); p.drawEllipse(QPointF(nx, ny), 16, 16)
+
+        # Resting nodes — tiny dim dots
+        p.setPen(Qt.PenStyle.NoPen)
+        for x, y in self._bg_nodes:
+            p.setBrush(QColor(0, 200, 180, 28))
+            p.drawEllipse(QPointF(x, y), 1.8, 1.8)
 
         p.end()
         super().paintEvent(event)
@@ -1785,7 +1903,7 @@ class RegisterScreen(QWidget):
         if pw!=pwc: self._show_err(S["err_pw_match"]); return
         dc=str(self._dc.checkedId()+1)
         ub=self._ug.checkedButton(); ug=ub.property("gv") if ub else "internet"
-        payload={k:v.value() for k,v in self._inp.items() if k!="password_confirm"}
+        payload={k:v.value() for k,v in self._inp.items()}
         payload["requested_device_count"]=int(dc); payload["usage_goal"]=ug
         self._err.hide(); self._btn.setEnabled(False); self._btn.setText(S["submitting"])
         base=self.st.base_url
