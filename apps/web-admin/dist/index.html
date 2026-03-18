@@ -101,6 +101,10 @@ body{display:flex;flex-direction:column;}
 .reg-row-pending td{border-left:2px solid var(--acc);}
 .reg-row-rejected td{opacity:.5;}
 .reg-actions{display:flex;gap:5px;}
+.ref-code-cell{display:flex;align-items:center;gap:8px;}
+.ref-copy-btn{opacity:0;pointer-events:none;transition:opacity .12s ease;}
+tbody tr:hover .ref-copy-btn,
+.ref-code-cell:hover .ref-copy-btn{opacity:1;pointer-events:auto;}
 
 /* в”Ђв”Ђ MAIN в”Ђв”Ђ */
 .main{flex:1;overflow-y:auto;overflow-x:hidden;background:var(--bg0);height:100%;}
@@ -684,9 +688,8 @@ td.m{color:var(--t0);}
 
       <!-- REGISTRATIONS -->
       <div class="page" id="page-registrations">
-        <div id="registrationsPanel">
         <div class="ph">
-          <span class="ptitle" data-i18n="page.registrations">Registrations / Identity</span>
+          <span class="ptitle" data-i18n="page.registrations">Registrations</span>
           <div class="pbtn-row">
             <select id="regStatusFilter" class="mf-select" style="width:160px;padding:7px 10px;font-size:13px;">
               <option value="" data-i18n="reg.filter.all">all statuses</option>
@@ -713,10 +716,11 @@ td.m{color:var(--t0);}
             <tbody id="regtb"></tbody>
           </table>
         </div>
-        </div>
+      </div>
 
-        <div id="usersPanel">
-        <div class="ph" style="margin-top:18px">
+      <!-- USERS -->
+      <div class="page" id="page-users">
+        <div class="ph">
           <span class="ptitle">Users</span>
           <div class="pbtn-row">
             <button class="btn pri" id="btnAddUser">+ ADD USER</button>
@@ -728,10 +732,30 @@ td.m{color:var(--t0);}
             <tbody id="usertb"></tbody>
           </table>
         </div>
+      </div>
 
+      <!-- REFERRAL CODES -->
+      <div class="page" id="page-referral-codes">
+        <div class="ph">
+          <span class="ptitle">Referral Codes</span>
+          <div class="pbtn-row">
+            <button class="btn pri" id="btnGenerateReferralPool">GENERATE POOL</button>
+            <button class="btn" id="btnAddReferralCode">+ ADD REFERRAL CODE</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Code</th><th>Auto</th><th>Plan</th><th>Uses</th><th>Enabled</th><th>Actions</th></tr></thead>
+            <tbody id="reftb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- MANAGEMENT -->
+      <div class="page" id="page-management">
         <div class="two">
           <div>
-            <div class="ph" style="margin-top:8px">
+            <div class="ph">
               <span class="ptitle">Subscriptions</span>
               <div class="pbtn-row">
                 <button class="btn pri" id="btnAddSubscription">+ ADD SUBSCRIPTION</button>
@@ -745,7 +769,7 @@ td.m{color:var(--t0);}
             </div>
           </div>
           <div>
-            <div class="ph" style="margin-top:8px">
+            <div class="ph">
               <span class="ptitle">Plans</span>
               <div class="pbtn-row">
                 <button class="btn pri" id="btnAddPlan">+ ADD PLAN</button>
@@ -761,22 +785,8 @@ td.m{color:var(--t0);}
         </div>
 
         <div class="two">
-          <div>
-            <div class="ph" style="margin-top:8px">
-              <span class="ptitle">Referral Codes</span>
-              <div class="pbtn-row">
-                <button class="btn pri" id="btnAddReferralCode">+ ADD REFERRAL CODE</button>
-              </div>
-            </div>
-            <div class="tw">
-              <table>
-                <thead><tr><th>Code</th><th>Auto</th><th>Plan</th><th>Uses</th><th>Enabled</th><th>Actions</th></tr></thead>
-                <tbody id="reftb"></tbody>
-              </table>
-            </div>
-          </div>
-          <div>
-            <div class="ph" style="margin-top:8px">
+          <div style="grid-column:1 / span 1;">
+            <div class="ph">
               <span class="ptitle">Devices</span>
               <div class="pbtn-row">
                 <button class="btn" onclick="refreshIdentityData()">REFRESH</button>
@@ -789,9 +799,10 @@ td.m{color:var(--t0);}
               </table>
             </div>
           </div>
+          <div></div>
         </div>
 
-        <div class="ph" style="margin-top:18px">
+        <div class="ph">
           <span class="ptitle">Transport Packages</span>
           <div class="pbtn-row">
             <button class="btn" onclick="loadTransportPackages()">REFRESH</button>
@@ -802,7 +813,6 @@ td.m{color:var(--t0);}
             <thead><tr><th>User</th><th>Enabled</th><th>Priority</th><th>Preferred Services</th><th>Last Reconciled</th><th>Actions</th></tr></thead>
             <tbody id="tptb"></tbody>
           </table>
-        </div>
         </div>
       </div>
 
@@ -6050,6 +6060,7 @@ var LITERAL_TEXT = {
     'Peers': 'Пиры',
     'Registrations': 'Регистрации',
     'Users': 'Пользователи',
+    'Management': 'Управление',
     'Plans': 'Планы',
     'Subscriptions': 'Подписки',
     'Referral Codes': 'Реферальные коды',
@@ -6066,7 +6077,9 @@ var LITERAL_TEXT = {
     'OpenVPN+CLOAK Services': 'OpenVPN+Cloak-сервисы',
     'OpenVPN+Cloak Services': 'OpenVPN+Cloak-сервисы',
     'CODE GEN': 'ГЕН КОДОВ',
+    'GENERATE POOL': 'СГЕНЕРИРОВАТЬ ПУЛ',
     'Generate': 'Сгенерировать',
+    'Generate Pool': 'Сгенерировать пул',
     'Generate Referral Codes': 'Генерация реферальных кодов',
     'Generated Referral Codes': 'Сгенерированные реферальные коды',
     'Length': 'Длина',
@@ -6074,6 +6087,8 @@ var LITERAL_TEXT = {
     'Lifetime days': 'Срок жизни, дни',
     'Codes': 'Коды',
     'Expires': 'Истекает',
+    'COPY': 'КОПИРОВАТЬ',
+    'Copy': 'Копировать',
     'Route Policy': 'Политика маршрутизации',
     'DNS Policy': 'DNS-политика',
     'DNS Policies': 'DNS-политики',
@@ -6445,7 +6460,6 @@ function renderPlans(){
       +'<td>'+esc(String(p.default_device_limit || '-'))+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="showPlan(\''+esc(p.id)+'\')">VIEW</button>'
-        +'<button class="btn sm" onclick="openPlanCodeGenModal(\''+esc(p.id)+'\')">CODE GEN</button>'
         +'<button class="btn sm" onclick="openPlanModal(\''+esc(p.id)+'\')">EDIT</button>'
         +'<button class="btn sm red" onclick="deletePlanFlow(\''+esc(p.id)+'\')">DEL</button>'
       +'</td>'
@@ -6485,7 +6499,7 @@ function renderReferralCodes(){
   }
   tb.innerHTML = REFERRAL_CODES.map(function(r){
     return '<tr>'
-      +'<td class="m">'+esc(r.code)+'</td>'
+      +'<td class="m ref-code-cell"><span>'+esc(r.code)+'</span><button class="btn sm ref-copy-btn" onclick="copyReferralCode(\''+esc(r.id)+'\');return false;">COPY</button></td>'
       +'<td>'+(r.auto_approve ? sp('active') : sp('pending'))+'</td>'
       +'<td>'+esc(planNameById(r.plan_id))+'</td>'
       +'<td>'+esc(String(r.used_count || 0) + (r.max_uses ? (' / ' + r.max_uses) : ''))+'</td>'
@@ -6860,9 +6874,35 @@ function openPlanModal(planId){
   bindModalForm('planForm', function(fd){ savePlanForm(fd, planId); });
 }
 
-function openPlanCodeGenModal(planId){
-  var plan = planById(planId); if(!plan) return;
-  var body = '<form id="planCodeGenForm"><div class="modal-grid">'
+function copyReferralCode(referralId){
+  var ref = referralCodeById(referralId); if(!ref) return;
+  var code = String(ref.code || '');
+  if(!code) return;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(function(){ pushEv('referral_code.copied', 'referral code copied: ' + code); }).catch(function(err){ alert(err && err.message ? err.message : err); });
+    return;
+  }
+  var ta = document.createElement('textarea');
+  ta.value = code;
+  ta.setAttribute('readonly', 'readonly');
+  ta.style.position = 'absolute';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  pushEv('referral_code.copied', 'referral code copied: ' + code);
+}
+
+function openReferralPoolModal(){
+  var planOptions = PLANS.map(function(p){ return {value:p.id, label:(p.code + ' — ' + p.name)}; });
+  if(!planOptions.length){
+    alert('Create a plan first.');
+    return;
+  }
+  var body = '<form id="referralPoolForm"><div class="modal-grid">'
+    +formSelect('Plan', 'plan_id', planOptions[0] ? planOptions[0].value : '', planOptions)
+    +'<div class="mf-row"><label class="mf-label">Subscription</label><div class="mf-help">Subscriptions are issued per user after registration approval. Pool codes bind to plans, not concrete subscriptions.</div></div>'
     +formInput('Length', 'code_length', '10', {type:'number', required:true})
     +formInput('Quantity', 'quantity', '10', {type:'number', required:true})
     +formInput('Lifetime days', 'lifetime_days', '', {type:'number'})
@@ -6870,16 +6910,17 @@ function openPlanCodeGenModal(planId){
   openModal('Generate Referral Codes', body, {
     buttons:[
       {label:'Cancel', className:'btn', onClick:closeModal},
-      {label:'Generate', className:'btn pri', onClick:function(){ document.getElementById('planCodeGenForm').requestSubmit(); }}
+      {label:'Generate Pool', className:'btn pri', onClick:function(){ document.getElementById('referralPoolForm').requestSubmit(); }}
     ]
   });
-  bindModalForm('planCodeGenForm', function(fd){ generatePlanReferralCodes(planId, fd); });
+  bindModalForm('referralPoolForm', generateReferralCodePool);
 }
 
-async function generatePlanReferralCodes(planId, fd){
-  var result = await apiFetch(API_PREFIX + '/plans/' + encodeURIComponent(planId) + '/generate-referral-codes', {
+async function generateReferralCodePool(fd){
+  var result = await apiFetch(API_PREFIX + '/referral-codes/generate-pool', {
     method:'POST',
     body:{
+      plan_id: String(fd.get('plan_id') || '').trim(),
       code_length: Number(fd.get('code_length') || 10),
       quantity: Number(fd.get('quantity') || 10),
       lifetime_days: String(fd.get('lifetime_days') || '').trim() ? Number(fd.get('lifetime_days')) : null
@@ -6889,7 +6930,7 @@ async function generatePlanReferralCodes(planId, fd){
   await loadReferralCodes();
   var codesText = (result.codes || []).join('\n');
   var summaryHtml = '<div class="modal-grid one">'
-    +'<div><label class="mf-label">Plan</label><div class="muted mono">'+esc(result.plan_code || planId)+'</div></div>'
+    +'<div><label class="mf-label">Plan</label><div class="muted mono">'+esc(result.plan_code || '-')+'</div></div>'
     +'<div><label class="mf-label">Quantity</label><div class="muted mono">'+esc(String(result.quantity || 0))+'</div></div>'
     +'<div><label class="mf-label">Expires</label><div class="muted mono">'+esc(result.expires_at ? fmtDateTime(result.expires_at) : 'never')+'</div></div>'
     +formTextarea('Codes', 'generated_referral_codes', codesText, {full:true, readonly:true})
@@ -7044,10 +7085,12 @@ async function revokeDeviceFlow(deviceId){
   var addPlanBtn = document.getElementById('btnAddPlan');
   var addSubscriptionBtn = document.getElementById('btnAddSubscription');
   var addReferralCodeBtn = document.getElementById('btnAddReferralCode');
+  var generateReferralPoolBtn = document.getElementById('btnGenerateReferralPool');
   if(addUserBtn){ addUserBtn.addEventListener('click', function(){ openUserModal(); }); }
   if(addPlanBtn){ addPlanBtn.addEventListener('click', function(){ openPlanModal(); }); }
   if(addSubscriptionBtn){ addSubscriptionBtn.addEventListener('click', function(){ openSubscriptionModal(); }); }
   if(addReferralCodeBtn){ addReferralCodeBtn.addEventListener('click', function(){ openReferralCodeModal(); }); }
+  if(generateReferralPoolBtn){ generateReferralPoolBtn.addEventListener('click', function(){ openReferralPoolModal(); }); }
 })();
 
 // ═══════════════════════════════════════
@@ -7128,11 +7171,13 @@ var NAV_GROUPS = {
                 {p:'transit',  label:'Transit Policies'},
                 {p:'jobs',     label:'Jobs',             badge:'jbn'},
               ]},
-  access:   { label:'Access Control', pages:['peers','registrations','users','failban','audit'],
+  access:   { label:'Access Control', pages:['peers','registrations','users','referral-codes','management','failban','audit'],
               subs:[
                 {p:'peers',         label:'Peers',         badge:'peersBadge'},
                 {p:'registrations', label:'Registrations', badge:'regBadge'},
                 {p:'users',         label:'Users'},
+                {p:'referral-codes',label:'Referral Codes'},
+                {p:'management',    label:'Management'},
                 {p:'failban',       label:'Fail2Ban',      dot:'red'},
                 {p:'audit',         label:'Audit / Access'},
               ]},
@@ -7220,20 +7265,11 @@ function switchGroup(groupName){
 
 function showPage(pageId){
   _currentPage = pageId;
-  var pageDomId = pageId === 'users' ? 'registrations' : pageId;
 
   // Hide all pages, show target
   document.querySelectorAll('.page').forEach(function(p){
-    p.classList.toggle('active', p.id === 'page-' + pageDomId);
+    p.classList.toggle('active', p.id === 'page-' + pageId);
   });
-
-  var registrationsPanel = document.getElementById('registrationsPanel');
-  var usersPanel = document.getElementById('usersPanel');
-  if(registrationsPanel && usersPanel){
-    var showUsersPanel = pageId === 'users';
-    registrationsPanel.style.display = showUsersPanel ? 'none' : '';
-    usersPanel.style.display = showUsersPanel ? '' : 'none';
-  }
 
   // Activate correct sub-tab
   document.querySelectorAll('.nav-sub-item').forEach(function(el){

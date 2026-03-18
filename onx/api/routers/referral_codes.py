@@ -1,11 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
 from onx.db.models.plan import Plan
 from onx.db.models.referral_code import ReferralCode
-from onx.schemas.referral_codes import ReferralCodeCreate, ReferralCodeRead, ReferralCodeUpdate
+from onx.schemas.referral_codes import (
+    ReferralCodeCreate,
+    ReferralCodePoolGenerateRequest,
+    ReferralCodePoolGenerateResponse,
+    ReferralCodeRead,
+    ReferralCodeUpdate,
+)
+from onx.services.referral_code_service import referral_code_service
 
 
 router = APIRouter(prefix="/referral-codes", tags=["referral-codes"])
@@ -18,14 +25,15 @@ def list_referral_codes(db: Session = Depends(get_database_session)) -> list[Ref
 
 @router.post("", response_model=ReferralCodeRead, status_code=status.HTTP_201_CREATED)
 def create_referral_code(payload: ReferralCodeCreate, db: Session = Depends(get_database_session)) -> ReferralCode:
-    existing = db.scalar(select(ReferralCode).where(ReferralCode.code == payload.code.strip()))
+    normalized_code = referral_code_service.normalize_code(payload.code)
+    existing = db.scalar(select(ReferralCode).where(func.upper(ReferralCode.code) == normalized_code))
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Referral code already exists.")
     if payload.plan_id:
         plan = db.get(Plan, payload.plan_id)
         if plan is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found.")
-    code = ReferralCode(**payload.model_dump())
+    code = ReferralCode(**(payload.model_dump() | {"code": normalized_code}))
     db.add(code)
     db.commit()
     db.refresh(code)
@@ -47,6 +55,14 @@ def update_referral_code(referral_code_id: str, payload: ReferralCodeUpdate, db:
     db.commit()
     db.refresh(code)
     return code
+
+
+@router.post("/generate-pool", response_model=ReferralCodePoolGenerateResponse, status_code=status.HTTP_201_CREATED)
+def generate_referral_code_pool(
+    payload: ReferralCodePoolGenerateRequest,
+    db: Session = Depends(get_database_session),
+) -> ReferralCodePoolGenerateResponse:
+    return referral_code_service.generate_pool(db, payload=payload)
 
 
 @router.delete("/{referral_code_id}", status_code=status.HTTP_204_NO_CONTENT)

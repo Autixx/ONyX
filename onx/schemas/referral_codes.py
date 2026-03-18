@@ -51,6 +51,7 @@ class ReferralCodeUpdate(BaseModel):
 class ReferralCodePoolGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    plan_id: str | None = None
     code_length: int = Field(default=10, ge=4, le=64)
     quantity: int = Field(default=10, ge=1, le=1000)
     lifetime_days: int | None = Field(default=None, ge=1, le=3650)

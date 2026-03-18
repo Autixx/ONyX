@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from onx.db.models.plan import Plan
@@ -13,6 +13,7 @@ from onx.db.models.user import User, UserStatus
 from onx.schemas.client_auth import ClientRegistrationCreate
 from onx.schemas.registrations import RegistrationCreate
 from onx.services.admin_web_auth_service import admin_web_auth_service
+from onx.services.referral_code_service import referral_code_service
 from onx.services.subscription_service import subscription_service
 
 
@@ -156,7 +157,8 @@ class RegistrationService:
     def _resolve_referral_code(db: Session, code_value: str | None) -> ReferralCode | None:
         if not code_value:
             return None
-        row = db.scalar(select(ReferralCode).where(ReferralCode.code == code_value.strip()))
+        normalized_code = referral_code_service.canonicalize_code(code_value)
+        row = db.scalar(select(ReferralCode).where(func.upper(ReferralCode.code) == normalized_code))
         if row is None or not row.enabled:
             return None
         now = datetime.now(timezone.utc)
