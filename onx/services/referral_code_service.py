@@ -77,7 +77,7 @@ class ReferralCodeService:
                 ReferralCode(
                     code=code_value,
                     enabled=True,
-                    auto_approve=False,
+                    auto_approve=payload.auto_approve,
                     plan_id=plan.id,
                     max_uses=1,
                     used_count=0,

@@ -6903,6 +6903,7 @@ function openReferralPoolModal(){
   var body = '<form id="referralPoolForm"><div class="modal-grid">'
     +formSelect('Plan', 'plan_id', planOptions[0] ? planOptions[0].value : '', planOptions)
     +'<div class="mf-row"><label class="mf-label">Subscription</label><div class="mf-help">Subscriptions are issued per user after registration approval. Pool codes bind to plans, not concrete subscriptions.</div></div>'
+    +formCheckbox('Auto approve', 'auto_approve', false, {caption:'Approve registration automatically'})
     +formInput('Length', 'code_length', '10', {type:'number', required:true})
     +formInput('Quantity', 'quantity', '10', {type:'number', required:true})
     +formInput('Lifetime days', 'lifetime_days', '', {type:'number'})
@@ -6921,6 +6922,7 @@ async function generateReferralCodePool(fd){
     method:'POST',
     body:{
       plan_id: String(fd.get('plan_id') || '').trim(),
+      auto_approve: checked(fd, 'auto_approve'),
       code_length: Number(fd.get('code_length') || 10),
       quantity: Number(fd.get('quantity') || 10),
       lifetime_days: String(fd.get('lifetime_days') || '').trim() ? Number(fd.get('lifetime_days')) : null
