@@ -1175,45 +1175,18 @@ class NetworkBackdrop(QWidget):
         self._node_count = node_count
         self._nodes: list[tuple[float, float]] = []
         self._edges: list[tuple[int, int]] = []
-        self._adj: dict[int, list[int]] = {}
-        self._signals: list[dict] = []
-        self._trails: list[dict] = []
-        self._glows: list[dict] = []
-        self._rng = random.Random()
-        self._fade_ms = 15000.0
-        self._base_signal_target = 6
+        self._phase = 0.0
+        self._signal_count = 7
+        self._speed = 0.0105
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setStyleSheet("background:transparent;")
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self._animate)
+        self._timer.timeout.connect(self._tick)
         self._timer.start(33)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._rebuild()
-
-    def _edge_duration_ms(self, left: int, right: int) -> float:
-        ax, ay = self._nodes[left]
-        bx, by = self._nodes[right]
-        return max(140.0, (math.hypot(ax - bx, ay - by) / 100.0) * 1000.0)
-
-    def _spawn_signal(self):
-        if not self._edges:
-            return
-        left, right = self._rng.choice(self._edges)
-        forward = self._rng.random() < 0.5
-        src = left if forward else right
-        dst = right if forward else left
-        self._signals.append({
-            "from_idx": src,
-            "to_idx": dst,
-            "prev_idx": None,
-            "history": [src],
-            "start_ms": time.monotonic() * 1000.0,
-            "duration_ms": self._edge_duration_ms(src, dst),
-            "branch_hops_left": None,
-            "has_branch": False,
-        })
 
     def _rebuild(self):
         width = max(1, self.width())
@@ -1230,102 +1203,12 @@ class NetworkBackdrop(QWidget):
         )
         self._nodes = nodes
         self._edges = [tuple(sorted(tuple(edge))) for edge in edges]
-        self._adj = {i: [] for i in range(len(self._nodes))}
-        for left, right in self._edges:
-            self._adj[left].append(right)
-            self._adj[right].append(left)
-        self._signals = []
-        self._trails = []
-        self._glows = []
-        for _ in range(self._base_signal_target):
-            self._spawn_signal()
         self.update()
 
-    def _animate(self):
-        if not self._nodes:
+    def _tick(self):
+        if not self._edges:
             return
-        now_ms = time.monotonic() * 1000.0
-        self._trails = [trail for trail in self._trails if now_ms - trail["lit_at"] < self._fade_ms]
-        self._glows = [glow for glow in self._glows if now_ms - glow["lit_at"] < self._fade_ms]
-
-        next_signals: list[dict] = []
-        for signal in self._signals:
-            progress = (now_ms - signal["start_ms"]) / signal["duration_ms"]
-            if progress < 1.0:
-                signal["progress"] = max(0.0, min(1.0, progress))
-                next_signals.append(signal)
-                continue
-
-            src = signal["from_idx"]
-            dst = signal["to_idx"]
-            ax, ay = self._nodes[src]
-            bx, by = self._nodes[dst]
-            self._trails.append({
-                "x1": ax, "y1": ay, "x2": bx, "y2": by,
-                "lit_at": now_ms,
-            })
-            self._glows.append({
-                "x": bx, "y": by, "r": 12.0, "dot_r": 3.0,
-                "lit_at": now_ms,
-            })
-
-            history = list(signal["history"]) + [dst]
-            recent = history[-15:]
-            candidates = [node for node in self._adj.get(dst, []) if node != signal["prev_idx"] and node not in recent]
-            if not candidates:
-                candidates = [node for node in self._adj.get(dst, []) if node != signal["prev_idx"]]
-            if not candidates:
-                candidates = list(self._adj.get(dst, []))
-
-            branch_hops_left = signal["branch_hops_left"]
-            if branch_hops_left is not None:
-                branch_hops_left -= 1
-                if branch_hops_left <= 0:
-                    continue
-
-            if not candidates:
-                continue
-
-            next_dst = self._rng.choice(candidates)
-            signal["prev_idx"] = dst
-            signal["from_idx"] = dst
-            signal["to_idx"] = next_dst
-            signal["history"] = history[-15:]
-            signal["start_ms"] = now_ms
-            signal["duration_ms"] = self._edge_duration_ms(dst, next_dst)
-            signal["branch_hops_left"] = branch_hops_left
-            signal["progress"] = 0.0
-            next_signals.append(signal)
-
-            can_branch = (
-                signal["branch_hops_left"] is None
-                and not signal.get("has_branch")
-                and len(next_signals) < 14
-            )
-            if can_branch and len(candidates) > 1 and self._rng.random() < 0.18:
-                branch_candidates = [node for node in candidates if node != next_dst]
-                if branch_candidates:
-                    branch_dst = self._rng.choice(branch_candidates)
-                    next_signals.append({
-                        "from_idx": dst,
-                        "to_idx": branch_dst,
-                        "prev_idx": signal["prev_idx"],
-                        "history": history[-15:],
-                        "start_ms": now_ms,
-                        "duration_ms": self._edge_duration_ms(dst, branch_dst),
-                        "branch_hops_left": 4,
-                        "has_branch": False,
-                        "progress": 0.0,
-                    })
-                    signal["has_branch"] = True
-                else:
-                    signal["has_branch"] = False
-            elif signal["branch_hops_left"] is None:
-                signal["has_branch"] = False
-
-        self._signals = next_signals
-        while len([signal for signal in self._signals if signal.get("branch_hops_left") is None]) < self._base_signal_target:
-            self._spawn_signal()
+        self._phase = (self._phase + self._speed) % 1.0
         self.update()
 
     def paintEvent(self, event):
@@ -1342,26 +1225,7 @@ class NetworkBackdrop(QWidget):
             bx, by = self._nodes[right]
             p.drawLine(QPointF(ax, ay), QPointF(bx, by))
 
-        for trail in self._trails:
-            age = max(0.0, (time.monotonic() * 1000.0) - trail["lit_at"])
-            alpha = max(0.0, 1.0 - age / self._fade_ms)
-            trail_pen = QPen(QColor(0, 200, 180, int(140 * alpha)), 1.0, Qt.PenStyle.DashLine)
-            trail_pen.setDashPattern([4.0, 3.0])
-            p.setPen(trail_pen)
-            p.drawLine(QPointF(trail["x1"], trail["y1"]), QPointF(trail["x2"], trail["y2"]))
-
         p.setPen(Qt.PenStyle.NoPen)
-        for glow_state in self._glows:
-            age = max(0.0, (time.monotonic() * 1000.0) - glow_state["lit_at"])
-            alpha = max(0.0, 1.0 - age / self._fade_ms)
-            glow = QRadialGradient(QPointF(glow_state["x"], glow_state["y"]), glow_state["r"])
-            glow.setColorAt(0, QColor(0, 200, 180, int(70 * alpha)))
-            glow.setColorAt(1, QColor(0, 200, 180, 0))
-            p.setBrush(QBrush(glow))
-            p.drawEllipse(QPointF(glow_state["x"], glow_state["y"]), glow_state["r"], glow_state["r"])
-            p.setBrush(QColor(0, 200, 180, int(170 * alpha)))
-            p.drawEllipse(QPointF(glow_state["x"], glow_state["y"]), glow_state["dot_r"], glow_state["dot_r"])
-
         for x, y in self._nodes:
             glow = QRadialGradient(QPointF(x, y), 11)
             glow.setColorAt(0, QColor(0, 200, 180, 18))
@@ -1371,26 +1235,32 @@ class NetworkBackdrop(QWidget):
             p.setBrush(QColor(0, 200, 180, 48))
             p.drawEllipse(QPointF(x, y), 1.8, 1.8)
 
-        for signal in self._signals:
-            progress = signal.get("progress", 0.0)
-            src = signal["from_idx"]
-            dst = signal["to_idx"]
-            ax, ay = self._nodes[src]
-            bx, by = self._nodes[dst]
-            ex = ax + (bx - ax) * progress
-            ey = ay + (by - ay) * progress
+        for index in range(min(self._signal_count, len(self._edges))):
+            edge_idx = int((self._phase * len(self._edges) + index * (len(self._edges) / max(1, self._signal_count))) % len(self._edges))
+            left, right = self._edges[edge_idx]
+            ax, ay = self._nodes[left]
+            bx, by = self._nodes[right]
+            progress = (self._phase * 1.7 + index * 0.173) % 1.0
+            segment = 0.18
+            head = progress
+            tail = max(0.0, head - segment)
+            sx = ax + (bx - ax) * tail
+            sy = ay + (by - ay) * tail
+            ex = ax + (bx - ax) * head
+            ey = ay + (by - ay) * head
 
-            active_pen = QPen(QColor(0, 200, 180, 198), 1.3, Qt.PenStyle.DashLine)
+            node_glow = QRadialGradient(QPointF(sx, sy), 9)
+            node_glow.setColorAt(0, QColor(0, 200, 180, 34))
+            node_glow.setColorAt(1, QColor(0, 200, 180, 0))
+            p.setBrush(QBrush(node_glow))
+            p.drawEllipse(QPointF(sx, sy), 9, 9)
+
+            active_pen = QPen(QColor(0, 200, 180, 198), 1.2, Qt.PenStyle.DashLine)
             active_pen.setDashPattern([4.0, 3.0])
             p.setPen(active_pen)
-            p.drawLine(QPointF(ax, ay), QPointF(ex, ey))
+            p.drawLine(QPointF(sx, sy), QPointF(ex, ey))
 
-            node_glow = QRadialGradient(QPointF(ax, ay), 10)
-            node_glow.setColorAt(0, QColor(0, 200, 180, 44))
-            node_glow.setColorAt(1, QColor(0, 200, 180, 0))
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(node_glow))
-            p.drawEllipse(QPointF(ax, ay), 10, 10)
             p.setBrush(QColor(0, 200, 180, 210))
             p.drawEllipse(QPointF(ex, ey), 2.2, 2.2)
         p.end()
