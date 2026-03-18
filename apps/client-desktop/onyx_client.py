@@ -16,6 +16,7 @@ import ipaddress
 import json
 import os
 import platform
+import random
 import secrets
 import shutil
 import subprocess
@@ -38,7 +39,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QAction, QColor, QFont, QIcon, QPainter, QPen, QRadialGradient, QBrush,
 )
-from onyx_splash import SplashScreen
+from onyx_splash import SplashScreen, build_bg_network
 from runtime.ipc import DaemonPipeClient
 from runtime.models import CommandEnvelope, DaemonCommand
 from runtime.paths import expected_binary_layout
@@ -1167,6 +1168,233 @@ class Divider(QFrame):
         self.setStyleSheet(f"color:{C_BDR};background:{C_BDR};")
         self.setFixedHeight(1)
 
+
+class NetworkBackdrop(QWidget):
+    def __init__(self, parent=None, *, node_count: int = 72):
+        super().__init__(parent)
+        self._node_count = node_count
+        self._nodes: list[tuple[float, float]] = []
+        self._edges: list[tuple[int, int]] = []
+        self._adj: dict[int, list[int]] = {}
+        self._signals: list[dict] = []
+        self._trails: list[dict] = []
+        self._glows: list[dict] = []
+        self._rng = random.Random()
+        self._fade_ms = 15000.0
+        self._base_signal_target = 6
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setStyleSheet("background:transparent;")
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._animate)
+        self._timer.start(33)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._rebuild()
+
+    def _edge_duration_ms(self, left: int, right: int) -> float:
+        ax, ay = self._nodes[left]
+        bx, by = self._nodes[right]
+        return max(140.0, (math.hypot(ax - bx, ay - by) / 100.0) * 1000.0)
+
+    def _spawn_signal(self):
+        if not self._edges:
+            return
+        left, right = self._rng.choice(self._edges)
+        forward = self._rng.random() < 0.5
+        src = left if forward else right
+        dst = right if forward else left
+        self._signals.append({
+            "from_idx": src,
+            "to_idx": dst,
+            "prev_idx": None,
+            "history": [src],
+            "start_ms": time.monotonic() * 1000.0,
+            "duration_ms": self._edge_duration_ms(src, dst),
+            "branch_hops_left": None,
+            "has_branch": False,
+        })
+
+    def _rebuild(self):
+        width = max(1, self.width())
+        height = max(1, self.height())
+        nodes, edges = build_bg_network(
+            width,
+            height,
+            icon_cx=width / 2,
+            icon_cy=height / 2,
+            icon_r=min(width, height) * 0.22,
+            n_nodes=self._node_count,
+            min_dist=54,
+            seed=13,
+        )
+        self._nodes = nodes
+        self._edges = [tuple(sorted(tuple(edge))) for edge in edges]
+        self._adj = {i: [] for i in range(len(self._nodes))}
+        for left, right in self._edges:
+            self._adj[left].append(right)
+            self._adj[right].append(left)
+        self._signals = []
+        self._trails = []
+        self._glows = []
+        for _ in range(self._base_signal_target):
+            self._spawn_signal()
+        self.update()
+
+    def _animate(self):
+        if not self._nodes:
+            return
+        now_ms = time.monotonic() * 1000.0
+        self._trails = [trail for trail in self._trails if now_ms - trail["lit_at"] < self._fade_ms]
+        self._glows = [glow for glow in self._glows if now_ms - glow["lit_at"] < self._fade_ms]
+
+        next_signals: list[dict] = []
+        for signal in self._signals:
+            progress = (now_ms - signal["start_ms"]) / signal["duration_ms"]
+            if progress < 1.0:
+                signal["progress"] = max(0.0, min(1.0, progress))
+                next_signals.append(signal)
+                continue
+
+            src = signal["from_idx"]
+            dst = signal["to_idx"]
+            ax, ay = self._nodes[src]
+            bx, by = self._nodes[dst]
+            self._trails.append({
+                "x1": ax, "y1": ay, "x2": bx, "y2": by,
+                "lit_at": now_ms,
+            })
+            self._glows.append({
+                "x": bx, "y": by, "r": 12.0, "dot_r": 3.0,
+                "lit_at": now_ms,
+            })
+
+            history = list(signal["history"]) + [dst]
+            recent = history[-15:]
+            candidates = [node for node in self._adj.get(dst, []) if node != signal["prev_idx"] and node not in recent]
+            if not candidates:
+                candidates = [node for node in self._adj.get(dst, []) if node != signal["prev_idx"]]
+            if not candidates:
+                candidates = list(self._adj.get(dst, []))
+
+            branch_hops_left = signal["branch_hops_left"]
+            if branch_hops_left is not None:
+                branch_hops_left -= 1
+                if branch_hops_left <= 0:
+                    continue
+
+            if not candidates:
+                continue
+
+            next_dst = self._rng.choice(candidates)
+            signal["prev_idx"] = dst
+            signal["from_idx"] = dst
+            signal["to_idx"] = next_dst
+            signal["history"] = history[-15:]
+            signal["start_ms"] = now_ms
+            signal["duration_ms"] = self._edge_duration_ms(dst, next_dst)
+            signal["branch_hops_left"] = branch_hops_left
+            signal["progress"] = 0.0
+            next_signals.append(signal)
+
+            can_branch = (
+                signal["branch_hops_left"] is None
+                and not signal.get("has_branch")
+                and len(next_signals) < 14
+            )
+            if can_branch and len(candidates) > 1 and self._rng.random() < 0.18:
+                branch_candidates = [node for node in candidates if node != next_dst]
+                if branch_candidates:
+                    branch_dst = self._rng.choice(branch_candidates)
+                    next_signals.append({
+                        "from_idx": dst,
+                        "to_idx": branch_dst,
+                        "prev_idx": signal["prev_idx"],
+                        "history": history[-15:],
+                        "start_ms": now_ms,
+                        "duration_ms": self._edge_duration_ms(dst, branch_dst),
+                        "branch_hops_left": 4,
+                        "has_branch": False,
+                        "progress": 0.0,
+                    })
+                    signal["has_branch"] = True
+                else:
+                    signal["has_branch"] = False
+            elif signal["branch_hops_left"] is None:
+                signal["has_branch"] = False
+
+        self._signals = next_signals
+        while len([signal for signal in self._signals if signal.get("branch_hops_left") is None]) < self._base_signal_target:
+            self._spawn_signal()
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor(C_BG0))
+
+        edge_pen = QPen(QColor(8, 18, 14, 52), 0.7, Qt.PenStyle.DashLine)
+        edge_pen.setDashPattern([3.0, 4.0])
+        p.setPen(edge_pen)
+        for left, right in self._edges:
+            ax, ay = self._nodes[left]
+            bx, by = self._nodes[right]
+            p.drawLine(QPointF(ax, ay), QPointF(bx, by))
+
+        for trail in self._trails:
+            age = max(0.0, (time.monotonic() * 1000.0) - trail["lit_at"])
+            alpha = max(0.0, 1.0 - age / self._fade_ms)
+            trail_pen = QPen(QColor(0, 200, 180, int(140 * alpha)), 1.0, Qt.PenStyle.DashLine)
+            trail_pen.setDashPattern([4.0, 3.0])
+            p.setPen(trail_pen)
+            p.drawLine(QPointF(trail["x1"], trail["y1"]), QPointF(trail["x2"], trail["y2"]))
+
+        p.setPen(Qt.PenStyle.NoPen)
+        for glow_state in self._glows:
+            age = max(0.0, (time.monotonic() * 1000.0) - glow_state["lit_at"])
+            alpha = max(0.0, 1.0 - age / self._fade_ms)
+            glow = QRadialGradient(QPointF(glow_state["x"], glow_state["y"]), glow_state["r"])
+            glow.setColorAt(0, QColor(0, 200, 180, int(70 * alpha)))
+            glow.setColorAt(1, QColor(0, 200, 180, 0))
+            p.setBrush(QBrush(glow))
+            p.drawEllipse(QPointF(glow_state["x"], glow_state["y"]), glow_state["r"], glow_state["r"])
+            p.setBrush(QColor(0, 200, 180, int(170 * alpha)))
+            p.drawEllipse(QPointF(glow_state["x"], glow_state["y"]), glow_state["dot_r"], glow_state["dot_r"])
+
+        for x, y in self._nodes:
+            glow = QRadialGradient(QPointF(x, y), 11)
+            glow.setColorAt(0, QColor(0, 200, 180, 18))
+            glow.setColorAt(1, QColor(0, 200, 180, 0))
+            p.setBrush(QBrush(glow))
+            p.drawEllipse(QPointF(x, y), 11, 11)
+            p.setBrush(QColor(0, 200, 180, 48))
+            p.drawEllipse(QPointF(x, y), 1.8, 1.8)
+
+        for signal in self._signals:
+            progress = signal.get("progress", 0.0)
+            src = signal["from_idx"]
+            dst = signal["to_idx"]
+            ax, ay = self._nodes[src]
+            bx, by = self._nodes[dst]
+            ex = ax + (bx - ax) * progress
+            ey = ay + (by - ay) * progress
+
+            active_pen = QPen(QColor(0, 200, 180, 198), 1.3, Qt.PenStyle.DashLine)
+            active_pen.setDashPattern([4.0, 3.0])
+            p.setPen(active_pen)
+            p.drawLine(QPointF(ax, ay), QPointF(ex, ey))
+
+            node_glow = QRadialGradient(QPointF(ax, ay), 10)
+            node_glow.setColorAt(0, QColor(0, 200, 180, 44))
+            node_glow.setColorAt(1, QColor(0, 200, 180, 0))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(node_glow))
+            p.drawEllipse(QPointF(ax, ay), 10, 10)
+            p.setBrush(QColor(0, 200, 180, 210))
+            p.drawEllipse(QPointF(ex, ey), 2.2, 2.2)
+        p.end()
+
 # ── Translations ───────────────────────────────────────────────────────────────
 
 _STRINGS = {
@@ -1293,6 +1521,7 @@ class LoginScreen(QWidget):
 
     def __init__(self,st,parent=None):
         super().__init__(parent); self.st=st
+        self.setStyleSheet("background:transparent;")
         self._lang = getattr(st, "lang", "en")
         self._build()
 
@@ -1325,6 +1554,21 @@ class LoginScreen(QWidget):
         self._pi=FormInput("",password=True)
         self._pi.edit.returnPressed.connect(self._do_login)
         cl.addWidget(self._pi)
+        line_edit_style = f"""QLineEdit{{
+            background:transparent;
+            border:none;
+            border-bottom:1px solid {C_BDR};
+            border-radius:0;
+            padding:9px 2px 6px 2px;
+            color:{C_T0};
+            font-family:'Courier New';
+            font-size:13px;
+        }}
+        QLineEdit:focus{{
+            border-bottom:1px solid {C_ACC};
+        }}"""
+        self._ui.edit.setStyleSheet(line_edit_style)
+        self._pi.edit.setStyleSheet(line_edit_style)
         cl.addSpacing(2)
         self._remember=QCheckBox()
         self._remember.setStyleSheet(f"QCheckBox{{color:{C_T2};font-size:11px;background:transparent;spacing:6px;}}"
@@ -1459,6 +1703,7 @@ class RegisterScreen(QWidget):
 
     def __init__(self,st,parent=None):
         super().__init__(parent); self.st=st
+        self.setStyleSheet("background:transparent;")
         self._lang = getattr(st, "lang", "en")
         self._build()
 
@@ -1487,16 +1732,17 @@ class RegisterScreen(QWidget):
 
         scroll=QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("background:transparent;border:none;")
         outer.addWidget(scroll)
-        inner=QWidget(); scroll.setWidget(inner)
-        lay=QVBoxLayout(inner); lay.setContentsMargins(36,22,36,28); lay.setSpacing(11)
+        inner=QWidget(); inner.setStyleSheet("background:transparent;"); scroll.setWidget(inner)
+        lay=QVBoxLayout(inner); lay.setContentsMargins(36,20,36,24); lay.setSpacing(9)
 
         self._inp={}
         for key, str_key, pw in self._FIELDS:
             fi=FormInput("", password=pw); self._inp[key]=fi; lay.addWidget(fi)
 
         self._dc_lbl=QLabel()
-        self._dc_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:6px;"); lay.addWidget(self._dc_lbl)
+        self._dc_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:4px;"); lay.addWidget(self._dc_lbl)
         dc_row=QWidget(); dr=QHBoxLayout(dc_row); dr.setContentsMargins(0,0,0,0); dr.setSpacing(14)
         self._dc=QButtonGroup(self)
         for i,v in enumerate(["1","2","3"]):
@@ -1506,7 +1752,7 @@ class RegisterScreen(QWidget):
         dr.addStretch(); lay.addWidget(dc_row)
 
         self._ug_lbl=QLabel()
-        self._ug_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:6px;"); lay.addWidget(self._ug_lbl)
+        self._ug_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:4px;"); lay.addWidget(self._ug_lbl)
         ug_row=QWidget(); ur=QHBoxLayout(ug_row); ur.setContentsMargins(0,0,0,0); ur.setSpacing(14)
         self._ug=QButtonGroup(self)
         self._ug_btns=[]
@@ -1515,7 +1761,7 @@ class RegisterScreen(QWidget):
             if i==0: rb.setChecked(True)
             self._ug.addButton(rb,i); ur.addWidget(rb); self._ug_btns.append(rb)
         ur.addStretch(); lay.addWidget(ug_row)
-        lay.addSpacing(6)
+        lay.addSpacing(4)
 
         self._err=QLabel(""); self._err.setStyleSheet(f"color:{C_RED};font-size:12px;")
         self._err.setWordWrap(True); self._err.hide(); lay.addWidget(self._err)
@@ -1523,7 +1769,7 @@ class RegisterScreen(QWidget):
         self._note=QLabel(); self._note.setStyleSheet(f"color:{C_T2};font-size:11px;"); lay.addWidget(self._note)
 
         # API host — editable, same layout as login screen
-        lay.addSpacing(14)
+        lay.addSpacing(10)
         self._reg_api_lbl=QLabel(); self._reg_api_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._reg_api_lbl.setStyleSheet(f"color:{C_T3};font-size:9px;letter-spacing:2px;"); lay.addWidget(self._reg_api_lbl)
         self._reg_url=QLineEdit(self.st.base_url); self._reg_url.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1594,6 +1840,7 @@ class DashboardScreen(QWidget):
     def __init__(self,st,parent=None):
         super().__init__(parent)
         self.st = st
+        self.setStyleSheet("background:transparent;")
         self._runtime = LocalTunnelRuntime(st)
         self._build()
         self._stats_timer = QTimer(self)
@@ -1624,8 +1871,10 @@ class DashboardScreen(QWidget):
         # Scroll
         scroll=QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("background:transparent;border:none;")
         outer.addWidget(scroll)
         content=QWidget(); scroll.setWidget(content)
+        content.setStyleSheet("background:transparent;")
         lay=QVBoxLayout(content); lay.setContentsMargins(26,26,26,26); lay.setSpacing(0)
 
         # Connection
@@ -2173,10 +2422,15 @@ class ONyXClient(QMainWindow):
         root_lay.setSpacing(0)
         self.setCentralWidget(root)
 
+        self._backdrop = NetworkBackdrop(root, node_count=72)
+        self._backdrop.setGeometry(root.rect())
+        self._backdrop.lower()
+
         self._titlebar = TitleBar(self)
         root_lay.addWidget(self._titlebar)
 
         self._stack = QStackedWidget()
+        self._stack.setStyleSheet("background:transparent;")
         root_lay.addWidget(self._stack)
 
         self._ls = LoginScreen(self.st)
@@ -2219,6 +2473,11 @@ class ONyXClient(QMainWindow):
 
         if self._splash is not None:
             self._splash.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_backdrop") and self._backdrop is not None:
+            self._backdrop.setGeometry(self.centralWidget().rect())
 
     def _on_splash_done(self):
         if self._splash is not None:
