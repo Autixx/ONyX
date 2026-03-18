@@ -66,7 +66,9 @@ body{display:flex;flex-direction:column;}
 
 /* в”Ђв”Ђ TOPBAR в”Ђв”Ђ */
 .topbar{height:44px;background:var(--bg1);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 16px;gap:0;flex-shrink:0;}
-.logo{font-size:23px;font-weight:700;color:var(--acc2);letter-spacing:.12em;white-space:nowrap;}
+.logo{display:flex;align-items:center;gap:10px;font-size:23px;font-weight:700;color:var(--acc2);letter-spacing:.12em;white-space:nowrap;}
+.logo-meta{display:flex;flex-direction:column;justify-content:center;gap:1px;line-height:1;}
+.logo-ver{font-size:12px;font-weight:400;color:#8b97a5;letter-spacing:.08em;}
 .logo-sep{color:var(--t2);font-size:15px;letter-spacing:.1em;}
 .ws-row{display:flex;align-items:center;gap:6px;margin-left:auto;}
 .wsdot{width:7px;height:7px;border-radius:50%;background:var(--grn);animation:blink 2.2s ease-in-out infinite;}
@@ -390,7 +392,7 @@ td.m{color:var(--t0);}
 
   <!-- TOPBAR -->
   <div class="topbar">
-    <div class="logo">ONyX&nbsp;<span style="font-size:12px;font-weight:400;color:var(--t1);letter-spacing:.08em;">control plane</span></div>
+    <div class="logo">ONyX<div class="logo-meta"><span class="logo-ver">ver. 0.5</span><span style="font-size:12px;font-weight:400;color:var(--t1);letter-spacing:.08em;">control plane</span></div></div>
     <div class="topbar-center">
       <div class="sys-stats">
         <div class="sys-stats-dot"></div>
