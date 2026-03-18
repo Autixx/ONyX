@@ -11,3 +11,7 @@ except ImportError:
 
 def enum_values(enum_cls):
     return [item.value for item in enum_cls]
+
+
+def enum_names(enum_cls):
+    return [item.name for item in enum_cls]

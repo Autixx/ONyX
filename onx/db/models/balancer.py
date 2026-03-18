@@ -1,5 +1,5 @@
 from datetime import datetime
-from onx.compat import StrEnum, enum_values
+from onx.compat import StrEnum, enum_names
 from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, JSON, String, UniqueConstraint, func
@@ -29,7 +29,7 @@ class Balancer(Base):
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     method: Mapped[BalancerMethod] = mapped_column(
-        Enum(BalancerMethod, name="balancer_method", values_callable=enum_values, validate_strings=True),
+        Enum(BalancerMethod, name="balancer_method", values_callable=enum_names, validate_strings=True),
         nullable=False,
         default=BalancerMethod.RANDOM,
     )

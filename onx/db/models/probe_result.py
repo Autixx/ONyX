@@ -1,5 +1,5 @@
 from datetime import datetime
-from onx.compat import StrEnum, enum_values
+from onx.compat import StrEnum, enum_names
 from uuid import uuid4
 
 from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text, func
@@ -24,12 +24,12 @@ class ProbeResult(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     probe_type: Mapped[ProbeType] = mapped_column(
-        Enum(ProbeType, name="probe_type", values_callable=enum_values, validate_strings=True),
+        Enum(ProbeType, name="probe_type", values_callable=enum_names, validate_strings=True),
         nullable=False,
         index=True,
     )
     status: Mapped[ProbeStatus] = mapped_column(
-        Enum(ProbeStatus, name="probe_status", values_callable=enum_values, validate_strings=True),
+        Enum(ProbeStatus, name="probe_status", values_callable=enum_names, validate_strings=True),
         nullable=False,
         default=ProbeStatus.SUCCESS,
         index=True,

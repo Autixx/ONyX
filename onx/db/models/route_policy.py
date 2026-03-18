@@ -1,5 +1,5 @@
 from datetime import datetime
-from onx.compat import StrEnum, enum_values
+from onx.compat import StrEnum, enum_names
 from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, JSON, String, UniqueConstraint, func
@@ -25,7 +25,7 @@ class RoutePolicy(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     ingress_interface: Mapped[str] = mapped_column(String(32), nullable=False)
     action: Mapped[RoutePolicyAction] = mapped_column(
-        Enum(RoutePolicyAction, name="route_policy_action", values_callable=enum_values, validate_strings=True),
+        Enum(RoutePolicyAction, name="route_policy_action", values_callable=enum_names, validate_strings=True),
         nullable=False,
         default=RoutePolicyAction.NEXT_HOP,
     )

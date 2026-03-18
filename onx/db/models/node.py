@@ -1,5 +1,5 @@
 from datetime import datetime
-from onx.compat import StrEnum, enum_values
+from onx.compat import StrEnum, enum_names
 from uuid import uuid4
 
 from sqlalchemy import DateTime, Enum, Float, Integer, String, func
@@ -33,7 +33,7 @@ class Node(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
     role: Mapped[NodeRole] = mapped_column(
-        Enum(NodeRole, name="node_role", values_callable=enum_values, validate_strings=True),
+        Enum(NodeRole, name="node_role", values_callable=enum_names, validate_strings=True),
         nullable=False,
         default=NodeRole.MIXED,
     )
@@ -42,11 +42,11 @@ class Node(Base):
     ssh_port: Mapped[int] = mapped_column(Integer, nullable=False, default=22)
     ssh_user: Mapped[str] = mapped_column(String(64), nullable=False)
     auth_type: Mapped[NodeAuthType] = mapped_column(
-        Enum(NodeAuthType, name="node_auth_type", values_callable=enum_values, validate_strings=True),
+        Enum(NodeAuthType, name="node_auth_type", values_callable=enum_names, validate_strings=True),
         nullable=False,
     )
     status: Mapped[NodeStatus] = mapped_column(
-        Enum(NodeStatus, name="node_status", values_callable=enum_values, validate_strings=True),
+        Enum(NodeStatus, name="node_status", values_callable=enum_names, validate_strings=True),
         nullable=False,
         default=NodeStatus.UNKNOWN,
     )
