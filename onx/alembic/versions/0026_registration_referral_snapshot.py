@@ -1,7 +1,7 @@
 """add registration referral snapshot fields
 
 Revision ID: 0026_registration_ref
-Revises: 0025_fix_node_secret_agent_token_enum
+Revises: 0025_node_agent_enum
 Create Date: 2026-03-18 12:20:00.000000
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "0026_registration_ref"
-down_revision = "0025_fix_node_secret_agent_token_enum"
+down_revision = "0025_node_agent_enum"
 branch_labels = None
 depends_on = None
 
