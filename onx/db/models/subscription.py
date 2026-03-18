@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from onx.db.models.plan import BillingMode
@@ -51,6 +51,10 @@ class Subscription(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     device_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     traffic_quota_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    access_window_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    access_days_mask: Mapped[int] = mapped_column(Integer, nullable=False, default=127, server_default="127")
+    access_window_start_local: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    access_window_end_local: Mapped[str | None] = mapped_column(String(5), nullable=True)
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

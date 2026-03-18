@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
@@ -49,7 +49,7 @@ def register_device(
         app_version=payload.app_version,
         metadata=payload.metadata,
     )
-    return DeviceRegisterResponse(device=device, device_limit=device_limit, active_device_count=active_device_count)
+    return DeviceRegisterResponse(device=client_device_service.serialize_device(device, user=user), device_limit=device_limit, active_device_count=active_device_count)
 
 
 @router.post("/challenge", response_model=DeviceChallengeResponse, status_code=status.HTTP_200_OK)
@@ -80,17 +80,18 @@ def verify_device(
 def list_my_devices(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_database_session),
-) -> list[DeviceRead]:
+) -> list[dict]:
     user, _ = _resolve_client_user(db, authorization)
-    return client_device_service.list_for_user(db, user_id=user.id)
+    return client_device_service.list_enriched(db, user_id=user.id)
 
 
-@router.post("/{device_id}/revoke", response_model=DeviceRead, status_code=status.HTTP_200_OK)
+@router.post("/{device_id}/revoke", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_my_device(
     device_id: str,
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_database_session),
-) -> DeviceRead:
+) -> Response:
     user, _ = _resolve_client_user(db, authorization)
     device = client_device_service.get_owned_device(db, user_id=user.id, device_id=device_id)
-    return client_device_service.revoke_device(db, device=device)
+    client_device_service.revoke_device(db, device=device)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

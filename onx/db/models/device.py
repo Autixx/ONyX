@@ -11,6 +11,7 @@ from onx.db.base import Base
 class DeviceStatus(StrEnum):
     PENDING = "pending"
     ACTIVE = "active"
+    BANNED = "banned"
     REVOKED = "revoked"
 
 
@@ -43,6 +44,9 @@ class Device(Base):
         server_default=func.now(),
     )
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    banned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    banned_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ban_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

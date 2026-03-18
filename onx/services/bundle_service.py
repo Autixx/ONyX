@@ -36,7 +36,11 @@ class BundleService:
     ) -> IssuedBundle:
         if user.status != UserStatus.ACTIVE:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not active.")
-        subscription = subscription_service.get_active_for_user(db, user_id=user.id)
+        subscription = subscription_service.get_active_for_user(
+            db,
+            user_id=user.id,
+            tz_offset_minutes=client_device_service.extract_timezone_offset_minutes(device.metadata_json or {}),
+        )
         if subscription is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No active subscription.")
         if subscription.status != SubscriptionStatus.ACTIVE:

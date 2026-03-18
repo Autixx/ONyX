@@ -48,6 +48,10 @@ def create_subscription(payload: SubscriptionCreate, db: Session = Depends(get_d
         expires_at=payload.expires_at,
         device_limit=payload.device_limit or (plan.default_device_limit if plan is not None else user.requested_device_count),
         traffic_quota_bytes=payload.traffic_quota_bytes if payload.traffic_quota_bytes is not None else (plan.traffic_quota_bytes if plan is not None else None),
+        access_window_enabled=payload.access_window_enabled,
+        access_days_mask=payload.access_days_mask,
+        access_window_start_local=payload.access_window_start_local,
+        access_window_end_local=payload.access_window_end_local,
     )
     db.add(subscription)
     db.commit()

@@ -250,6 +250,13 @@ td.m{color:var(--t0);}
 .modal-body{padding:16px;min-width:0;}
 .modal-grid{display:grid;grid-template-columns:repeat(2,minmax(320px,1fr));gap:12px;}
 .modal-grid.one{grid-template-columns:1fr;}
+.toast-stack{position:fixed;right:22px;bottom:22px;display:flex;flex-direction:column;gap:10px;z-index:160;max-width:min(460px,calc(100vw - 44px));pointer-events:none;}
+.toast{background:rgba(11,17,24,.96);border:1px solid var(--bdr2);box-shadow:0 12px 40px rgba(0,0,0,.28);padding:12px 14px;border-radius:4px;color:var(--t0);pointer-events:auto}
+.toast.success{border-color:rgba(0,230,160,.38)}
+.toast.error{border-color:rgba(255,80,120,.38)}
+.toast.info{border-color:rgba(0,200,180,.28)}
+.toast-title{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--t2);margin-bottom:6px}
+.toast-msg{font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
 .mf-row{display:flex;flex-direction:column;gap:6px;min-width:0;}
 .mf-row.full{grid-column:1 / -1;}
 .mf-label{font-size:13px;color:var(--t1);letter-spacing:.1em;text-transform:uppercase;}
@@ -765,7 +772,7 @@ td.m{color:var(--t0);}
             </div>
             <div class="tw">
               <table>
-                <thead><tr><th>User</th><th>Plan</th><th>Status</th><th>Expires</th><th>Devices</th><th>Actions</th></tr></thead>
+                <thead><tr><th>User</th><th>Plan</th><th>Status</th><th>Expires</th><th>Access Window</th><th>Actions</th></tr></thead>
                 <tbody id="subtb"></tbody>
               </table>
             </div>
@@ -796,7 +803,7 @@ td.m{color:var(--t0);}
             </div>
             <div class="tw">
               <table>
-                <thead><tr><th>User</th><th>Label</th><th>Platform</th><th>Status</th><th>Verified</th><th>Actions</th></tr></thead>
+                <thead><tr><th>User</th><th>Label</th><th>Platform / OS</th><th>GMT</th><th>Status</th><th>Verified</th><th>Actions</th></tr></thead>
                 <tbody id="devtb"></tbody>
               </table>
             </div>
@@ -1092,6 +1099,8 @@ td.m{color:var(--t0);}
   </div>
 </div>
 
+<div class="toast-stack" id="toastStack"></div>
+
 <script>
 var API_PREFIX = '/api/v1';
 var WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + API_PREFIX + '/ws/admin/events';
@@ -1134,6 +1143,7 @@ var TOPO_PAN_X = 0;
 var TOPO_PAN_Y = 0;
 var _topologyAutoTimer = null;
 var _topologyAutoInFlight = false;
+var _topologyRealtimeTimer = null;
 
 function nById(id){ return NODES.find(function(n){return n.id===id;})||{name:id,role:'unknown'}; }
 function linkById(id){ return LINKS.find(function(l){ return l.id===id; }) || null; }
@@ -1172,7 +1182,7 @@ function policyNameById(id){
   return policy ? policy.name : id;
 }
 function sp(s){
-  var m={reachable:'pg',degraded:'pa',offline:'pr',unreachable:'pr',unknown:'pq',active:'pg',failed:'pr',dead:'pr',deleted:'pq',planned:'pq',validating:'pb',applying:'pb',running:'pb',succeeded:'pg',success:'pg',pending:'pq',cancelled:'pa',rolled_back:'pa'};
+  var m={reachable:'pg',degraded:'pa',offline:'pr',unreachable:'pr',unknown:'pq',active:'pg',banned:'pr',failed:'pr',dead:'pr',deleted:'pq',planned:'pq',validating:'pb',applying:'pb',running:'pb',succeeded:'pg',success:'pg',pending:'pq',cancelled:'pa',rolled_back:'pa'};
   return '<span class="pill '+(m[s]||'pq')+'">'+s+'</span>';
 }
 function rp(r){
@@ -1589,6 +1599,25 @@ function bindModalForm(formId, onSubmit){
     onSubmit(new FormData(form));
   });
 }
+function showToast(message, level, title){
+  var stack = document.getElementById('toastStack');
+  if(!stack) return;
+  var toast = document.createElement('div');
+  toast.className = 'toast ' + (level || 'info');
+  toast.innerHTML = '<div class="toast-title">' + esc(title || (level === 'error' ? 'Error' : level === 'success' ? 'Done' : 'Notice')) + '</div>'
+    + '<div class="toast-msg">' + esc(message || '') + '</div>';
+  stack.appendChild(toast);
+  window.setTimeout(function(){
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(6px)';
+  }, 3400);
+  window.setTimeout(function(){
+    if(toast.parentNode){ toast.parentNode.removeChild(toast); }
+  }, 3800);
+}
+window.alert = function(message){
+  showToast(String(message == null ? '' : message), 'error', 'Notice');
+};
 function formInput(label, name, value, extra){
   return '<div class=\"mf-row '+((extra && extra.full) ? 'full' : '')+'\">'
     +'<label class=\"mf-label\" for=\"'+esc(name)+'\">'+esc(label)+'</label>'
@@ -2072,16 +2101,16 @@ function connectWS(){
       var msg = payload.message || payload.detail || payload.id || JSON.stringify(payload);
       pushEv(type, msg, payload.created_at);
       if(type.indexOf('job.') === 0){ refreshJobs().catch(function(){}); }
-      if(type.indexOf('link.') === 0){ refreshLinks().catch(function(){}); refreshTopology().catch(function(){}); }
-      if(type.indexOf('node.') === 0){ refreshNodes().catch(function(){}); refreshTopology().catch(function(){}); }
-      if(type.indexOf('node.traffic.') === 0){ refreshNodes().catch(function(){}); refreshNodeTrafficSummary().catch(function(){}); refreshTopology().catch(function(){}); }
+      if(type.indexOf('link.') === 0){ refreshLinks().catch(function(){}); scheduleTopologyRealtimeRefresh(); }
+      if(type.indexOf('node.') === 0){ refreshNodes().catch(function(){}); scheduleTopologyRealtimeRefresh(); }
+      if(type.indexOf('node.traffic.') === 0){ refreshNodes().catch(function(){}); refreshNodeTrafficSummary().catch(function(){}); scheduleTopologyRealtimeRefresh(); }
       if(type.indexOf('registration.') === 0){ loadRegistrations().catch(function(){}); loadUsers().catch(function(){}); loadSubscriptions().catch(function(){}); }
-      if(type.indexOf('peer.') === 0){ loadPeers().catch(function(){}); refreshXrayServices().catch(function(){}); refreshAwgServices().catch(function(){}); refreshWgServices().catch(function(){}); refreshOpenvpnCloakServices().catch(function(){}); }
-      if(type.indexOf('transit_policy.') === 0){ refreshTransitPolicies().catch(function(){}); refreshXrayServices().catch(function(){}); refreshAudit().catch(function(){}); }
-      if(type.indexOf('awg_service.') === 0){ refreshAwgServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
-      if(type.indexOf('wg_service.') === 0){ refreshWgServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
-      if(type.indexOf('xray_service.') === 0){ refreshXrayServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
-      if(type.indexOf('openvpn_cloak_service.') === 0){ refreshOpenvpnCloakServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); }
+      if(type.indexOf('peer.') === 0){ loadPeers().catch(function(){}); refreshXrayServices().catch(function(){}); refreshAwgServices().catch(function(){}); refreshWgServices().catch(function(){}); refreshOpenvpnCloakServices().catch(function(){}); scheduleTopologyRealtimeRefresh(); }
+      if(type.indexOf('transit_policy.') === 0){ refreshTransitPolicies().catch(function(){}); refreshXrayServices().catch(function(){}); refreshAudit().catch(function(){}); scheduleTopologyRealtimeRefresh(); }
+      if(type.indexOf('awg_service.') === 0){ refreshAwgServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); scheduleTopologyRealtimeRefresh(); }
+      if(type.indexOf('wg_service.') === 0){ refreshWgServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); scheduleTopologyRealtimeRefresh(); }
+      if(type.indexOf('xray_service.') === 0){ refreshXrayServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); scheduleTopologyRealtimeRefresh(); }
+      if(type.indexOf('openvpn_cloak_service.') === 0){ refreshOpenvpnCloakServices().catch(function(){}); loadPeers().catch(function(){}); refreshAudit().catch(function(){}); scheduleTopologyRealtimeRefresh(); }
       if(type.indexOf('user.') === 0){ loadUsers().catch(function(){}); loadTransportPackages().catch(function(){}); }
       if(type.indexOf('subscription.') === 0){ loadSubscriptions().catch(function(){}); }
       if(type.indexOf('plan.') === 0){ loadPlans().catch(function(){}); }
@@ -2359,6 +2388,14 @@ async function refreshTopology(){
   GRAPH_DATA = graph || {nodes:[], edges:[], generated_at:null};
   renderTopologyMeta();
   drawTopo();
+}
+function scheduleTopologyRealtimeRefresh(){
+  if(_currentPage !== 'topology') return;
+  if(_topologyRealtimeTimer) return;
+  _topologyRealtimeTimer = setTimeout(function(){
+    _topologyRealtimeTimer = null;
+    refreshTopology().catch(function(){});
+  }, 250);
 }
 function syncTopologyAutoButton(){
   var btn = document.getElementById('btnTopoAuto');
@@ -3043,7 +3080,7 @@ async function actionNodeDiscover(nodeId){
     var node = nById(nodeId);
     var job = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/discover', { method:'POST', body:{} });
     pushEv('job.created', 'discover queued for ' + (node.name || nodeId) + ' [' + job.id + ']');
-    alert('Probe SSH queued: ' + (node.name || nodeId) + ' [' + job.id + ']');
+    showToast('Probe SSH queued: ' + (node.name || nodeId) + ' [' + job.id + ']', 'success', 'Job queued');
     await refreshJobs();
     setTimeout(function(){ refreshNodes().catch(function(){}); refreshJobs().catch(function(){}); refreshTopology().catch(function(){}); }, 800);
     if(document.getElementById('dp').classList.contains('open') && nodeId === node.id){ showNode(nodeId); }
@@ -3057,7 +3094,7 @@ async function actionNodeBootstrap(nodeId){
     var node = nById(nodeId);
     var job = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/bootstrap-runtime', { method:'POST', body:{} });
     pushEv('job.created', 'bootstrap queued for ' + (node.name || nodeId) + ' [' + job.id + ']');
-    alert('Bootstrap queued: ' + (node.name || nodeId) + ' [' + job.id + ']');
+    showToast('Bootstrap queued: ' + (node.name || nodeId) + ' [' + job.id + ']', 'success', 'Job queued');
     await refreshJobs();
     setTimeout(function(){ refreshNodes().catch(function(){}); refreshJobs().catch(function(){}); refreshTopology().catch(function(){}); }, 800);
     if(document.getElementById('dp').classList.contains('open') && nodeId === node.id){ showNode(nodeId); }
@@ -3072,7 +3109,7 @@ async function actionNodeForceReboot(nodeId){
     var node = nById(nodeId);
     var result = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/force-reboot', { method:'POST', body:{} });
     pushEv('node.reboot_requested', (result && result.message) || ('reboot requested for ' + (node ? node.name : nodeId)));
-    alert('Reboot requested: ' + (node ? node.name : nodeId));
+    showToast('Reboot requested: ' + (node ? node.name : nodeId), 'success', 'Action queued');
     await refreshNodes();
     await refreshTopology();
     if(document.getElementById('dp').classList.contains('open') && detailContextIs('node', nodeId)){ showNode(nodeId); }
@@ -6469,6 +6506,23 @@ function renderPlans(){
   }).join('');
 }
 
+function subscriptionDaysFromMask(mask){
+  var names = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  var value = Number(mask == null ? 127 : mask);
+  var out = [];
+  for(var i = 0; i < 7; i += 1){
+    if(value & (1 << i)){ out.push(names[i]); }
+  }
+  return out;
+}
+
+function subscriptionAccessSummary(subscription){
+  if(!subscription || !subscription.access_window_enabled){ return 'unrestricted'; }
+  var days = subscriptionDaysFromMask(subscription.access_days_mask);
+  var range = ((subscription.access_window_start_local || '--:--') + '–' + (subscription.access_window_end_local || '--:--'));
+  return (days.length ? days.join(', ') : 'none') + ' / ' + range;
+}
+
 function renderSubscriptions(){
   var tb = document.getElementById('subtb');
   if(!tb) return;
@@ -6482,7 +6536,7 @@ function renderSubscriptions(){
       +'<td>'+esc(planNameById(s.plan_id))+'</td>'
       +'<td>'+sp(s.status)+'</td>'
       +'<td>'+esc(s.expires_at ? new Date(s.expires_at).toLocaleString() : 'lifetime')+'</td>'
-      +'<td>'+esc(String(s.device_limit || '-'))+'</td>'
+      +'<td>'+esc(subscriptionAccessSummary(s))+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="showSubscription(\''+esc(s.id)+'\')">VIEW</button>'
         +'<button class="btn sm" onclick="openSubscriptionModal(\''+esc(s.id)+'\')">EDIT</button>'
@@ -6519,19 +6573,22 @@ function renderDevices(){
   var tb = document.getElementById('devtb');
   if(!tb) return;
   if(!DEVICES.length){
-    tb.innerHTML = '<tr><td class="empty-state" colspan="6">No devices.</td></tr>';
+    tb.innerHTML = '<tr><td class="empty-state" colspan="7">No devices.</td></tr>';
     return;
   }
   tb.innerHTML = DEVICES.map(function(d){
+    var osPart = d.os_version ? (' / ' + d.os_version) : '';
     return '<tr>'
-      +'<td class="m">'+esc(userNameById(d.user_id))+'</td>'
+      +'<td class="m">'+esc(d.user_username || userNameById(d.user_id))+'</td>'
       +'<td>'+esc(d.device_label || '-')+'</td>'
-      +'<td>'+esc(d.platform || '-')+'</td>'
+      +'<td>'+esc((d.platform || '-') + osPart)+'</td>'
+      +'<td>'+esc(d.timezone_gmt || '-')+'</td>'
       +'<td>'+sp(d.status)+'</td>'
       +'<td>'+esc(d.verified_at ? new Date(d.verified_at).toLocaleString() : '-')+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="showDevice(\''+esc(d.id)+'\')">VIEW</button>'
-        +(d.status !== 'revoked' ? '<button class="btn sm red" onclick="revokeDeviceFlow(\''+esc(d.id)+'\')">REVOKE</button>' : '')
+        +(d.status !== 'banned' ? '<button class="btn sm" onclick="openDeviceBanModal(\''+esc(d.id)+'\')">BAN</button>' : '<button class="btn sm" onclick="unbanDeviceFlow(\''+esc(d.id)+'\')">UNBAN</button>')
+        +'<button class="btn sm red" onclick="revokeDeviceFlow(\''+esc(d.id)+'\')">REVOKE</button>'
       +'</td>'
       +'</tr>';
   }).join('');
@@ -6661,7 +6718,8 @@ function showSubscription(id){
     ['Starts', s.starts_at ? new Date(s.starts_at).toLocaleString() : '-'],
     ['Expires', s.expires_at ? new Date(s.expires_at).toLocaleString() : 'lifetime'],
     ['Device Limit', String(s.device_limit || '-')],
-    ['Traffic Quota Bytes', s.traffic_quota_bytes != null ? String(s.traffic_quota_bytes) : '-']
+    ['Traffic Quota Bytes', s.traffic_quota_bytes != null ? String(s.traffic_quota_bytes) : '-'],
+    ['Access Window', subscriptionAccessSummary(s)]
   ]));
 }
 
@@ -6685,14 +6743,24 @@ function showDevice(id){
   var d = deviceById(id); if(!d) return;
   openDP('Device ' + (d.device_label || d.id), rows([
     ['ID', d.id],
-    ['User', userNameById(d.user_id)],
+    ['User', d.user_username || userNameById(d.user_id)],
     ['Label', d.device_label || '-'],
     ['Platform', d.platform || '-'],
+    ['OS Version', d.os_version || '-'],
+    ['GMT', d.timezone_gmt || '-'],
     ['App Version', d.app_version || '-'],
     ['Status', d.status],
+    ['Ban Reason', d.ban_reason || '-'],
+    ['Banned Until', d.banned_until ? new Date(d.banned_until).toLocaleString() : (d.status === 'banned' ? 'permanent' : '-')],
     ['Verified', d.verified_at ? new Date(d.verified_at).toLocaleString() : '-'],
     ['Created', d.created_at ? new Date(d.created_at).toLocaleString() : '-']
-  ]));
+  ])
+  +'<div class="dp-actions">'
+    +(d.status === 'banned'
+      ? '<button class="btn" onclick="unbanDeviceFlow(\''+esc(d.id)+'\')">UNBAN</button>'
+      : '<button class="btn" onclick="openDeviceBanModal(\''+esc(d.id)+'\')">BAN</button>')
+    +'<button class="btn red" onclick="revokeDeviceFlow(\''+esc(d.id)+'\')">REVOKE</button>'
+  +'</div>', { kind:'device', id:d.id });
 }
 
 function showTransportPackage(id){
@@ -6978,6 +7046,10 @@ function openSubscriptionModal(subscriptionId){
   var sub = subscriptionId ? subscriptionById(subscriptionId) : null;
   var userOptions = USERS.map(function(u){ return {value:u.id, label:u.username}; });
   var planOptions = [{value:'', label:'-'}].concat(PLANS.map(function(p){ return {value:p.id, label:p.name}; }));
+  var dayMask = Number(sub && sub.access_days_mask != null ? sub.access_days_mask : 127);
+  function dayBox(idx, label){
+    return '<label style=\"display:flex;align-items:center;gap:8px;color:var(--t0);\"><input type=\"checkbox\" name=\"access_day_'+idx+'\" '+((dayMask & (1 << idx)) ? 'checked' : '')+'> '+label+'</label>';
+  }
   var body = '<form id="subscriptionForm"><div class="modal-grid">'
     +formSelect('User', 'user_id', sub ? sub.user_id : (USERS[0] ? USERS[0].id : ''), userOptions)
     +formSelect('Plan', 'plan_id', sub ? (sub.plan_id || '') : '', planOptions)
@@ -6987,6 +7059,12 @@ function openSubscriptionModal(subscriptionId){
     +formInput('Expires at (ISO)', 'expires_at', sub ? (sub.expires_at || '') : '')
     +formInput('Device limit', 'device_limit', sub ? String(sub.device_limit || 1) : '1', {type:'number'})
     +formInput('Traffic quota bytes', 'traffic_quota_bytes', sub && sub.traffic_quota_bytes != null ? String(sub.traffic_quota_bytes) : '', {type:'number'})
+    +formCheckbox('Restrict access by local time', 'access_window_enabled', !!(sub && sub.access_window_enabled), {caption:'Enable weekly local access window', full:true})
+    +'<div class="mf-row full"><label class="mf-label">Days of week</label><div style=\"display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;\">'
+      +dayBox(0, 'Mon') + dayBox(1, 'Tue') + dayBox(2, 'Wed') + dayBox(3, 'Thu') + dayBox(4, 'Fri') + dayBox(5, 'Sat') + dayBox(6, 'Sun')
+    +'</div><div class=\"mf-help\">Local time is evaluated from the device GMT offset when available, otherwise UTC.</div></div>'
+    +formInput('Local start (HH:MM)', 'access_window_start_local', sub ? (sub.access_window_start_local || '') : '', {placeholder:'09:00'})
+    +formInput('Local end (HH:MM)', 'access_window_end_local', sub ? (sub.access_window_end_local || '') : '', {placeholder:'18:00'})
     +'</div></form>';
   openModal(sub ? 'Edit Subscription' : 'Create Subscription', body, {
     buttons:[
@@ -6998,6 +7076,10 @@ function openSubscriptionModal(subscriptionId){
 }
 
 async function saveSubscriptionForm(fd, subscriptionId){
+  var accessMask = 0;
+  for(var i = 0; i < 7; i += 1){
+    if(checked(fd, 'access_day_' + i)){ accessMask |= (1 << i); }
+  }
   var body = {
     plan_id: String(fd.get('plan_id') || '').trim() || null,
     status: String(fd.get('status') || 'active').trim(),
@@ -7005,7 +7087,11 @@ async function saveSubscriptionForm(fd, subscriptionId){
     starts_at: String(fd.get('starts_at') || '').trim() || null,
     expires_at: String(fd.get('expires_at') || '').trim() || null,
     device_limit: Number(fd.get('device_limit') || 1),
-    traffic_quota_bytes: String(fd.get('traffic_quota_bytes') || '').trim() ? Number(fd.get('traffic_quota_bytes')) : null
+    traffic_quota_bytes: String(fd.get('traffic_quota_bytes') || '').trim() ? Number(fd.get('traffic_quota_bytes')) : null,
+    access_window_enabled: checked(fd, 'access_window_enabled'),
+    access_days_mask: accessMask,
+    access_window_start_local: String(fd.get('access_window_start_local') || '').trim() || null,
+    access_window_end_local: String(fd.get('access_window_end_local') || '').trim() || null
   };
   if(subscriptionId){
     await apiFetch(API_PREFIX + '/subscriptions/' + encodeURIComponent(subscriptionId), { method:'PATCH', body:body });
@@ -7078,7 +7164,70 @@ async function revokeDeviceFlow(deviceId){
   var device = deviceById(deviceId);
   if(!confirm('Revoke device ' + (device && device.device_label ? device.device_label : deviceId) + '?')) return;
   await apiFetch(API_PREFIX + '/devices/' + encodeURIComponent(deviceId) + '/revoke', { method:'POST', body:{} });
+  showToast('Device record removed: ' + (device && device.device_label ? device.device_label : deviceId), 'success', 'Device revoked');
   await loadDevices();
+}
+
+function openDeviceBanModal(deviceId){
+  var device = deviceById(deviceId); if(!device) return;
+  var body = '<form id="deviceBanForm"><div class="modal-grid">'
+    +formCheckbox('Permanent ban', 'permanent', false, {caption:'Keep the device banned until manually unbanned'})
+    +formInput('Duration', 'duration_value', '30', {type:'number', required:true})
+    +formSelect('Unit', 'duration_unit', 'minutes', [
+      {value:'minutes', label:'minutes'},
+      {value:'hours', label:'hours'},
+      {value:'days', label:'days'}
+    ])
+    +formTextarea('Reason', 'reason', '', {full:true})
+    +'</div></form>';
+  openModal('Ban Device — ' + (device.device_label || device.id), body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:'Ban', className:'btn pri', onClick:function(){ document.getElementById('deviceBanForm').requestSubmit(); }}
+    ]
+  });
+  var permanentBox = document.querySelector('#deviceBanForm input[name="permanent"]');
+  var durationInput = document.getElementById('duration_value');
+  var durationUnit = document.getElementById('duration_unit');
+  function syncBanFields(){
+    var disabled = !!(permanentBox && permanentBox.checked);
+    if(durationInput){ durationInput.disabled = disabled; }
+    if(durationUnit){ durationUnit.disabled = disabled; }
+  }
+  if(permanentBox){ permanentBox.addEventListener('change', syncBanFields); }
+  syncBanFields();
+  bindModalForm('deviceBanForm', function(fd){ saveDeviceBanForm(deviceId, fd); });
+}
+
+async function saveDeviceBanForm(deviceId, fd){
+  var permanent = checked(fd, 'permanent');
+  var units = String(fd.get('duration_unit') || 'minutes');
+  var value = Number(fd.get('duration_value') || 0);
+  var minutes = null;
+  if(!permanent){
+    if(units === 'hours') minutes = value * 60;
+    else if(units === 'days') minutes = value * 1440;
+    else minutes = value;
+  }
+  var device = await apiFetch(API_PREFIX + '/devices/' + encodeURIComponent(deviceId) + '/ban', {
+    method:'POST',
+    body:{
+      permanent: permanent,
+      duration_minutes: minutes,
+      reason: String(fd.get('reason') || '').trim() || null
+    }
+  });
+  closeModal();
+  showToast('Device banned: ' + (device.device_label || device.id), 'success', 'Device updated');
+  await loadDevices();
+  if(document.getElementById('dp').classList.contains('open') && detailContextIs('device', deviceId)){ showDevice(deviceId); }
+}
+
+async function unbanDeviceFlow(deviceId){
+  var device = await apiFetch(API_PREFIX + '/devices/' + encodeURIComponent(deviceId) + '/unban', { method:'POST', body:{} });
+  showToast('Device unbanned: ' + (device.device_label || device.id), 'success', 'Device updated');
+  await loadDevices();
+  if(document.getElementById('dp').classList.contains('open') && detailContextIs('device', deviceId)){ showDevice(deviceId); }
 }
 
 // Wire registrations filter
