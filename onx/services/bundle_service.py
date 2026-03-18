@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
@@ -125,8 +126,8 @@ class BundleService:
             }
             for index, node in enumerate(candidates)
         ]
-        runtime_profiles = self._build_runtime_profiles(db, user=user)
         transport_package = db.scalar(select(TransportPackage).where(TransportPackage.user_id == user.id))
+        runtime_profiles = self._build_runtime_profiles(db, user=user, transport_package=transport_package)
         return {
             "bundle_id": f"bundle-{user.id[:8]}-{device.id[:8]}-{int(issued_at.timestamp())}",
             "bundle_format_version": "1",
@@ -162,6 +163,8 @@ class BundleService:
             "transport_package": {
                 "enabled_transports": self._enabled_transports(transport_package),
                 "priority_order": self._priority_order(transport_package),
+                "split_tunnel_enabled": bool(transport_package and transport_package.split_tunnel_enabled),
+                "split_tunnel_routes": self._split_tunnel_routes(transport_package),
                 "last_reconciled_at": transport_package.last_reconciled_at.isoformat() if transport_package and transport_package.last_reconciled_at else None,
             },
             "policy": {
@@ -170,10 +173,13 @@ class BundleService:
             },
         }
 
-    def _build_runtime_profiles(self, db: Session, *, user: User) -> list[dict]:
-        transport_package = db.scalar(select(TransportPackage).where(TransportPackage.user_id == user.id))
+    def _build_runtime_profiles(self, db: Session, *, user: User, transport_package: TransportPackage | None = None) -> list[dict]:
+        if transport_package is None:
+            transport_package = db.scalar(select(TransportPackage).where(TransportPackage.user_id == user.id))
         enabled_transports = set(self._enabled_transports(transport_package))
         priority_order = self._priority_order(transport_package)
+        split_tunnel_enabled = bool(transport_package and transport_package.split_tunnel_enabled)
+        split_tunnel_routes = self._split_tunnel_routes(transport_package)
         peers = list(
             db.scalars(
                 select(Peer)
@@ -197,6 +203,8 @@ class BundleService:
             transport_type = self.detect_transport_type(config_text)
             if transport_type is None:
                 continue
+            if split_tunnel_enabled and split_tunnel_routes and transport_type in {"awg", "wg"}:
+                config_text = self._apply_split_tunnel_to_wireguard_config(config_text, split_tunnel_routes)
             if enabled_transports and transport_type not in enabled_transports:
                 continue
             key = (transport_type, config_text)
@@ -220,6 +228,10 @@ class BundleService:
                     "node_name": node.name,
                     "expires_at": peer.config_expires_at.isoformat() if peer.config_expires_at else None,
                     "config": config_text,
+                    "metadata": {
+                        "split_tunnel_enabled": split_tunnel_enabled and transport_type in {"awg", "wg"} and bool(split_tunnel_routes),
+                        "split_tunnel_routes": list(split_tunnel_routes),
+                    },
                 }
             )
 
@@ -274,6 +286,38 @@ class BundleService:
             if fallback not in normalized:
                 normalized.append(fallback)
         return normalized
+
+    @staticmethod
+    def _split_tunnel_routes(transport_package: TransportPackage | None) -> list[str]:
+        if transport_package is None:
+            return []
+        out: list[str] = []
+        for item in transport_package.split_tunnel_routes_json or []:
+            value = str(item or "").strip()
+            if value and value not in out:
+                out.append(value)
+        return out
+
+    @staticmethod
+    def _apply_split_tunnel_to_wireguard_config(config_text: str, routes: list[str]) -> str:
+        if not routes:
+            return config_text
+        out: list[str] = []
+        in_peer = False
+        replaced = False
+        for raw_line in (config_text or "").replace("\r\n", "\n").split("\n"):
+            stripped = raw_line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                in_peer = stripped.lower() == "[peer]"
+            if in_peer and re.match(r"(?i)^allowedips\s*=", stripped):
+                indent = raw_line[: len(raw_line) - len(raw_line.lstrip())]
+                out.append(indent + "AllowedIPs = " + ", ".join(routes))
+                replaced = True
+                continue
+            out.append(raw_line)
+        if not replaced:
+            return config_text
+        return "\n".join(out)
 
 
 bundle_service = BundleService()

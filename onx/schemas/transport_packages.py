@@ -20,6 +20,8 @@ class TransportPackageRead(ONXBaseModel):
     enable_awg: bool
     enable_wg: bool
     enable_openvpn_cloak: bool
+    split_tunnel_enabled: bool
+    split_tunnel_routes_json: list[str]
     priority_order_json: list[str]
     last_reconciled_at: datetime | None
     last_reconcile_summary_json: dict | None
@@ -38,6 +40,8 @@ class TransportPackageUpsert(BaseModel):
     enable_awg: bool = True
     enable_wg: bool = True
     enable_openvpn_cloak: bool = True
+    split_tunnel_enabled: bool = False
+    split_tunnel_routes: list[str] = Field(default_factory=list)
     priority_order: list[str] = Field(default_factory=lambda: list(DEFAULT_TRANSPORT_PRIORITY), min_length=1, max_length=8)
 
 

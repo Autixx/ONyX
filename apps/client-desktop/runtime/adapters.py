@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import platform
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -90,6 +91,40 @@ class BaseRuntimeAdapter:
         path.write_text((config_text or "").replace("\r\n", "\n").strip() + "\n", encoding="utf-8")
         return path
 
+    @staticmethod
+    def _split_tunnel_routes(profile: RuntimeProfile) -> list[str]:
+        metadata = profile.metadata or {}
+        if not metadata.get("split_tunnel_enabled"):
+            return []
+        routes: list[str] = []
+        for item in metadata.get("split_tunnel_routes") or []:
+            value = str(item or "").strip()
+            if value and value not in routes:
+                routes.append(value)
+        return routes
+
+    @classmethod
+    def _apply_split_tunnel_to_wireguard_config(cls, profile: RuntimeProfile, config_text: str) -> str:
+        routes = cls._split_tunnel_routes(profile)
+        if not routes:
+            return config_text
+        out: list[str] = []
+        in_peer = False
+        replaced = False
+        for raw_line in (config_text or "").replace("\r\n", "\n").split("\n"):
+            stripped = raw_line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                in_peer = stripped.lower() == "[peer]"
+            if in_peer and re.match(r"(?i)^allowedips\s*=", stripped):
+                indent = raw_line[: len(raw_line) - len(raw_line.lstrip())]
+                out.append(indent + "AllowedIPs = " + ", ".join(routes))
+                replaced = True
+                continue
+            out.append(raw_line)
+        if not replaced:
+            return config_text
+        return "\n".join(out)
+
 
 class WireGuardTunnelAdapter(BaseRuntimeAdapter):
     transport = TransportKind.WG
@@ -100,7 +135,7 @@ class WireGuardTunnelAdapter(BaseRuntimeAdapter):
         if not diag.ready:
             raise RuntimeError("WireGuard adapter is not ready: " + ", ".join(diag.notes))
         tunnel_name = profile.metadata.get("tunnel_name") or "onyxwg0"
-        config_path = self._write_config(tunnel_name, profile.config_text or "")
+        config_path = self._write_config(tunnel_name, self._apply_split_tunnel_to_wireguard_config(profile, profile.config_text or ""))
         manager = expected_binary_layout()["wireguard_manager"]
         await self._install_tunnel_service(manager, tunnel_name, config_path, "wireguard")
         return ActiveProcessGroup(
@@ -127,7 +162,7 @@ class AmneziaWGTunnelAdapter(BaseRuntimeAdapter):
         if not diag.ready:
             raise RuntimeError("AmneziaWG adapter is not ready: " + ", ".join(diag.notes))
         tunnel_name = profile.metadata.get("tunnel_name") or "onyxawg0"
-        config_path = self._write_config(tunnel_name, profile.config_text or "")
+        config_path = self._write_config(tunnel_name, self._apply_split_tunnel_to_wireguard_config(profile, profile.config_text or ""))
         manager = expected_binary_layout()["amneziawg_manager"]
         await self._install_tunnel_service(manager, tunnel_name, config_path, "amneziawg")
         return ActiveProcessGroup(

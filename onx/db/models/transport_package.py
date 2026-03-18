@@ -46,6 +46,8 @@ class TransportPackage(Base):
     enable_awg: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     enable_wg: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     enable_openvpn_cloak: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    split_tunnel_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    split_tunnel_routes_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     priority_order_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     last_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_reconcile_summary_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

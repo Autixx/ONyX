@@ -646,7 +646,7 @@ td.m{color:var(--t0);}
           <div class="pbtn-row">
             <button class="btn" id="btnPlanPath" data-i18n="topo.planpath">PLAN PATH</button>
             <button class="btn" onclick="refreshTopology().then(drawTopo)" data-i18n="topo.refresh">REFRESH</button>
-            <button class="btn" id="btnTopoAuto" onclick="toggleTopologyAutoRefresh()" data-i18n="topo.auto">AUTO</button>
+            <button class="btn" id="btnTopoAuto" onclick="toggleTopologyAutoRefresh()" data-i18n="topo.auto">LIVE</button>
           </div>
         </div>
         <div class="topo-toolbar">
@@ -793,24 +793,6 @@ td.m{color:var(--t0);}
           </div>
         </div>
 
-        <div class="two">
-          <div style="grid-column:1 / span 1;">
-            <div class="ph">
-              <span class="ptitle">Devices</span>
-              <div class="pbtn-row">
-                <button class="btn" onclick="refreshIdentityData()">REFRESH</button>
-              </div>
-            </div>
-            <div class="tw">
-              <table>
-                <thead><tr><th>User</th><th>Label</th><th>Platform / OS</th><th>GMT</th><th>Status</th><th>Verified</th><th>Actions</th></tr></thead>
-                <tbody id="devtb"></tbody>
-              </table>
-            </div>
-          </div>
-          <div></div>
-        </div>
-
         <div class="ph">
           <span class="ptitle">Transport Packages</span>
           <div class="pbtn-row">
@@ -821,6 +803,22 @@ td.m{color:var(--t0);}
           <table>
             <thead><tr><th>User</th><th>Enabled</th><th>Priority</th><th>Preferred Services</th><th>Last Reconciled</th><th>Actions</th></tr></thead>
             <tbody id="tptb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- DEVICES -->
+      <div class="page" id="page-devices">
+        <div class="ph">
+          <span class="ptitle">Devices</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="loadDevices()">REFRESH</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>User</th><th>Label</th><th>Platform / OS</th><th>GMT</th><th>Status</th><th>Verified</th><th>Actions</th></tr></thead>
+            <tbody id="devtb"></tbody>
           </table>
         </div>
       </div>
@@ -1135,7 +1133,7 @@ var JOB_EVENTS = {};
 var GRAPH_DATA = {nodes:[], edges:[], generated_at:null};
 var TOPO_HITBOXES = {nodes:[], edges:[]};
 var TOPO_PATH = null;
-var TOPO_AUTO_REFRESH_ENABLED = false;
+var TOPO_AUTO_REFRESH_ENABLED = true;
 var TOPO_ZOOM = 1.0;
 var TOPO_ZOOM_MIN = 0.35;
 var TOPO_ZOOM_MAX = 2.5;
@@ -1144,6 +1142,7 @@ var TOPO_PAN_Y = 0;
 var _topologyAutoTimer = null;
 var _topologyAutoInFlight = false;
 var _topologyRealtimeTimer = null;
+var _topologyMetaTimer = null;
 
 function nById(id){ return NODES.find(function(n){return n.id===id;})||{name:id,role:'unknown'}; }
 function linkById(id){ return LINKS.find(function(l){ return l.id===id; }) || null; }
@@ -1516,6 +1515,8 @@ function detailContextIs(kind, id){
   return DP_CONTEXT.kind === kind && String(DP_CONTEXT.id || '') === String(id || '');
 }
 function openDP(title, html, meta){
+  var dpt = document.getElementById('dpt');
+  if(dpt && dpt.dataset && dpt.dataset.i18nOriginalText){ delete dpt.dataset.i18nOriginalText; }
   document.getElementById('dpt').textContent = title;
   document.getElementById('dpb').innerHTML = html;
   document.getElementById('dp').classList.add('open');
@@ -1535,6 +1536,8 @@ function openDP(title, html, meta){
 }
 function closeDP(){
   document.getElementById('dp').classList.remove('open');
+  var dpt = document.getElementById('dpt');
+  if(dpt && dpt.dataset && dpt.dataset.i18nOriginalText){ delete dpt.dataset.i18nOriginalText; }
   if(DP_CONTEXT.kind === 'job'){
     JOB_DETAIL_SELECTED_ID = null;
   }
@@ -2422,6 +2425,19 @@ function stopTopologyAutoRefresh(){
     _topologyAutoTimer = null;
   }
 }
+function stopTopologyMetaRefresh(){
+  if(_topologyMetaTimer){
+    clearInterval(_topologyMetaTimer);
+    _topologyMetaTimer = null;
+  }
+}
+function startTopologyMetaRefresh(){
+  stopTopologyMetaRefresh();
+  if(_currentPage !== 'topology') return;
+  _topologyMetaTimer = setInterval(function(){
+    renderTopologyMeta();
+  }, 1000);
+}
 function startTopologyAutoRefresh(){
   stopTopologyAutoRefresh();
   if(!TOPO_AUTO_REFRESH_ENABLED) return;
@@ -2439,6 +2455,18 @@ function toggleTopologyAutoRefresh(){
   } else {
     stopTopologyAutoRefresh();
   }
+}
+function fmtRelativeAge(value){
+  if(!value) return '-';
+  var d = new Date(value);
+  if(isNaN(d.getTime())) return String(value);
+  var seconds = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if(seconds < 60) return seconds + 's ago';
+  var minutes = Math.floor(seconds / 60);
+  if(minutes < 60) return minutes + 'm ago';
+  var hours = Math.floor(minutes / 60);
+  if(hours < 24) return hours + 'h ago';
+  return Math.floor(hours / 24) + 'd ago';
 }
 function clampTopologyZoom(value){
   return Math.max(TOPO_ZOOM_MIN, Math.min(TOPO_ZOOM_MAX, value));
@@ -2578,7 +2606,7 @@ function renderTopologyMeta(){
     var degradedNodes = nodes.filter(function(node){ return node.status === 'degraded'; }).length;
     var offlineNodes = nodes.filter(function(node){ return node.status === 'offline' || node.status === 'unreachable'; }).length;
     summary.innerHTML = rows([
-      ['Generated', GRAPH_DATA.generated_at ? fmtTime(GRAPH_DATA.generated_at) : '-'],
+      ['Generated', GRAPH_DATA.generated_at ? (fmtDateTime(GRAPH_DATA.generated_at) + ' (' + fmtRelativeAge(GRAPH_DATA.generated_at) + ')') : '-'],
       ['Nodes', String(nodes.length)],
       ['Links', String(edges.length)],
       ['Active Links', String(activeEdges)],
@@ -6018,7 +6046,7 @@ var I18N = {
     'topo.hint':           'click node or link for detail',
     'topo.planpath':       'PLAN PATH',
     'topo.refresh':        'REFRESH',
-    'topo.auto':           'AUTO',
+    'topo.auto':           'LIVE',
     'topo.snapshot':       'Graph Snapshot',
     'topo.pathoverlay':    'Path Overlay',
   },
@@ -6068,7 +6096,7 @@ var I18N = {
     'topo.hint':           'клик по узлу или линку — детали',
     'topo.planpath':       'МАРШРУТ',
     'topo.refresh':        'ОБНОВИТЬ',
-    'topo.auto':           'АВТО',
+    'topo.auto':           'LIVE',
     'topo.snapshot':       'Снимок графа',
     'topo.pathoverlay':    'Наложение пути',
   }
@@ -6273,7 +6301,7 @@ function applyLiteralTranslations(root){
   if(!scope) return;
   var dynamicIdSkip = {
     sb:true, sw:true, sn:true, snSub:true, sl:true, slSub:true,
-    sysCpu:true, sysRam:true, wsl:true, ubtn:true, lerr:true, topoZoomLabel:true,
+    sysCpu:true, sysRam:true, wsl:true, ubtn:true, lerr:true, topoZoomLabel:true, dpt:true,
     'failban-scope-line':true
   };
   scope.querySelectorAll('*').forEach(function(el){
@@ -6689,7 +6717,7 @@ function showUser(id){
     ['Goal', u.usage_goal || '-'],
     ['Requested Devices', String(u.requested_device_count || '-')],
     ['Referral Code', u.referral_code || '-']
-  ]));
+  ]), { kind:'user', id:u.id });
 }
 
 function showPlan(id){
@@ -6704,7 +6732,7 @@ function showPlan(id){
     ['Default Device Limit', String(p.default_device_limit || '-')],
     ['Traffic Quota Bytes', p.traffic_quota_bytes != null ? String(p.traffic_quota_bytes) : '-'],
     ['Description', p.description || '-']
-  ]));
+  ]), { kind:'plan', id:p.id });
 }
 
 function showSubscription(id){
@@ -6720,7 +6748,7 @@ function showSubscription(id){
     ['Device Limit', String(s.device_limit || '-')],
     ['Traffic Quota Bytes', s.traffic_quota_bytes != null ? String(s.traffic_quota_bytes) : '-'],
     ['Access Window', subscriptionAccessSummary(s)]
-  ]));
+  ]), { kind:'subscription', id:s.id });
 }
 
 function showReferralCode(id){
@@ -6736,7 +6764,7 @@ function showReferralCode(id){
     ['Device Override', r.device_limit_override != null ? String(r.device_limit_override) : '-'],
     ['Goal Override', r.usage_goal_override || '-'],
     ['Expires', r.expires_at ? new Date(r.expires_at).toLocaleString() : '-']
-  ]));
+  ]), { kind:'referral-code', id:r.id });
 }
 
 function showDevice(id){
@@ -6780,13 +6808,15 @@ function showTransportPackage(id){
     ['Preferred AWG', transportServiceLabel('awg', pkg.preferred_awg_service_id)],
     ['Preferred WG', transportServiceLabel('wg', pkg.preferred_wg_service_id)],
     ['Preferred OVPN', transportServiceLabel('openvpn_cloak', pkg.preferred_openvpn_cloak_service_id)],
+    ['Split Tunnel', pkg.split_tunnel_enabled ? 'enabled' : 'disabled'],
+    ['Split Routes', (pkg.split_tunnel_routes_json || []).join(', ') || '-'],
     ['Last Reconciled', pkg.last_reconciled_at ? new Date(pkg.last_reconciled_at).toLocaleString() : '-'],
     ['Last Summary', Object.keys(summary).length ? JSON.stringify(summary) : '-']
   ])
   +'<div class="dp-actions">'
     +'<button class="btn" onclick="openTransportPackageModal(\''+esc(pkg.user_id)+'\')">EDIT</button>'
     +'<button class="btn pri" onclick="reconcileTransportPackageFlow(\''+esc(pkg.user_id)+'\')">RECONCILE</button>'
-  +'</div>');
+  +'</div>', { kind:'transport-package', id:pkg.id });
 }
 
 async function openTransportPackageModal(userId){
@@ -6804,6 +6834,8 @@ async function openTransportPackageModal(userId){
       +formCheckbox('Enable AWG', 'enable_awg', !!pkg.enable_awg, {caption:'Include AWG profiles'})
       +formCheckbox('Enable WG', 'enable_wg', !!pkg.enable_wg, {caption:'Include WG profiles'})
       +formCheckbox('Enable OpenVPN+Cloak', 'enable_openvpn_cloak', !!pkg.enable_openvpn_cloak, {caption:'Include OpenVPN+Cloak profiles'})
+      +formCheckbox('Enable Split Tunnel', 'split_tunnel_enabled', !!pkg.split_tunnel_enabled, {caption:'Apply only listed CIDRs through WG/AWG client tunnel'})
+      +formTextarea('Split Tunnel Routes', 'split_tunnel_routes', (pkg.split_tunnel_routes_json || []).join(', '), {help:'Comma-separated CIDRs, for example: 10.0.0.0/8, 172.16.0.0/12'})
       +formSelect('Preferred XRAY Service', 'preferred_xray_service_id', pkg.preferred_xray_service_id || '', xrayOptions)
       +formSelect('Preferred AWG Service', 'preferred_awg_service_id', pkg.preferred_awg_service_id || '', awgOptions)
       +formSelect('Preferred WG Service', 'preferred_wg_service_id', pkg.preferred_wg_service_id || '', wgOptions)
@@ -6838,6 +6870,8 @@ async function saveTransportPackageForm(userId, fd){
       enable_awg: checked(fd, 'enable_awg'),
       enable_wg: checked(fd, 'enable_wg'),
       enable_openvpn_cloak: checked(fd, 'enable_openvpn_cloak'),
+      split_tunnel_enabled: checked(fd, 'split_tunnel_enabled'),
+      split_tunnel_routes: parseCsvList(fd.get('split_tunnel_routes')),
       priority_order: priorityOrder
     };
     await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId), { method:'PUT', body:body });
@@ -7324,11 +7358,12 @@ var NAV_GROUPS = {
                 {p:'transit',  label:'Transit Policies'},
                 {p:'jobs',     label:'Jobs',             badge:'jbn'},
               ]},
-  access:   { label:'Access Control', pages:['peers','registrations','users','referral-codes','management','failban','audit'],
+  access:   { label:'Access Control', pages:['peers','registrations','users','devices','referral-codes','management','failban','audit'],
               subs:[
                 {p:'peers',         label:'Peers',         badge:'peersBadge'},
                 {p:'registrations', label:'Registrations', badge:'regBadge'},
                 {p:'users',         label:'Users'},
+                {p:'devices',       label:'Devices'},
                 {p:'referral-codes',label:'Referral Codes'},
                 {p:'management',    label:'Management'},
                 {p:'failban',       label:'Fail2Ban',      dot:'red'},
@@ -7438,8 +7473,10 @@ function showPage(pageId){
   if(pageId === 'topology'){
     refreshTopology().then(drawTopo);
     startTopologyAutoRefresh();
+    startTopologyMetaRefresh();
   } else {
     stopTopologyAutoRefresh();
+    stopTopologyMetaRefresh();
   }
   syncTopologyAutoButton();
   if(pageId==='failban'){ refreshFailban().catch(function(){}); }

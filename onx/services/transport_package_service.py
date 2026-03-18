@@ -56,6 +56,8 @@ class TransportPackageService:
         package.enable_awg = payload.enable_awg
         package.enable_wg = payload.enable_wg
         package.enable_openvpn_cloak = payload.enable_openvpn_cloak
+        package.split_tunnel_enabled = payload.split_tunnel_enabled
+        package.split_tunnel_routes_json = self._normalize_split_tunnel_routes(payload.split_tunnel_routes)
         package.priority_order_json = self._normalize_priority_order(payload.priority_order)
         db.add(package)
         db.commit()
@@ -136,6 +138,15 @@ class TransportPackageService:
             if item not in ordered:
                 ordered.append(item)
         return ordered
+
+    @staticmethod
+    def _normalize_split_tunnel_routes(value: list[str] | None) -> list[str]:
+        routes: list[str] = []
+        for item in value or []:
+            normalized = str(item or "").strip()
+            if normalized and normalized not in routes:
+                routes.append(normalized)
+        return routes
 
     def _reconcile_xray(
         self,
