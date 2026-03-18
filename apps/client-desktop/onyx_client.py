@@ -14,6 +14,7 @@ import base64
 import ctypes
 import ipaddress
 import json
+import math
 import os
 import platform
 import random
@@ -1413,9 +1414,15 @@ class LoginScreen(QWidget):
 
     def __init__(self,st,parent=None):
         super().__init__(parent); self.st=st
-        self.setStyleSheet("background:none;")
+        self.setStyleSheet("background:transparent;")
         self._lang = getattr(st, "lang", "en")
         self._bg_seed = secrets.randbelow(1_000_000)
+        self._bg_nodes: list[tuple[float, float]] = []
+        self._bg_edges: list[tuple[int, int]] = []
+        self._bg_phase = 0.0
+        self._bg_timer = QTimer(self)
+        self._bg_timer.timeout.connect(self._tick_backdrop)
+        self._bg_timer.start(70)
         self._build()
 
     def _build(self):
@@ -1492,18 +1499,79 @@ class LoginScreen(QWidget):
         outer.addLayout(uw); outer.addStretch(3)
 
         self._retranslate(self._lang)
-        self._apply_backdrop()
+        self._rebuild_backdrop()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._apply_backdrop()
+        self._rebuild_backdrop()
 
-    def _apply_backdrop(self):
-        pix = render_network_backdrop(self.width(), self.height(), node_count=46, seed=self._bg_seed)
-        pal = self.palette()
-        pal.setBrush(QPalette.ColorRole.Window, QBrush(pix))
-        self.setAutoFillBackground(True)
-        self.setPalette(pal)
+    def _tick_backdrop(self):
+        self._bg_phase = (self._bg_phase + 0.035) % 1.0
+        self.update()
+
+    def _rebuild_backdrop(self):
+        width = max(1, self.width())
+        height = max(1, self.height())
+        nodes, edges = build_bg_network(
+            width,
+            height,
+            icon_cx=width / 2,
+            icon_cy=height * 0.42,
+            icon_r=min(width, height) * 0.22,
+            n_nodes=46,
+            min_dist=54,
+            seed=self._bg_seed,
+        )
+        self._bg_nodes = nodes
+        self._bg_edges = [tuple(sorted(tuple(edge))) for edge in edges]
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor(C_BG0))
+
+        if self._bg_nodes:
+            base_pen = QPen(QColor(8, 18, 14, 58), 0.8, Qt.PenStyle.DashLine)
+            base_pen.setDashPattern([3.0, 4.0])
+            base_pen.setDashOffset(-self._bg_phase * 36.0)
+            p.setPen(base_pen)
+            for left, right in self._bg_edges:
+                ax, ay = self._bg_nodes[left]
+                bx, by = self._bg_nodes[right]
+                p.drawLine(QPointF(ax, ay), QPointF(bx, by))
+
+            for idx, (left, right) in enumerate(self._bg_edges):
+                ax, ay = self._bg_nodes[left]
+                bx, by = self._bg_nodes[right]
+                pulse = (self._bg_phase + idx * 0.073) % 1.0
+                seg_start = max(0.0, pulse - 0.10)
+                seg_end = min(1.0, pulse + 0.10)
+                if seg_end <= seg_start:
+                    continue
+                sx = ax + (bx - ax) * seg_start
+                sy = ay + (by - ay) * seg_start
+                ex = ax + (bx - ax) * seg_end
+                ey = ay + (by - ay) * seg_end
+                hi_pen = QPen(QColor(0, 229, 204, 148), 1.1, Qt.PenStyle.DashLine)
+                hi_pen.setDashPattern([3.0, 3.0])
+                hi_pen.setDashOffset(-(self._bg_phase * 52.0 + idx * 4.0))
+                hi_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                p.setPen(hi_pen)
+                p.drawLine(QPointF(sx, sy), QPointF(ex, ey))
+
+            p.setPen(QPen(Qt.PenStyle.NoPen))
+            for idx, (x, y) in enumerate(self._bg_nodes):
+                glow = QRadialGradient(QPointF(x, y), 11)
+                pulse = 0.45 + 0.55 * (0.5 + 0.5 * math.sin((self._bg_phase * 2.0 * math.pi) + idx * 0.37))
+                glow.setColorAt(0, QColor(0, 200, 180, int(10 + 14 * pulse)))
+                glow.setColorAt(1, QColor(0, 200, 180, 0))
+                p.setBrush(QBrush(glow))
+                p.drawEllipse(QPointF(x, y), 11, 11)
+                p.setBrush(QColor(0, 229, 204, int(28 + 36 * pulse)))
+                p.drawEllipse(QPointF(x, y), 1.8, 1.8)
+
+        p.end()
+        super().paintEvent(event)
 
     def _on_lang_change(self, lang):
         self._lang = lang
@@ -1625,14 +1693,29 @@ class RegisterScreen(QWidget):
         scroll.setStyleSheet("background:transparent;border:none;")
         outer.addWidget(scroll)
         inner=QWidget(); inner.setStyleSheet("background:transparent;"); scroll.setWidget(inner)
-        lay=QVBoxLayout(inner); lay.setContentsMargins(36,20,36,24); lay.setSpacing(9)
+        lay=QVBoxLayout(inner); lay.setContentsMargins(34,18,34,20); lay.setSpacing(7)
 
         self._inp={}
+        reg_input_style = f"""QLineEdit{{
+            background:{C_BG1};
+            border:1px solid {C_BDR};
+            border-radius:3px;
+            padding:8px 12px;
+            color:{C_T0};
+            font-family:'Courier New';
+            font-size:13px;
+        }}
+        QLineEdit:focus{{
+            border:1px solid {C_ACC};
+            background:{C_BG2};
+        }}"""
         for key, str_key, pw in self._FIELDS:
-            fi=FormInput("", password=pw); self._inp[key]=fi; lay.addWidget(fi)
+            fi=FormInput("", password=pw)
+            fi.edit.setStyleSheet(reg_input_style)
+            self._inp[key]=fi; lay.addWidget(fi)
 
         self._dc_lbl=QLabel()
-        self._dc_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:4px;"); lay.addWidget(self._dc_lbl)
+        self._dc_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:2px;"); lay.addWidget(self._dc_lbl)
         dc_row=QWidget(); dr=QHBoxLayout(dc_row); dr.setContentsMargins(0,0,0,0); dr.setSpacing(14)
         self._dc=QButtonGroup(self)
         for i,v in enumerate(["1","2","3"]):
@@ -1642,7 +1725,7 @@ class RegisterScreen(QWidget):
         dr.addStretch(); lay.addWidget(dc_row)
 
         self._ug_lbl=QLabel()
-        self._ug_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:4px;"); lay.addWidget(self._ug_lbl)
+        self._ug_lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;margin-top:2px;"); lay.addWidget(self._ug_lbl)
         ug_row=QWidget(); ur=QHBoxLayout(ug_row); ur.setContentsMargins(0,0,0,0); ur.setSpacing(14)
         self._ug=QButtonGroup(self)
         self._ug_btns=[]
@@ -1651,7 +1734,7 @@ class RegisterScreen(QWidget):
             if i==0: rb.setChecked(True)
             self._ug.addButton(rb,i); ur.addWidget(rb); self._ug_btns.append(rb)
         ur.addStretch(); lay.addWidget(ug_row)
-        lay.addSpacing(4)
+        lay.addSpacing(2)
 
         self._err=QLabel(""); self._err.setStyleSheet(f"color:{C_RED};font-size:12px;")
         self._err.setWordWrap(True); self._err.hide(); lay.addWidget(self._err)
@@ -1659,7 +1742,7 @@ class RegisterScreen(QWidget):
         self._note=QLabel(); self._note.setStyleSheet(f"color:{C_T2};font-size:11px;"); lay.addWidget(self._note)
 
         # API host — editable, same layout as login screen
-        lay.addSpacing(10)
+        lay.addSpacing(8)
         self._reg_api_lbl=QLabel(); self._reg_api_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._reg_api_lbl.setStyleSheet(f"color:{C_T3};font-size:9px;letter-spacing:2px;"); lay.addWidget(self._reg_api_lbl)
         self._reg_url=QLineEdit(self.st.base_url); self._reg_url.setAlignment(Qt.AlignmentFlag.AlignCenter)
