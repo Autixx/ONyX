@@ -119,12 +119,19 @@ def main() -> int:
     args, remaining = parser.parse_known_args()
 
     if args.console or not remaining:
-        get_logger("daemon_host").info("main_console_mode argv=%s", remaining)
+        log = get_logger("daemon_host")
+        log.info("main_console_mode argv=%s", remaining)
         if remaining:
-            get_logger("daemon_host").info("main_console_mode_ignoring_extra_args argv=%s", remaining)
-        get_logger("daemon_host").info("main_console_mode")
+            log.info("main_console_mode_ignoring_extra_args argv=%s", remaining)
+        log.info("main_console_mode")
         host = NamedPipeDaemonHost()
-        asyncio.run(host.serve_forever())
+        try:
+            asyncio.run(host.serve_forever())
+        except pywintypes.error as exc:  # type: ignore[union-attr]
+            if getattr(exc, "winerror", None) == 231 or (len(exc.args) >= 1 and exc.args[0] == 231):
+                log.info("main_console_mode_already_running pipe=%s", PIPE_NAME)
+                return 0
+            raise
         return 0
 
     if not PYWIN32_SERVICE_AVAILABLE:
