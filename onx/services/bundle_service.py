@@ -283,7 +283,6 @@ class BundleService:
                 out.append(value)
         return out
 
-    @staticmethod
     def _select_runtime_peer(
         self,
         db: Session,
