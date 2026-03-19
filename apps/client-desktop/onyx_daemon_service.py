@@ -118,7 +118,10 @@ def main() -> int:
     parser.add_argument("--console", action="store_true", help="Run the daemon host in console mode.")
     args, remaining = parser.parse_known_args()
 
-    if args.console:
+    if args.console or not remaining:
+        get_logger("daemon_host").info("main_console_mode argv=%s", remaining)
+        if remaining:
+            get_logger("daemon_host").info("main_console_mode_ignoring_extra_args argv=%s", remaining)
         get_logger("daemon_host").info("main_console_mode")
         host = NamedPipeDaemonHost()
         asyncio.run(host.serve_forever())
