@@ -823,11 +823,11 @@ class LocalTunnelRuntime:
                 str(daemon_exe),
                 "--console",
                 str(daemon_exe.parent),
-                1,
+                0,
             )
             return int(result) > 32
         script_path = APP_ROOT / "onyx_daemon_service.py"
-        python_exe = Path(sys.executable).resolve()
+        python_exe = _pythonw_path()
         if not script_path.exists() or not python_exe.exists():
             return False
         params = f'"{script_path}" --console'
@@ -837,7 +837,7 @@ class LocalTunnelRuntime:
             str(python_exe),
             params,
             str(APP_ROOT),
-            1,
+            0,
         )
         return int(result) > 32
 
