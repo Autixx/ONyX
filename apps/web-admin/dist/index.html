@@ -1158,6 +1158,17 @@ function nodeInterfaceList(nodeId){
     return true;
   });
 }
+function nodeGatewayMap(nodeId){
+  var node = nById(nodeId);
+  var raw = node && node.discovered_gateways && typeof node.discovered_gateways === 'object' ? node.discovered_gateways : {};
+  var normalized = {};
+  Object.keys(raw).forEach(function(key){
+    var iface = String(key || '').trim().replace(/:$/,'');
+    var gateway = String(raw[key] || '').trim();
+    if(iface && gateway){ normalized[iface] = gateway; }
+  });
+  return normalized;
+}
 function routePolicyInterfaceOptions(nodeId, currentValue){
   var options = nodeInterfaceList(nodeId).map(function(item){ return {value:item, label:item}; });
   var current = String(currentValue || '').trim();
@@ -1186,6 +1197,13 @@ function routePolicyDefaultTarget(nodeId, ingressValue, currentValue){
     || interfaces.find(function(item){ return item !== ingress; })
     || '';
 }
+function routePolicyDefaultGateway(nodeId, targetInterface, currentValue){
+  var current = String(currentValue || '').trim();
+  if(current) return current;
+  var gatewayMap = nodeGatewayMap(nodeId);
+  var iface = String(targetInterface || '').trim();
+  return String(gatewayMap[iface] || '').trim();
+}
 function setSelectOptions(selectEl, options, selectedValue){
   if(!selectEl) return;
   selectEl.innerHTML = options.map(function(opt){
@@ -1198,6 +1216,7 @@ function syncRoutePolicyInterfaceSelectors(){
   var nodeEl = document.getElementById('node_id');
   var ingressEl = document.getElementById('ingress_interface');
   var targetEl = document.getElementById('target_interface');
+  var gatewayEl = document.getElementById('target_gateway');
   if(!nodeEl || !ingressEl || !targetEl) return;
   var nodeId = String(nodeEl.value || '').trim();
   var ingressValue = routePolicyDefaultIngress(nodeId, ingressEl.value);
@@ -1207,6 +1226,17 @@ function syncRoutePolicyInterfaceSelectors(){
     targetValue = routePolicyDefaultTarget(nodeId, ingressValue, '');
   }
   setSelectOptions(targetEl, routePolicyInterfaceOptions(nodeId, targetValue), targetValue);
+  if(gatewayEl){
+    var currentGateway = String(gatewayEl.value || '').trim();
+    var initialGateway = String(gatewayEl.getAttribute('data-initial-value') || '').trim();
+    var dirtyGateway = gatewayEl.getAttribute('data-dirty') === '1';
+    var fallbackGateway = routePolicyDefaultGateway(nodeId, targetValue, '');
+    if(!dirtyGateway || currentGateway === '' || currentGateway === initialGateway){
+      gatewayEl.value = fallbackGateway;
+      gatewayEl.setAttribute('data-initial-value', fallbackGateway);
+      gatewayEl.setAttribute('data-dirty', '0');
+    }
+  }
 }
 function dnsPolicyById(id){ return DNS_P.find(function(p){ return p.id===id; }) || null; }
 function geoPolicyById(id){ return GEO_P.find(function(p){ return p.id===id; }) || null; }
@@ -3902,13 +3932,14 @@ function openRoutePolicyModal(policyId){
   var initialNodeId = policy ? policy.nid : (NODES[0] ? NODES[0].id : '');
   var initialIngress = routePolicyDefaultIngress(initialNodeId, policy ? policy.ingress_interface : '');
   var initialTarget = routePolicyDefaultTarget(initialNodeId, initialIngress, policy ? (policy.target_interface || '') : '');
+  var initialGateway = routePolicyDefaultGateway(initialNodeId, initialTarget, policy ? (policy.target_gateway || '') : '');
   var body = '<form id="routePolicyForm"><div class="modal-grid">'
     +formSelect('Node', 'node_id', initialNodeId, nodeOptions)
     +formInput('Policy name', 'name', policy ? policy.name : '', {required:true})
     +formSelect('Ingress interface', 'ingress_interface', initialIngress, routePolicyInterfaceOptions(initialNodeId, initialIngress), {help:'Interfaces come from the latest Probe SSH snapshot.'})
     +formSelect('Action', 'action', policy ? policy.action : 'next_hop', ['direct','next_hop','balancer'])
     +formSelect('Target interface', 'target_interface', initialTarget, routePolicyInterfaceOptions(initialNodeId, initialTarget), {help:'Control-plane SSH access is preserved automatically.'})
-    +formInput('Target gateway', 'target_gateway', policy ? (policy.target_gateway || '') : '', {})
+    +formInput('Target gateway', 'target_gateway', initialGateway, {help:'Autofilled from the latest Probe SSH default route for the selected target interface.'})
     +formSelect('Balancer', 'balancer_id', policy ? (policy.balancer_id || '') : '', balancerOptions)
     +formInput('Table ID', 'table_id', policy ? policy.table_id : '51820', {type:'number'})
     +formInput('Rule priority', 'rule_priority', policy ? policy.pri : '10000', {type:'number'})
@@ -3927,8 +3958,20 @@ function openRoutePolicyModal(policyId){
   });
   var nodeEl = document.getElementById('node_id');
   var ingressEl = document.getElementById('ingress_interface');
+  var targetEl = document.getElementById('target_interface');
+  var gatewayEl = document.getElementById('target_gateway');
   if(nodeEl){ nodeEl.addEventListener('change', syncRoutePolicyInterfaceSelectors); }
   if(ingressEl){ ingressEl.addEventListener('change', syncRoutePolicyInterfaceSelectors); }
+  if(targetEl){ targetEl.addEventListener('change', syncRoutePolicyInterfaceSelectors); }
+  if(gatewayEl){
+    gatewayEl.setAttribute('data-initial-value', String(gatewayEl.value || '').trim());
+    gatewayEl.setAttribute('data-dirty', '0');
+    gatewayEl.addEventListener('input', function(){
+      var current = String(gatewayEl.value || '').trim();
+      var initial = String(gatewayEl.getAttribute('data-initial-value') || '').trim();
+      gatewayEl.setAttribute('data-dirty', current !== initial ? '1' : '0');
+    });
+  }
   syncRoutePolicyInterfaceSelectors();
   bindModalForm('routePolicyForm', function(fd){ saveRoutePolicyForm(fd, policyId); });
 }

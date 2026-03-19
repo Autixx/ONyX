@@ -49,6 +49,10 @@ class DiscoveryService:
                 conn,
                 "sh -lc 'ip -o link show | cut -d: -f2 | sed \"s/^ //\" | paste -sd \",\" -'",
             )
+            gateways_ok, gateways_data = await self._run_remote_command(
+                conn,
+                "sh -lc 'ip -o route show default | sed -n \"s/^default via \\([^ ]*\\) dev \\([^ ]*\\).*$/\\2|\\1/p\" | paste -sd \",\" -'",
+            )
 
             capabilities = {}
             for capability_name, command in {
@@ -80,8 +84,24 @@ class DiscoveryService:
                 "os_version": os_version,
                 "kernel_version": kernel_data if kernel_ok else None,
                 "interfaces": interfaces_data.split(",") if interfaces_ok and interfaces_data else [],
+                "gateways": self._parse_gateway_snapshot(gateways_data if gateways_ok else ""),
                 "capabilities": capabilities,
             }
+
+    @staticmethod
+    def _parse_gateway_snapshot(raw: str) -> dict[str, str]:
+        gateways: dict[str, str] = {}
+        for item in str(raw or "").split(","):
+            value = item.strip()
+            if not value or "|" not in value:
+                continue
+            iface, gateway = value.split("|", 1)
+            iface = iface.strip().rstrip(":")
+            gateway = gateway.strip()
+            if not iface or not gateway:
+                continue
+            gateways[iface] = gateway
+        return gateways
 
     def discover_node(self, db: Session, node: Node, progress_callback=None) -> dict:
         secret_kind = (
@@ -113,6 +133,7 @@ class DiscoveryService:
         node.os_version = result["os_version"]
         node.kernel_version = result["kernel_version"]
         node.discovered_interfaces_json = list(result["interfaces"] or [])
+        node.discovered_gateways_json = dict(result["gateways"] or {})
         node.last_seen_at = datetime.now(timezone.utc)
         node.status = NodeStatus.REACHABLE
         db.add(node)

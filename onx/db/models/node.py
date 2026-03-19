@@ -54,6 +54,7 @@ class Node(Base):
     os_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     kernel_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
     discovered_interfaces_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    discovered_gateways_json: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
     registered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

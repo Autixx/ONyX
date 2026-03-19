@@ -78,6 +78,7 @@ class NodeRead(ONXBaseModel):
     os_version: str | None
     kernel_version: str | None
     discovered_interfaces: list[str]
+    discovered_gateways: dict[str, str]
     registered_at: datetime
     traffic_limit_gb: float | None
     traffic_used_gb: float | None = None
@@ -105,6 +106,7 @@ def serialize_node_read(node: "Node", *, traffic_used_gb: float | None = None) -
         os_version=node.os_version,
         kernel_version=node.kernel_version,
         discovered_interfaces=_normalize_discovered_interfaces(list(node.discovered_interfaces_json or [])),
+        discovered_gateways=_normalize_discovered_gateways(dict(node.discovered_gateways_json or {})),
         registered_at=node.registered_at,
         traffic_limit_gb=node.traffic_limit_gb,
         traffic_used_gb=traffic_used_gb,
@@ -244,4 +246,24 @@ def _normalize_discovered_interfaces(items: list[str] | None) -> list[str]:
             continue
         seen.add(value)
         normalized.append(value)
+    return normalized
+
+
+def _normalize_discovered_gateways(items: dict[str, str] | None) -> dict[str, str]:
+    if not items:
+        return {}
+    normalized: dict[str, str] = {}
+    for raw_iface, raw_gateway in items.items():
+        iface = str(raw_iface or "").strip().rstrip(":")
+        gateway = str(raw_gateway or "").strip()
+        if not iface or not gateway:
+            continue
+        if not _IFACE_NAME_RE.fullmatch(iface):
+            continue
+        upper_iface = iface.upper()
+        if upper_iface in _IFACE_FLAG_REJECT:
+            continue
+        if not re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", gateway):
+            continue
+        normalized[iface] = gateway
     return normalized
