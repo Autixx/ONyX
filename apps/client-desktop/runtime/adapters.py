@@ -84,6 +84,56 @@ class BaseRuntimeAdapter:
             raise RuntimeError(message)
         raise RuntimeError(last_message)
 
+    async def _wait_for_windows_tunnel(self, tunnel_name: str, expected_ip: str | None = None, *, timeout_seconds: float = 8.0) -> None:
+        if platform.system() != "Windows":
+            return
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+        while asyncio.get_running_loop().time() < deadline:
+            adapter_ok = await self._powershell_ok(
+                f"$a = Get-NetAdapter -Name '{tunnel_name}' -ErrorAction SilentlyContinue; if ($a) {{ 'OK' }}"
+            )
+            ip_ok = True
+            if expected_ip:
+                ip_ok = await self._powershell_ok(
+                    f"$a = Get-NetIPAddress -InterfaceAlias '{tunnel_name}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | "
+                    f"Where-Object {{ $_.IPAddress -eq '{expected_ip}' }}; if ($a) {{ 'OK' }}"
+                )
+            if adapter_ok and ip_ok:
+                return
+            await asyncio.sleep(0.5)
+
+        svc_code, svc_out, svc_err = await self._run("sc", "query", tunnel_name)
+        adapter_code, adapter_out, adapter_err = await self._run(
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            f"Get-NetAdapter -Name '{tunnel_name}' -ErrorAction SilentlyContinue | Format-List -Property Name,Status,InterfaceDescription"
+        )
+        ip_code, ip_out, ip_err = await self._run(
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            f"Get-NetIPAddress -InterfaceAlias '{tunnel_name}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Format-List -Property IPAddress,PrefixLength"
+        )
+        detail_parts = []
+        if expected_ip:
+            detail_parts.append(f"expected_ip={expected_ip}")
+        detail_parts.append(f"sc={svc_err.strip() or svc_out.strip() or svc_code}")
+        detail_parts.append(f"adapter={adapter_err.strip() or adapter_out.strip() or adapter_code}")
+        detail_parts.append(f"ip={ip_err.strip() or ip_out.strip() or ip_code}")
+        raise RuntimeError(f"Tunnel interface '{tunnel_name}' did not come up. " + " | ".join(detail_parts))
+
+    async def _powershell_ok(self, command: str) -> bool:
+        code, stdout, _ = await self._run("powershell", "-NoProfile", "-Command", command)
+        return code == 0 and "OK" in stdout
+
+    @staticmethod
+    def _extract_interface_ipv4(config_text: str | None) -> str | None:
+        if not config_text:
+            return None
+        match = re.search(r"(?im)^\s*Address\s*=\s*([0-9.]+)(?:/\d+)?", config_text)
+        return match.group(1).strip() if match else None
+
     @staticmethod
     def _write_config(tunnel_name: str, config_text: str, suffix: str = ".conf") -> Path:
         ensure_runtime_dirs()
@@ -138,6 +188,7 @@ class WireGuardTunnelAdapter(BaseRuntimeAdapter):
         config_path = self._write_config(tunnel_name, self._apply_split_tunnel_to_wireguard_config(profile, profile.config_text or ""))
         manager = expected_binary_layout()["wireguard_manager"]
         await self._install_tunnel_service(manager, tunnel_name, config_path, "wireguard")
+        await self._wait_for_windows_tunnel(tunnel_name, self._extract_interface_ipv4(profile.config_text))
         return ActiveProcessGroup(
             transport=self.transport.value,
             profile_id=profile.id,
@@ -165,6 +216,7 @@ class AmneziaWGTunnelAdapter(BaseRuntimeAdapter):
         config_path = self._write_config(tunnel_name, self._apply_split_tunnel_to_wireguard_config(profile, profile.config_text or ""))
         manager = expected_binary_layout()["amneziawg_manager"]
         await self._install_tunnel_service(manager, tunnel_name, config_path, "amneziawg")
+        await self._wait_for_windows_tunnel(tunnel_name, self._extract_interface_ipv4(profile.config_text))
         return ActiveProcessGroup(
             transport=self.transport.value,
             profile_id=profile.id,
