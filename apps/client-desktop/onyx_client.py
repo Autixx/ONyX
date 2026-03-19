@@ -2179,20 +2179,32 @@ class DashboardScreen(QWidget):
                 if current_payload and current_payload.get("encrypted_bundle"):
                     dec = self._dec_env(current_payload["encrypted_bundle"])
                     return {
+                        "source": "current",
                         "bundle_id": current_payload["id"],
                         "expires_at": current_payload["expires_at"],
                         "bundle_hash": current_payload["bundle_hash"],
+                        "profile_count": len(((dec or {}).get("runtime") or {}).get("profiles") or []),
                         "decrypted": dec,
                     }
 
                 r=c.post(base+"/client/bundles/issue",json={"device_id":did},headers=hdrs)
                 if r.status_code>=400: raise RuntimeError(r.json().get("detail",r.text))
                 issued=r.json(); dec=self._dec_env(issued["encrypted_bundle"])
-                return {"bundle_id":issued["bundle_id"],"expires_at":issued["expires_at"],
-                        "bundle_hash":issued["bundle_hash"],"decrypted":dec}
+                return {"source":"issued","bundle_id":issued["bundle_id"],"expires_at":issued["expires_at"],
+                        "bundle_hash":issued["bundle_hash"],"profile_count":len(((dec or {}).get("runtime") or {}).get("profiles") or []),"decrypted":dec}
         def _d(data,err):
             if err: QMessageBox.critical(self,"Bundle",str(err)); return
             self.st.last_bundle=data; self.st.save(); self.refresh()
+            if not auto_connect:
+                source = "current cache" if data.get("source") == "current" else "new issue"
+                QMessageBox.information(
+                    self,
+                    "Bundle",
+                    f"Bundle loaded successfully.
+
+Source: {source}
+Profiles: {data.get('profile_count', 0)}",
+                )
             if resume_connect:
                 self._connect_runtime()
         run_async(self,_c,_d)
