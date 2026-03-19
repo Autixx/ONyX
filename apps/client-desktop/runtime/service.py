@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .adapters import ActiveProcessGroup, BaseRuntimeAdapter, build_runtime_adapters
+from .logutil import get_logger
 from .models import (
     ApplyBundleRequest,
     CommandEnvelope,
@@ -16,6 +17,7 @@ from .models import (
 
 class OnyxRuntimeDaemon:
     def __init__(self) -> None:
+        self._log = get_logger("service")
         self._adapters: dict[str, BaseRuntimeAdapter] = build_runtime_adapters()
         self._status = DaemonStatus()
         self._bundle_id = ""
@@ -25,9 +27,12 @@ class OnyxRuntimeDaemon:
 
     async def handle(self, envelope: CommandEnvelope) -> ResponseEnvelope:
         try:
+            self._log.info("handle command=%s request_id=%s", envelope.command, envelope.request_id)
             result = await self._dispatch(envelope)
+            self._log.info("handle_ok command=%s request_id=%s result_keys=%s", envelope.command, envelope.request_id, sorted(result.keys()))
             return ResponseEnvelope(request_id=envelope.request_id, ok=True, result=result, error=None)
         except Exception as exc:
+            self._log.exception("handle_error command=%s request_id=%s", envelope.command, envelope.request_id)
             return ResponseEnvelope(
                 request_id=envelope.request_id,
                 ok=False,
@@ -81,6 +86,20 @@ class OnyxRuntimeDaemon:
         self._bundle_id = request.bundle_id
         self._dns_policy = request.dns
         self._profiles = {profile.id: profile for profile in request.runtime_profiles}
+        self._log.info(
+            "apply_bundle bundle_id=%s profiles=%s transports=%s",
+            self._bundle_id,
+            [
+                {
+                    "id": profile.id,
+                    "transport": profile.transport,
+                    "priority": profile.priority,
+                    "tunnel_name": (profile.metadata or {}).get("tunnel_name", ""),
+                }
+                for profile in request.runtime_profiles
+            ],
+            sorted({profile.transport for profile in self._profiles.values()}),
+        )
         return {
             "bundle_id": self._bundle_id,
             "profile_count": len(self._profiles),
@@ -96,6 +115,13 @@ class OnyxRuntimeDaemon:
             dns=dict(payload.get("dns") or self._dns_policy),
             runtime=dict(payload.get("runtime") or {}),
         )
+        self._log.info(
+            "connect_request profile_id=%s transport=%s dns=%s runtime_keys=%s",
+            request.profile_id,
+            request.transport,
+            sorted(request.dns.keys()),
+            sorted(request.runtime.keys()),
+        )
         profile = self._profiles.get(request.profile_id)
         if profile is None:
             raise RuntimeError(f"Runtime profile not loaded: {request.profile_id}")
@@ -103,6 +129,13 @@ class OnyxRuntimeDaemon:
         if adapter is None:
             raise RuntimeError(f"No runtime adapter registered for transport: {request.transport}")
         session = await adapter.connect(profile)
+        self._log.info(
+            "connect_ok transport=%s profile_id=%s tunnel_name=%s config_path=%s",
+            session.transport,
+            session.profile_id,
+            session.tunnel_name,
+            session.config_path,
+        )
         self._active_session = session
         self._status.state = "connected"
         self._status.active_transport = session.transport
@@ -120,14 +153,22 @@ class OnyxRuntimeDaemon:
 
     async def _disconnect(self) -> dict[str, Any]:
         if self._active_session is None:
+            self._log.info("disconnect_noop")
             self._status = DaemonStatus()
             return {"disconnected": True, "active_transport": ""}
         adapter = self._adapters.get(self._active_session.transport)
         if adapter is None:
             raise RuntimeError(f"Active runtime adapter missing: {self._active_session.transport}")
         try:
+            self._log.info(
+                "disconnect_request transport=%s profile_id=%s tunnel_name=%s",
+                self._active_session.transport,
+                self._active_session.profile_id,
+                self._active_session.tunnel_name,
+            )
             await adapter.disconnect(self._active_session)
         finally:
             self._active_session = None
             self._status = DaemonStatus()
+        self._log.info("disconnect_ok")
         return {"disconnected": True}

@@ -9,6 +9,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from .logutil import get_logger, short_text
 from .models import AdapterDiagnostics, RuntimeProfile, TransportKind
 from .paths import RUNTIME_DIR, ensure_runtime_dirs, expected_binary_layout
 
@@ -57,6 +58,8 @@ class BaseRuntimeAdapter:
         raise NotImplementedError
 
     async def _run(self, *args: str) -> tuple[int, str, str]:
+        log = get_logger("adapters")
+        log.info("exec_start argv=%s", list(args))
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
@@ -64,29 +67,47 @@ class BaseRuntimeAdapter:
             **_async_subprocess_hidden_kwargs(),
         )
         stdout, stderr = await proc.communicate()
-        return proc.returncode, stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace")
+        stdout_text = stdout.decode("utf-8", errors="replace")
+        stderr_text = stderr.decode("utf-8", errors="replace")
+        log.info(
+            "exec_done argv=%s code=%s stdout=%s stderr=%s",
+            list(args),
+            proc.returncode,
+            short_text(stdout_text),
+            short_text(stderr_text),
+        )
+        return proc.returncode, stdout_text, stderr_text
 
     async def _install_tunnel_service(self, manager: str, tunnel_name: str, config_path: Path, flavor: str) -> None:
+        log = get_logger("adapters")
+        log.info("install_tunnel_start flavor=%s tunnel=%s config=%s manager=%s", flavor, tunnel_name, config_path, manager)
         last_message = f"{flavor} tunnel install failed"
         for attempt in range(6):
+            log.info("install_tunnel_attempt flavor=%s tunnel=%s attempt=%s", flavor, tunnel_name, attempt + 1)
             await self._run(manager, "/uninstalltunnelservice", tunnel_name)
             if attempt:
                 await asyncio.sleep(0.75)
             code, stdout, stderr = await self._run(manager, "/installtunnelservice", str(config_path))
             if code == 0:
+                log.info("install_tunnel_ok flavor=%s tunnel=%s attempt=%s", flavor, tunnel_name, attempt + 1)
                 return
             message = stderr.strip() or stdout.strip() or last_message
             last_message = message
             lowered = message.lower()
             if "already installed" in lowered or "already exists" in lowered:
+                log.info("install_tunnel_retry flavor=%s tunnel=%s reason=%s", flavor, tunnel_name, short_text(message))
                 await asyncio.sleep(0.75)
                 continue
+            log.error("install_tunnel_fail flavor=%s tunnel=%s reason=%s", flavor, tunnel_name, short_text(message))
             raise RuntimeError(message)
+        log.error("install_tunnel_exhausted flavor=%s tunnel=%s reason=%s", flavor, tunnel_name, short_text(last_message))
         raise RuntimeError(last_message)
 
     async def _wait_for_windows_tunnel(self, tunnel_name: str, expected_ip: str | None = None, *, timeout_seconds: float = 8.0) -> None:
         if platform.system() != "Windows":
             return
+        log = get_logger("adapters")
+        log.info("wait_tunnel_start tunnel=%s expected_ip=%s timeout=%s", tunnel_name, expected_ip or "", timeout_seconds)
         deadline = asyncio.get_running_loop().time() + timeout_seconds
         while asyncio.get_running_loop().time() < deadline:
             adapter_ok = await self._powershell_ok(
@@ -99,7 +120,9 @@ class BaseRuntimeAdapter:
                     f"Where-Object {{ $_.IPAddress -eq '{expected_ip}' }}; if ($a) {{ 'OK' }}"
                 )
             if adapter_ok and ip_ok:
+                log.info("wait_tunnel_ok tunnel=%s expected_ip=%s", tunnel_name, expected_ip or "")
                 return
+            log.info("wait_tunnel_poll tunnel=%s adapter_ok=%s ip_ok=%s", tunnel_name, adapter_ok, ip_ok)
             await asyncio.sleep(0.5)
 
         svc_code, svc_out, svc_err = await self._run("sc", "query", tunnel_name)
@@ -121,6 +144,7 @@ class BaseRuntimeAdapter:
         detail_parts.append(f"sc={svc_err.strip() or svc_out.strip() or svc_code}")
         detail_parts.append(f"adapter={adapter_err.strip() or adapter_out.strip() or adapter_code}")
         detail_parts.append(f"ip={ip_err.strip() or ip_out.strip() or ip_code}")
+        log.error("wait_tunnel_fail tunnel=%s detail=%s", tunnel_name, " | ".join(short_text(part, 2000) for part in detail_parts))
         raise RuntimeError(f"Tunnel interface '{tunnel_name}' did not come up. " + " | ".join(detail_parts))
 
     async def _powershell_ok(self, command: str) -> bool:
@@ -185,10 +209,12 @@ class WireGuardTunnelAdapter(BaseRuntimeAdapter):
         if not diag.ready:
             raise RuntimeError("WireGuard adapter is not ready: " + ", ".join(diag.notes))
         tunnel_name = profile.metadata.get("tunnel_name") or "onyxwg0"
+        get_logger("adapters").info("wg_connect_start profile_id=%s tunnel=%s", profile.id, tunnel_name)
         config_path = self._write_config(tunnel_name, self._apply_split_tunnel_to_wireguard_config(profile, profile.config_text or ""))
         manager = expected_binary_layout()["wireguard_manager"]
         await self._install_tunnel_service(manager, tunnel_name, config_path, "wireguard")
         await self._wait_for_windows_tunnel(tunnel_name, self._extract_interface_ipv4(profile.config_text))
+        get_logger("adapters").info("wg_connect_ok profile_id=%s tunnel=%s config=%s", profile.id, tunnel_name, config_path)
         return ActiveProcessGroup(
             transport=self.transport.value,
             profile_id=profile.id,
@@ -198,10 +224,12 @@ class WireGuardTunnelAdapter(BaseRuntimeAdapter):
         )
 
     async def disconnect(self, session: ActiveProcessGroup) -> None:
+        get_logger("adapters").info("wg_disconnect_start tunnel=%s profile_id=%s", session.tunnel_name, session.profile_id)
         manager = expected_binary_layout()["wireguard_manager"]
         code, stdout, stderr = await self._run(manager, "/uninstalltunnelservice", session.tunnel_name)
         if code != 0:
             raise RuntimeError(stderr.strip() or stdout.strip() or "wireguard tunnel uninstall failed")
+        get_logger("adapters").info("wg_disconnect_ok tunnel=%s profile_id=%s", session.tunnel_name, session.profile_id)
 
 
 class AmneziaWGTunnelAdapter(BaseRuntimeAdapter):
@@ -213,10 +241,12 @@ class AmneziaWGTunnelAdapter(BaseRuntimeAdapter):
         if not diag.ready:
             raise RuntimeError("AmneziaWG adapter is not ready: " + ", ".join(diag.notes))
         tunnel_name = profile.metadata.get("tunnel_name") or "onyxawg0"
+        get_logger("adapters").info("awg_connect_start profile_id=%s tunnel=%s", profile.id, tunnel_name)
         config_path = self._write_config(tunnel_name, self._apply_split_tunnel_to_wireguard_config(profile, profile.config_text or ""))
         manager = expected_binary_layout()["amneziawg_manager"]
         await self._install_tunnel_service(manager, tunnel_name, config_path, "amneziawg")
         await self._wait_for_windows_tunnel(tunnel_name, self._extract_interface_ipv4(profile.config_text))
+        get_logger("adapters").info("awg_connect_ok profile_id=%s tunnel=%s config=%s", profile.id, tunnel_name, config_path)
         return ActiveProcessGroup(
             transport=self.transport.value,
             profile_id=profile.id,
@@ -226,10 +256,12 @@ class AmneziaWGTunnelAdapter(BaseRuntimeAdapter):
         )
 
     async def disconnect(self, session: ActiveProcessGroup) -> None:
+        get_logger("adapters").info("awg_disconnect_start tunnel=%s profile_id=%s", session.tunnel_name, session.profile_id)
         manager = expected_binary_layout()["amneziawg_manager"]
         code, stdout, stderr = await self._run(manager, "/uninstalltunnelservice", session.tunnel_name)
         if code != 0:
             raise RuntimeError(stderr.strip() or stdout.strip() or "amneziawg tunnel uninstall failed")
+        get_logger("adapters").info("awg_disconnect_ok tunnel=%s profile_id=%s", session.tunnel_name, session.profile_id)
 
 
 class OpenVpnCloakAdapter(BaseRuntimeAdapter):
@@ -241,6 +273,7 @@ class OpenVpnCloakAdapter(BaseRuntimeAdapter):
         if not diag.ready:
             raise RuntimeError("OpenVPN+Cloak adapter is not ready: " + ", ".join(diag.notes))
         tunnel_name = profile.metadata.get("tunnel_name") or "onyxovpn0"
+        get_logger("adapters").info("ovpn_cloak_connect_start profile_id=%s tunnel=%s", profile.id, tunnel_name)
         config = self._parse_profile_config(profile)
         cloak_path = self._write_cloak_config(tunnel_name, config["cloak"])
         ovpn_path = self._write_openvpn_config(tunnel_name, config["openvpn"], config["cloak"])
@@ -279,6 +312,7 @@ class OpenVpnCloakAdapter(BaseRuntimeAdapter):
         try:
             await asyncio.wait_for(openvpn_proc.wait(), timeout=1.0)
         except asyncio.TimeoutError:
+            get_logger("adapters").info("ovpn_cloak_connect_ok profile_id=%s tunnel=%s config=%s", profile.id, tunnel_name, ovpn_path)
             return ActiveProcessGroup(
                 transport=self.transport.value,
                 profile_id=profile.id,
@@ -297,8 +331,10 @@ class OpenVpnCloakAdapter(BaseRuntimeAdapter):
         raise RuntimeError(stderr or stdout or "openvpn failed to start")
 
     async def disconnect(self, session: ActiveProcessGroup) -> None:
+        get_logger("adapters").info("ovpn_cloak_disconnect_start tunnel=%s profile_id=%s pids=%s", session.tunnel_name, session.profile_id, session.pids)
         for pid in session.pids:
             await self._terminate_windows_process(pid)
+        get_logger("adapters").info("ovpn_cloak_disconnect_ok tunnel=%s profile_id=%s", session.tunnel_name, session.profile_id)
 
     @staticmethod
     def _parse_profile_config(profile: RuntimeProfile) -> dict:
@@ -383,6 +419,7 @@ class XrayAdapter(BaseRuntimeAdapter):
         if not diag.ready:
             raise RuntimeError("Xray adapter is not ready: " + ", ".join(diag.notes))
         tunnel_name = profile.metadata.get("tunnel_name") or "onyxxray0"
+        get_logger("adapters").info("xray_connect_start profile_id=%s tunnel=%s", profile.id, tunnel_name)
         config_path = self._write_config(tunnel_name, profile.config_text or "{}", suffix=".json")
         binary = expected_binary_layout()["xray_core"]
         proc = await asyncio.create_subprocess_exec(
@@ -397,6 +434,7 @@ class XrayAdapter(BaseRuntimeAdapter):
         try:
             await asyncio.wait_for(proc.wait(), timeout=1.0)
         except asyncio.TimeoutError:
+            get_logger("adapters").info("xray_connect_ok profile_id=%s tunnel=%s config=%s", profile.id, tunnel_name, config_path)
             return ActiveProcessGroup(
                 transport=self.transport.value,
                 profile_id=profile.id,
@@ -414,6 +452,7 @@ class XrayAdapter(BaseRuntimeAdapter):
         raise RuntimeError(stderr or stdout or "xray failed to start")
 
     async def disconnect(self, session: ActiveProcessGroup) -> None:
+        get_logger("adapters").info("xray_disconnect_start tunnel=%s profile_id=%s pids=%s", session.tunnel_name, session.profile_id, session.pids)
         for pid in session.pids:
             if not pid:
                 continue
@@ -434,6 +473,7 @@ class XrayAdapter(BaseRuntimeAdapter):
                     raise RuntimeError(detail or f"taskkill failed for xray pid {pid}")
             else:
                 os.kill(pid, 15)
+        get_logger("adapters").info("xray_disconnect_ok tunnel=%s profile_id=%s", session.tunnel_name, session.profile_id)
 
 
 def build_runtime_adapters() -> dict[str, BaseRuntimeAdapter]:
