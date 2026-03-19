@@ -9,14 +9,18 @@ from fastapi import HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from onx.db.models.awg_service import AwgService, AwgServiceState
 from onx.core.config import get_settings
 from onx.db.models.device import Device
 from onx.db.models.issued_bundle import IssuedBundle
 from onx.db.models.node import Node, NodeRole, NodeStatus
+from onx.db.models.openvpn_cloak_service import OpenVpnCloakService, OpenVpnCloakServiceState
 from onx.db.models.peer import Peer
 from onx.db.models.transport_package import TransportPackage
 from onx.db.models.subscription import SubscriptionStatus
 from onx.db.models.user import User, UserStatus
+from onx.db.models.wg_service import WgService, WgServiceState
+from onx.db.models.xray_service import XrayService, XrayServiceState
 from onx.schemas.transport_packages import DEFAULT_TRANSPORT_PRIORITY
 from onx.services.client_device_service import client_device_service
 from onx.services.subscription_service import subscription_service
@@ -182,45 +186,23 @@ class BundleService:
         priority_order = self._priority_order(transport_package)
         split_tunnel_enabled = bool(transport_package and transport_package.split_tunnel_enabled)
         split_tunnel_routes = self._split_tunnel_routes(transport_package)
-        peers = list(
-            db.scalars(
-                select(Peer)
-                .where(
-                    Peer.is_active.is_(True),
-                    Peer.revoked_at.is_(None),
-                    Peer.config.is_not(None),
-                    or_(Peer.username == user.username, Peer.email == user.email),
-                )
-                .order_by(Peer.created_at.desc())
-            ).all()
-        )
-
         profiles: list[dict] = []
-        seen: set[tuple[str, str]] = set()
-
-        for index, peer in enumerate(peers, start=1):
+        for index, transport_type in enumerate(priority_order, start=1):
+            if enabled_transports and transport_type not in enabled_transports:
+                continue
+            peer = self._select_runtime_peer(db, user=user, transport_package=transport_package, transport_type=transport_type)
+            if peer is None:
+                continue
             config_text = (peer.config or "").strip()
             if not config_text:
                 continue
-            transport_type = self.detect_transport_type(config_text)
-            if transport_type is None:
-                continue
-            if not self._peer_matches_transport_package(peer, transport_type, transport_package):
-                continue
-            if split_tunnel_enabled and split_tunnel_routes and transport_type in {"awg", "wg"}:
-                config_text = self._apply_split_tunnel_to_wireguard_config(config_text, split_tunnel_routes)
-            if enabled_transports and transport_type not in enabled_transports:
-                continue
-            key = (transport_type, config_text)
-            if key in seen:
-                continue
-            seen.add(key)
-
             node = db.get(Node, peer.node_id)
             if node is None:
                 continue
             if node.status != NodeStatus.REACHABLE or node.traffic_suspended_at is not None:
                 continue
+            if split_tunnel_enabled and split_tunnel_routes and transport_type in {"awg", "wg"}:
+                config_text = self._apply_split_tunnel_to_wireguard_config(config_text, split_tunnel_routes)
 
             profiles.append(
                 {
@@ -239,7 +221,6 @@ class BundleService:
                 }
             )
 
-        profiles.sort(key=lambda item: (priority_order.index(item["type"]) if item["type"] in priority_order else len(priority_order), item["priority"]))
         return profiles
 
     @staticmethod
@@ -303,28 +284,104 @@ class BundleService:
         return out
 
     @staticmethod
-    def _peer_matches_transport_package(peer: Peer, transport_type: str, transport_package: TransportPackage | None) -> bool:
+    def _select_runtime_peer(
+        self,
+        db: Session,
+        *,
+        user: User,
+        transport_package: TransportPackage | None,
+        transport_type: str,
+    ) -> Peer | None:
         if transport_type == "awg":
-            if not peer.awg_service_id:
-                return False
-            return not transport_package or not transport_package.preferred_awg_service_id or peer.awg_service_id == transport_package.preferred_awg_service_id
+            service = self._select_awg_service(db, transport_package)
+            if service is None:
+                return None
+            return self._select_peer_for_service(db, user=user, service_field=Peer.awg_service_id, service_id=service.id)
         if transport_type == "wg":
-            if not peer.wg_service_id:
-                return False
-            return not transport_package or not transport_package.preferred_wg_service_id or peer.wg_service_id == transport_package.preferred_wg_service_id
+            service = self._select_wg_service(db, transport_package)
+            if service is None:
+                return None
+            return self._select_peer_for_service(db, user=user, service_field=Peer.wg_service_id, service_id=service.id)
         if transport_type == "xray":
-            if not peer.xray_service_id:
-                return False
-            return not transport_package or not transport_package.preferred_xray_service_id or peer.xray_service_id == transport_package.preferred_xray_service_id
+            service = self._select_xray_service(db, transport_package)
+            if service is None:
+                return None
+            return self._select_peer_for_service(db, user=user, service_field=Peer.xray_service_id, service_id=service.id)
         if transport_type == "openvpn_cloak":
-            if not peer.openvpn_cloak_service_id:
-                return False
-            return (
-                not transport_package
-                or not transport_package.preferred_openvpn_cloak_service_id
-                or peer.openvpn_cloak_service_id == transport_package.preferred_openvpn_cloak_service_id
+            service = self._select_openvpn_cloak_service(db, transport_package)
+            if service is None:
+                return None
+            return self._select_peer_for_service(db, user=user, service_field=Peer.openvpn_cloak_service_id, service_id=service.id)
+        return None
+
+    @staticmethod
+    def _select_peer_for_service(db: Session, *, user: User, service_field, service_id: str) -> Peer | None:
+        return db.scalar(
+            select(Peer)
+            .where(
+                service_field == service_id,
+                Peer.is_active.is_(True),
+                Peer.revoked_at.is_(None),
+                Peer.config.is_not(None),
+                or_(Peer.username == user.username, Peer.email == user.email),
             )
-        return True
+            .order_by(Peer.created_at.desc())
+        )
+
+    @staticmethod
+    def _node_is_reachable(db: Session, node_id: str) -> bool:
+        node = db.get(Node, node_id)
+        return node is not None and node.status == NodeStatus.REACHABLE and node.traffic_suspended_at is None
+
+    def _select_xray_service(self, db: Session, transport_package: TransportPackage | None) -> XrayService | None:
+        if transport_package and transport_package.preferred_xray_service_id:
+            preferred = db.get(XrayService, transport_package.preferred_xray_service_id)
+            if preferred is not None and preferred.state == XrayServiceState.ACTIVE and self._node_is_reachable(db, preferred.node_id):
+                return preferred
+        services = list(db.scalars(select(XrayService).where(XrayService.state == XrayServiceState.ACTIVE).order_by(XrayService.updated_at.desc())).all())
+        for service in services:
+            if self._node_is_reachable(db, service.node_id):
+                return service
+        return None
+
+    def _select_awg_service(self, db: Session, transport_package: TransportPackage | None) -> AwgService | None:
+        if transport_package and transport_package.preferred_awg_service_id:
+            preferred = db.get(AwgService, transport_package.preferred_awg_service_id)
+            if preferred is not None and preferred.state == AwgServiceState.ACTIVE and self._node_is_reachable(db, preferred.node_id):
+                return preferred
+        services = list(db.scalars(select(AwgService).where(AwgService.state == AwgServiceState.ACTIVE).order_by(AwgService.updated_at.desc())).all())
+        for service in services:
+            if self._node_is_reachable(db, service.node_id):
+                return service
+        return None
+
+    def _select_wg_service(self, db: Session, transport_package: TransportPackage | None) -> WgService | None:
+        if transport_package and transport_package.preferred_wg_service_id:
+            preferred = db.get(WgService, transport_package.preferred_wg_service_id)
+            if preferred is not None and preferred.state == WgServiceState.ACTIVE and self._node_is_reachable(db, preferred.node_id):
+                return preferred
+        services = list(db.scalars(select(WgService).where(WgService.state == WgServiceState.ACTIVE).order_by(WgService.updated_at.desc())).all())
+        for service in services:
+            if self._node_is_reachable(db, service.node_id):
+                return service
+        return None
+
+    def _select_openvpn_cloak_service(self, db: Session, transport_package: TransportPackage | None) -> OpenVpnCloakService | None:
+        if transport_package and transport_package.preferred_openvpn_cloak_service_id:
+            preferred = db.get(OpenVpnCloakService, transport_package.preferred_openvpn_cloak_service_id)
+            if preferred is not None and preferred.state == OpenVpnCloakServiceState.ACTIVE and self._node_is_reachable(db, preferred.node_id):
+                return preferred
+        services = list(
+            db.scalars(
+                select(OpenVpnCloakService)
+                .where(OpenVpnCloakService.state == OpenVpnCloakServiceState.ACTIVE)
+                .order_by(OpenVpnCloakService.updated_at.desc())
+            ).all()
+        )
+        for service in services:
+            if self._node_is_reachable(db, service.node_id):
+                return service
+        return None
 
     @staticmethod
     def _apply_split_tunnel_to_wireguard_config(config_text: str, routes: list[str]) -> str:
