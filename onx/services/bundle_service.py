@@ -205,6 +205,8 @@ class BundleService:
             transport_type = self.detect_transport_type(config_text)
             if transport_type is None:
                 continue
+            if not self._peer_matches_transport_package(peer, transport_type, transport_package):
+                continue
             if split_tunnel_enabled and split_tunnel_routes and transport_type in {"awg", "wg"}:
                 config_text = self._apply_split_tunnel_to_wireguard_config(config_text, split_tunnel_routes)
             if enabled_transports and transport_type not in enabled_transports:
@@ -299,6 +301,30 @@ class BundleService:
             if value and value not in out:
                 out.append(value)
         return out
+
+    @staticmethod
+    def _peer_matches_transport_package(peer: Peer, transport_type: str, transport_package: TransportPackage | None) -> bool:
+        if transport_type == "awg":
+            if not peer.awg_service_id:
+                return False
+            return not transport_package or not transport_package.preferred_awg_service_id or peer.awg_service_id == transport_package.preferred_awg_service_id
+        if transport_type == "wg":
+            if not peer.wg_service_id:
+                return False
+            return not transport_package or not transport_package.preferred_wg_service_id or peer.wg_service_id == transport_package.preferred_wg_service_id
+        if transport_type == "xray":
+            if not peer.xray_service_id:
+                return False
+            return not transport_package or not transport_package.preferred_xray_service_id or peer.xray_service_id == transport_package.preferred_xray_service_id
+        if transport_type == "openvpn_cloak":
+            if not peer.openvpn_cloak_service_id:
+                return False
+            return (
+                not transport_package
+                or not transport_package.preferred_openvpn_cloak_service_id
+                or peer.openvpn_cloak_service_id == transport_package.preferred_openvpn_cloak_service_id
+            )
+        return True
 
     @staticmethod
     def _apply_split_tunnel_to_wireguard_config(config_text: str, routes: list[str]) -> str:
