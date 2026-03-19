@@ -44,6 +44,7 @@ class AwgServiceManager:
         if node is None:
             raise ValueError("Node not found.")
         self._validate_server_address(payload.server_address_v4)
+        awg_obfuscation_json = self._validate_obfuscation(payload.awg_obfuscation_json, mtu=payload.mtu)
         service = AwgService(
             name=payload.name,
             node_id=payload.node_id,
@@ -57,7 +58,7 @@ class AwgServiceManager:
             mtu=payload.mtu,
             persistent_keepalive=payload.persistent_keepalive,
             client_allowed_ips_json=list(payload.client_allowed_ips_json),
-            awg_obfuscation_json=dict(payload.awg_obfuscation_json),
+            awg_obfuscation_json=awg_obfuscation_json,
         )
         service.desired_config_json = self._serialize_service(service)
         db.add(service)
@@ -98,7 +99,10 @@ class AwgServiceManager:
         if payload.client_allowed_ips_json is not None:
             service.client_allowed_ips_json = list(payload.client_allowed_ips_json)
         if payload.awg_obfuscation_json is not None:
-            service.awg_obfuscation_json = dict(payload.awg_obfuscation_json)
+            service.awg_obfuscation_json = self._validate_obfuscation(
+                payload.awg_obfuscation_json,
+                mtu=service.mtu,
+            )
         service.state = AwgServiceState.PLANNED
         service.last_error_text = None
         service.applied_config_json = None
@@ -167,6 +171,7 @@ class AwgServiceManager:
         if node is None:
             raise ValueError("Node not found.")
         self._assert_awg_ready(db, node)
+        service.awg_obfuscation_json = self._validate_obfuscation(service.awg_obfuscation_json or {}, mtu=service.mtu)
         management_secret = self._get_management_secret(db, node)
 
         server_private, server_public, _ = self._ensure_server_keypair(db, service)
@@ -318,6 +323,46 @@ class AwgServiceManager:
     @staticmethod
     def _peer_allowed_ip(peer_address_v4: str) -> str:
         return str(ipaddress.ip_interface(peer_address_v4).ip) + "/32"
+
+    @staticmethod
+    def _validate_obfuscation(obf: dict, *, mtu: int) -> dict:
+        if not isinstance(obf, dict):
+            raise ValueError("awg_obfuscation_json must be an object.")
+        required = ("jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4")
+        cleaned: dict[str, int] = {}
+        for key in required:
+            if key not in obf:
+                raise ValueError(f"awg_obfuscation_json missing '{key}'.")
+            try:
+                cleaned[key] = int(obf[key])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"awg_obfuscation_json.{key} must be an integer.") from exc
+
+        if not 1 <= cleaned["jc"] <= 128:
+            raise ValueError("AWG Jc must be in range 1..128.")
+        if cleaned["jmin"] < 0:
+            raise ValueError("AWG Jmin must be >= 0.")
+        if cleaned["jmax"] <= cleaned["jmin"]:
+            raise ValueError("AWG Jmax must be greater than Jmin.")
+        if cleaned["jmax"] > mtu:
+            raise ValueError(f"AWG Jmax must be <= MTU ({mtu}).")
+
+        max_s1 = max(mtu - 148, 0)
+        max_s2 = max(mtu - 92, 0)
+        if not 0 <= cleaned["s1"] <= max_s1:
+            raise ValueError(f"AWG S1 must be in range 0..{max_s1} for MTU {mtu}.")
+        if not 0 <= cleaned["s2"] <= max_s2:
+            raise ValueError(f"AWG S2 must be in range 0..{max_s2} for MTU {mtu}.")
+        for key in ("s3", "s4"):
+            if not 0 <= cleaned[key] <= mtu:
+                raise ValueError(f"AWG {key.upper()} must be in range 0..{mtu}.")
+        if cleaned["s1"] + 56 == cleaned["s2"]:
+            raise ValueError("AWG S1 + 56 must not equal S2.")
+
+        hs = [cleaned["h1"], cleaned["h2"], cleaned["h3"], cleaned["h4"]]
+        if len(set(hs)) != len(hs):
+            raise ValueError("AWG H1..H4 must be unique.")
+        return cleaned
 
     def _allocate_client_address(self, db: Session, service: AwgService) -> str:
         server_iface = ipaddress.ip_interface(service.server_address_v4)

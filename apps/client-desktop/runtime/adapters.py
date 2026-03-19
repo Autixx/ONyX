@@ -275,7 +275,12 @@ class AmneziaWGTunnelAdapter(BaseRuntimeAdapter):
         config_path = self._write_config(tunnel_name, self._apply_split_tunnel_to_wireguard_config(profile, profile.config_text or ""))
         manager = expected_binary_layout()["amneziawg_manager"]
         await self._install_tunnel_service(manager, tunnel_name, config_path, "amneziawg")
-        await self._wait_for_windows_tunnel(tunnel_name, self._extract_interface_ipv4(profile.config_text))
+        try:
+            await self._wait_for_windows_tunnel(tunnel_name, self._extract_interface_ipv4(profile.config_text))
+        except Exception as exc:
+            code, stdout, stderr = await self._run(manager, "/dumplog")
+            dump_text = stderr.strip() or stdout.strip() or str(code)
+            raise RuntimeError(f"{exc} | amneziawg_dumplog={short_text(dump_text, 4000)}") from exc
         get_logger("adapters").info("awg_connect_ok profile_id=%s tunnel=%s config=%s", profile.id, tunnel_name, config_path)
         return ActiveProcessGroup(
             transport=self.transport.value,
