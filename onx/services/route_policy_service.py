@@ -1117,6 +1117,22 @@ class RoutePolicyService:
                 "iptables -t nat -D POSTROUTING -o \"$TARGET_IF\" -j MASQUERADE; done"
             )
 
+        lines.extend(
+            [
+                "",
+                "# Allow forwarded traffic for the selected ingress/egress pair.",
+                "iptables -C FORWARD -i \"$INGRESS_IF\" -o \"$TARGET_IF\" -j ACCEPT 2>/dev/null || "
+                "iptables -I FORWARD 1 -i \"$INGRESS_IF\" -o \"$TARGET_IF\" -j ACCEPT",
+                "iptables -C FORWARD -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || "
+                "iptables -I FORWARD 1 -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
+                "# Best-effort sync with UFW routed policy when it is present.",
+                "if command -v ufw >/dev/null 2>&1; then",
+                "  ufw route allow in on \"$INGRESS_IF\" out on \"$TARGET_IF\" >/dev/null 2>&1 || true",
+                "  ufw route allow in on \"$TARGET_IF\" out on \"$INGRESS_IF\" >/dev/null 2>&1 || true",
+                "fi",
+            ]
+        )
+
         if control_plane_ip and ssh_port > 0:
             lines.extend(
                 [
@@ -1157,12 +1173,24 @@ class RoutePolicyService:
             "iptables -t mangle -F \"$CHAIN\" 2>/dev/null || true",
             "iptables -t mangle -X \"$CHAIN\" 2>/dev/null || true",
             "ip rule del fwmark \"$FWMARK\" table \"$TABLE_ID\" priority \"$RULE_PRIORITY\" 2>/dev/null || true",
+            "while iptables -C FORWARD -i \"$INGRESS_IF\" -o \"$TARGET_IF\" -j ACCEPT 2>/dev/null; do "
+            "iptables -D FORWARD -i \"$INGRESS_IF\" -o \"$TARGET_IF\" -j ACCEPT; done",
+            "while iptables -C FORWARD -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null; do "
+            "iptables -D FORWARD -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT; done",
         ]
         if masq:
             lines.append(
                 "while iptables -t nat -C POSTROUTING -o \"$TARGET_IF\" -j MASQUERADE 2>/dev/null; do "
                 "iptables -t nat -D POSTROUTING -o \"$TARGET_IF\" -j MASQUERADE; done"
             )
+        lines.extend(
+            [
+                "if command -v ufw >/dev/null 2>&1; then",
+                "  ufw --force delete route allow in on \"$INGRESS_IF\" out on \"$TARGET_IF\" >/dev/null 2>&1 || true",
+                "  ufw --force delete route allow in on \"$TARGET_IF\" out on \"$INGRESS_IF\" >/dev/null 2>&1 || true",
+                "fi",
+            ]
+        )
         if control_plane_ip and ssh_port > 0:
             lines.extend(
                 [
