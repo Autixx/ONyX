@@ -4,15 +4,17 @@ import ipaddress
 import re
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from onx.core.keys import generate_wireguard_keypair
 from onx.db.models.awg_service import AwgService, AwgServiceState
+from onx.db.models.issued_bundle import IssuedBundle
 from onx.db.models.node import Node
 from onx.db.models.node_capability import NodeCapability
 from onx.db.models.node_secret import NodeSecretKind
 from onx.db.models.peer import Peer
+from onx.db.models.user import User
 from onx.deploy.ssh_executor import SSHExecutor
 from onx.services.interface_runtime_service import InterfaceRuntimeService
 from onx.services.node_runtime_bootstrap_service import RUNTIME_CAPABILITY_NAME
@@ -65,6 +67,7 @@ class AwgServiceManager:
 
     def update_service(self, db: Session, service: AwgService, payload) -> AwgService:
         was_active = service.state == AwgServiceState.ACTIVE
+        existing_peers = self._list_service_peers(db, service.id)
         if payload.name is not None and payload.name != service.name:
             existing = db.scalar(select(AwgService).where(AwgService.name == payload.name))
             if existing is not None:
@@ -103,6 +106,9 @@ class AwgServiceManager:
         service.desired_config_json = self._serialize_service(service)
         db.add(service)
         db.commit()
+        if existing_peers:
+            self._refresh_peer_configs(db, service, existing_peers)
+            self._invalidate_current_bundles_for_peers(db, existing_peers)
         from onx.services.transit_policy_service import transit_policy_manager
         transit_policy_manager.sync_for_next_hop(db, "awg_service", service.id)
         if was_active:
@@ -112,6 +118,7 @@ class AwgServiceManager:
 
     def delete_service(self, db: Session, service: AwgService) -> None:
         service_id = service.id
+        existing_peers = self._list_service_peers(db, service.id)
         node = db.get(Node, service.node_id)
         if node is not None:
             try:
@@ -119,6 +126,8 @@ class AwgServiceManager:
                 self._runtime.stop_interface(node, secret, service.interface_name)
             except Exception:
                 pass
+        if existing_peers:
+            self._invalidate_current_bundles_for_peers(db, existing_peers)
         db.delete(service)
         db.commit()
         from onx.services.transit_policy_service import transit_policy_manager
@@ -137,6 +146,7 @@ class AwgServiceManager:
             peer.config = config_text
         db.add(peer)
         db.commit()
+        self._invalidate_current_bundles_for_peers(db, [peer])
         result = {
             "peer_id": peer.id,
             "service_id": service.id,
@@ -368,6 +378,55 @@ class AwgServiceManager:
                 .order_by(Peer.created_at.asc())
             ).all()
         )
+
+    def _refresh_peer_configs(self, db: Session, service: AwgService, peers: list[Peer]) -> None:
+        if not peers:
+            return
+        server_private, server_public, _ = self._ensure_server_keypair(db, service)
+        del server_private
+        for peer in peers:
+            peer_private, peer_public = self._resolve_peer_keypair(peer)
+            if not peer.awg_address_v4:
+                peer.awg_address_v4 = self._allocate_client_address(db, service)
+            peer.node_id = service.node_id
+            peer.awg_service_id = service.id
+            peer.awg_public_key = peer_public
+            peer.config = self.render_peer_config(service, peer_private, peer_public, peer.awg_address_v4, server_public)
+            db.add(peer)
+        db.commit()
+
+    def _invalidate_current_bundles_for_peers(self, db: Session, peers: list[Peer]) -> int:
+        usernames = {str(peer.username or "").strip() for peer in peers if str(peer.username or "").strip()}
+        emails = {str(peer.email or "").strip() for peer in peers if str(peer.email or "").strip()}
+        if not usernames and not emails:
+            return 0
+        conditions = []
+        if usernames:
+            conditions.append(User.username.in_(sorted(usernames)))
+        if emails:
+            conditions.append(User.email.in_(sorted(emails)))
+        user_ids = [
+            user_id
+            for user_id in db.scalars(select(User.id).where(or_(*conditions))).all()
+        ]
+        if not user_ids:
+            return 0
+        bundles = list(
+            db.scalars(
+                select(IssuedBundle).where(
+                    IssuedBundle.user_id.in_(user_ids),
+                    IssuedBundle.invalidated_at.is_(None),
+                )
+            ).all()
+        )
+        if not bundles:
+            return 0
+        invalidated_at = datetime.now(timezone.utc)
+        for bundle in bundles:
+            bundle.invalidated_at = invalidated_at
+            db.add(bundle)
+        db.commit()
+        return len(bundles)
 
     def _get_management_secret(self, db: Session, node: Node) -> str:
         secret_kind = NodeSecretKind.SSH_PASSWORD if node.auth_type.value == "password" else NodeSecretKind.SSH_PRIVATE_KEY
