@@ -2,7 +2,7 @@ from datetime import datetime
 from onx.compat import StrEnum, enum_names
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Enum, Float, Integer, String, func
+from sqlalchemy import JSON, DateTime, Enum, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from onx.db.base import Base
@@ -53,6 +53,7 @@ class Node(Base):
     os_family: Mapped[str | None] = mapped_column(String(64), nullable=True)
     os_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     kernel_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    discovered_interfaces_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     registered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

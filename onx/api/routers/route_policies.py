@@ -2,6 +2,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, st
 from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
+from onx.db.models.event_log import EventLevel
 from onx.db.models.job import JobKind, JobTargetType
 from onx.db.models.route_policy import RoutePolicy
 from onx.schemas.jobs import JobEnqueueOptions, JobRead
@@ -10,8 +11,11 @@ from onx.schemas.route_policies import (
     RoutePolicyCreate,
     RoutePolicyPlanRead,
     RoutePolicyRead,
+    RoutePolicyTestApplyRead,
+    RoutePolicyTestApplyRequest,
     RoutePolicyUpdate,
 )
+from onx.services.event_log_service import EventLogService
 from onx.services.job_service import JobConflictError, JobService
 from onx.services.route_policy_service import RoutePolicyConflictError, RoutePolicyService
 
@@ -19,6 +23,7 @@ from onx.services.route_policy_service import RoutePolicyConflictError, RoutePol
 router = APIRouter(prefix="/route-policies", tags=["route-policies"])
 route_policy_service = RoutePolicyService()
 job_service = JobService()
+event_log_service = EventLogService()
 
 
 @router.get("", response_model=list[RoutePolicyRead])
@@ -119,6 +124,42 @@ def apply_route_policy(
             },
         ) from exc
     return job
+
+
+@router.post("/{policy_id}/test-apply", response_model=RoutePolicyTestApplyRead, status_code=status.HTTP_200_OK)
+def test_apply_route_policy(
+    policy_id: str,
+    payload: RoutePolicyTestApplyRequest | None = Body(default=None),
+    db: Session = Depends(get_database_session),
+) -> RoutePolicyTestApplyRead:
+    policy = route_policy_service.get_policy(db, policy_id)
+    if policy is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Route policy not found.")
+    try:
+        result = route_policy_service.test_policy(
+            db,
+            policy,
+            duration_seconds=(payload.duration_seconds if payload else 120),
+        )
+        event_log_service.log(
+            db,
+            entity_type="route_policy",
+            entity_id=policy.id,
+            level=EventLevel.INFO,
+            message=result["message"],
+            details={
+                "mode": "safe_test",
+                "duration_seconds": result["duration_seconds"],
+                "rollback_at": result["rollback_at"].isoformat() if result.get("rollback_at") else None,
+                "target_interface": result["target_interface"],
+                "control_plane_ip": result.get("control_plane_ip"),
+            },
+        )
+        return RoutePolicyTestApplyRead.model_validate(result)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 @router.post("/{policy_id}/apply-planned", response_model=JobRead, status_code=status.HTTP_202_ACCEPTED)

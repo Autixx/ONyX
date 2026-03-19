@@ -112,6 +112,7 @@ class DiscoveryService:
         node.os_family = result["os_family"]
         node.os_version = result["os_version"]
         node.kernel_version = result["kernel_version"]
+        node.discovered_interfaces_json = list(result["interfaces"] or [])
         node.last_seen_at = datetime.now(timezone.utc)
         node.status = NodeStatus.REACHABLE
         db.add(node)

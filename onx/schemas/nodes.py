@@ -76,6 +76,7 @@ class NodeRead(ONXBaseModel):
     os_family: str | None
     os_version: str | None
     kernel_version: str | None
+    discovered_interfaces: list[str]
     registered_at: datetime
     traffic_limit_gb: float | None
     traffic_used_gb: float | None = None
@@ -102,6 +103,7 @@ def serialize_node_read(node: "Node", *, traffic_used_gb: float | None = None) -
         os_family=node.os_family,
         os_version=node.os_version,
         kernel_version=node.kernel_version,
+        discovered_interfaces=list(node.discovered_interfaces_json or []),
         registered_at=node.registered_at,
         traffic_limit_gb=node.traffic_limit_gb,
         traffic_used_gb=traffic_used_gb,

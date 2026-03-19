@@ -5,8 +5,10 @@ import ipaddress
 import json
 import re
 import shlex
-from datetime import datetime, timezone
+import socket
+from datetime import datetime, timedelta, timezone
 from typing import Callable
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -188,6 +190,7 @@ class RoutePolicyService:
         geo_entries = self._build_geo_entries(policy, geo_policies)
         state = self._build_state(
             policy,
+            node=node,
             geo_entries=geo_entries,
             target_interface=resolved_target["target_interface"],
             target_gateway=resolved_target.get("target_gateway"),
@@ -226,7 +229,7 @@ class RoutePolicyService:
             db.refresh(dns_policy)
         return {
             "policy": policy,
-            "message": "Route policy applied successfully.",
+            "message": self._build_apply_message(policy, state),
         }
 
     def apply_planned_policy(
@@ -358,7 +361,69 @@ class RoutePolicyService:
             db.refresh(dns_policy)
         return {
             "policy": policy,
-            "message": "Planned route policy applied successfully.",
+            "message": self._build_apply_message(policy, planned_state or planned.get("state") or {}),
+        }
+
+    def test_policy(
+        self,
+        db: Session,
+        policy: RoutePolicy,
+        *,
+        duration_seconds: int = 120,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> dict:
+        node = db.get(Node, policy.node_id)
+        if node is None:
+            raise ValueError("Target node not found.")
+        if not policy.enabled:
+            raise ValueError("Enable the route policy before running a safe test.")
+
+        if progress_callback:
+            progress_callback("loading management secret")
+        secret = self._get_management_secret(db, node)
+        geo_policies = self._geo_policies.list_for_route_policy(db, policy.id, only_enabled=True)
+
+        if progress_callback:
+            progress_callback("resolving egress target")
+        resolved_target = self._resolve_apply_target(
+            db,
+            node=node,
+            secret=secret,
+            policy=policy,
+        )
+
+        if progress_callback:
+            progress_callback("preparing timed rollback")
+        geo_entries = self._build_geo_entries(policy, geo_policies)
+        state = self._build_state(
+            policy,
+            node=node,
+            geo_entries=geo_entries,
+            target_interface=resolved_target["target_interface"],
+            target_gateway=resolved_target.get("target_gateway"),
+            balancer_pick=resolved_target.get("balancer_pick"),
+        )
+        state = self._with_test_overrides(state, policy.id)
+        rollback_at = datetime.now(timezone.utc) + self._duration_delta(duration_seconds)
+
+        if progress_callback:
+            progress_callback("applying timed test route policy")
+        self._run_remote_script(
+            node,
+            secret,
+            self._render_timed_test_script(state, duration_seconds=duration_seconds),
+            f"test-apply-{policy.id}",
+        )
+        return {
+            "node_id": node.id,
+            "policy_id": policy.id,
+            "policy_name": policy.name,
+            "duration_seconds": int(duration_seconds),
+            "rollback_at": rollback_at,
+            "target_interface": str(state["target_interface"]),
+            "control_plane_host": state.get("control_plane_host"),
+            "control_plane_ip": state.get("control_plane_ip"),
+            "message": self._build_test_apply_message(policy, state, rollback_at=rollback_at),
         }
 
     def plan_policy(self, db: Session, policy: RoutePolicy) -> dict:
@@ -387,6 +452,7 @@ class RoutePolicyService:
             geo_entries = self._build_geo_entries(policy, geo_policies)
             state = self._build_state(
                 policy,
+                node=node,
                 geo_entries=geo_entries,
                 target_interface=resolved_target["target_interface"],
                 target_gateway=resolved_target.get("target_gateway"),
@@ -641,11 +707,17 @@ class RoutePolicyService:
         self,
         policy: RoutePolicy,
         *,
+        node: Node,
         geo_entries: list[dict],
         target_interface: str,
         target_gateway: str | None,
         balancer_pick: dict | None,
     ) -> dict:
+        safety = self._build_ssh_safety_context(node)
+        effective_excluded = self._merge_network_lists(
+            list(policy.excluded_networks),
+            list(safety["excluded_networks"]),
+        )
         return {
             "chain_name": self._chain_name(policy.id),
             "ingress_interface": policy.ingress_interface,
@@ -656,7 +728,12 @@ class RoutePolicyService:
             "firewall_mark": policy.firewall_mark,
             "masquerade": bool(policy.masquerade),
             "routed_networks": list(policy.routed_networks),
-            "excluded_networks": list(policy.excluded_networks),
+            "excluded_networks": effective_excluded,
+            "user_excluded_networks": list(policy.excluded_networks),
+            "safety_excluded_networks": list(safety["excluded_networks"]),
+            "control_plane_host": safety["control_plane_host"],
+            "control_plane_ip": safety["control_plane_ip"],
+            "ssh_port": safety["ssh_port"],
             "action": policy.action.value,
             "balancer_id": policy.balancer_id,
             "balancer_pick": balancer_pick,
@@ -945,6 +1022,8 @@ class RoutePolicyService:
         target_gateway = state.get("target_gateway")
         routed = [shlex.quote(network) for network in state["routed_networks"]]
         excluded = [shlex.quote(network) for network in state["excluded_networks"]]
+        control_plane_ip = str(state.get("control_plane_ip") or "").strip()
+        ssh_port = int(state.get("ssh_port") or 0)
         geo_entries = list(state.get("geo_entries", []))
 
         lines = [
@@ -1038,6 +1117,18 @@ class RoutePolicyService:
                 "iptables -t nat -D POSTROUTING -o \"$TARGET_IF\" -j MASQUERADE; done"
             )
 
+        if control_plane_ip and ssh_port > 0:
+            lines.extend(
+                [
+                    "",
+                    "# Preserve SSH management access from the control plane host.",
+                    f"CONTROL_PLANE_IP={shlex.quote(control_plane_ip)}",
+                    f"SSH_PORT={ssh_port}",
+                    "iptables -C INPUT -p tcp -s \"$CONTROL_PLANE_IP\" --dport \"$SSH_PORT\" -j ACCEPT 2>/dev/null || "
+                    "iptables -I INPUT 1 -p tcp -s \"$CONTROL_PLANE_IP\" --dport \"$SSH_PORT\" -j ACCEPT",
+                ]
+            )
+
         return "\n".join(lines) + "\n"
 
     def _render_cleanup_script(self, state: dict) -> str:
@@ -1048,6 +1139,8 @@ class RoutePolicyService:
         table_id = int(state.get("table_id", 0))
         priority = int(state.get("rule_priority", 0))
         masq = bool(state.get("masquerade", False))
+        control_plane_ip = str(state.get("control_plane_ip") or "").strip()
+        ssh_port = int(state.get("ssh_port") or 0)
 
         lines = [
             "set -eu",
@@ -1070,7 +1163,118 @@ class RoutePolicyService:
                 "while iptables -t nat -C POSTROUTING -o \"$TARGET_IF\" -j MASQUERADE 2>/dev/null; do "
                 "iptables -t nat -D POSTROUTING -o \"$TARGET_IF\" -j MASQUERADE; done"
             )
+        if control_plane_ip and ssh_port > 0:
+            lines.extend(
+                [
+                    f"CONTROL_PLANE_IP={shlex.quote(control_plane_ip)}",
+                    f"SSH_PORT={ssh_port}",
+                    "while iptables -C INPUT -p tcp -s \"$CONTROL_PLANE_IP\" --dport \"$SSH_PORT\" -j ACCEPT 2>/dev/null; do "
+                    "iptables -D INPUT -p tcp -s \"$CONTROL_PLANE_IP\" --dport \"$SSH_PORT\" -j ACCEPT; done",
+                ]
+            )
         return "\n".join(lines) + "\n"
+
+    def _render_timed_test_script(self, state: dict, *, duration_seconds: int) -> str:
+        apply_script = self._render_apply_script(state).rstrip()
+        cleanup_script = self._render_cleanup_script(state).rstrip()
+        chain_name = str(state.get("chain_name") or "onx-route-test")
+        safe_suffix = re.sub(r"[^a-zA-Z0-9_.-]", "", chain_name.lower())[-32:] or "test"
+        workdir = f"/tmp/onx-route-test-{safe_suffix}"
+        duration = max(30, int(duration_seconds))
+        return (
+            "set -eu\n"
+            f"WORKDIR={shlex.quote(workdir)}\n"
+            "mkdir -p \"$WORKDIR\"\n"
+            "cat > \"$WORKDIR/apply.sh\" <<'ONX_APPLY_EOF'\n"
+            f"{apply_script}\n"
+            "ONX_APPLY_EOF\n"
+            "cat > \"$WORKDIR/cleanup.sh\" <<'ONX_CLEANUP_EOF'\n"
+            f"{cleanup_script}\n"
+            "ONX_CLEANUP_EOF\n"
+            "chmod 700 \"$WORKDIR/apply.sh\" \"$WORKDIR/cleanup.sh\"\n"
+            "touch \"$WORKDIR/rollback.pending\"\n"
+            f"( sleep {duration}; if [ -f \"$WORKDIR/rollback.pending\" ]; then bash \"$WORKDIR/cleanup.sh\" >/dev/null 2>&1 || true; fi; rm -rf \"$WORKDIR\" ) >/dev/null 2>&1 &\n"
+            "if ! bash \"$WORKDIR/apply.sh\"; then\n"
+            "  rm -f \"$WORKDIR/rollback.pending\"\n"
+            "  bash \"$WORKDIR/cleanup.sh\" >/dev/null 2>&1 || true\n"
+            "  rm -rf \"$WORKDIR\"\n"
+            "  exit 1\n"
+            "fi\n"
+            "printf '%s\\n' 'safe route policy test applied; automatic rollback scheduled.'\n"
+        )
+
+    def _build_ssh_safety_context(self, node: Node) -> dict:
+        configured = str(self._settings.onx_public_base_url or "").strip()
+        control_plane_host = ""
+        control_plane_ip: str | None = None
+        if configured:
+            parsed = urlparse(configured if "://" in configured else f"https://{configured}")
+            control_plane_host = str(parsed.hostname or "").strip()
+        if control_plane_host:
+            try:
+                control_plane_ip = str(ipaddress.ip_address(control_plane_host))
+            except ValueError:
+                try:
+                    control_plane_ip = socket.gethostbyname(control_plane_host)
+                except OSError:
+                    control_plane_ip = None
+        excluded = [f"{control_plane_ip}/32"] if control_plane_ip else []
+        return {
+            "control_plane_host": control_plane_host or None,
+            "control_plane_ip": control_plane_ip,
+            "ssh_port": int(node.ssh_port),
+            "excluded_networks": excluded,
+        }
+
+    @staticmethod
+    def _merge_network_lists(*groups: list[str]) -> list[str]:
+        seen: set[str] = set()
+        merged: list[str] = []
+        for group in groups:
+            for item in group:
+                network = str(item or "").strip()
+                if not network or network in seen:
+                    continue
+                seen.add(network)
+                merged.append(network)
+        return merged
+
+    @staticmethod
+    def _duration_delta(seconds: int) -> timedelta:
+        return timedelta(seconds=max(30, int(seconds)))
+
+    @staticmethod
+    def _test_seed(policy_id: str) -> int:
+        digest = hashlib.sha256(policy_id.encode("utf-8")).hexdigest()
+        return int(digest[:8], 16)
+
+    def _with_test_overrides(self, state: dict, policy_id: str) -> dict:
+        seed = self._test_seed(policy_id)
+        state = dict(state)
+        state["table_id"] = 40000 + (seed % 1000)
+        state["rule_priority"] = 41000 + ((seed // 1000) % 1000)
+        state["firewall_mark"] = 42000 + ((seed // 1000000) % 1000)
+        state["chain_name"] = f"{state['chain_name']}_TEST"
+        return state
+
+    def _build_apply_message(self, policy: RoutePolicy, state: dict) -> str:
+        control_plane_ip = str(state.get("control_plane_ip") or "").strip()
+        if control_plane_ip:
+            return (
+                f"Route policy '{policy.name}' applied successfully. "
+                f"SSH access from control plane {control_plane_ip}:{int(state.get('ssh_port') or 0)} is preserved."
+            )
+        return f"Route policy '{policy.name}' applied successfully."
+
+    def _build_test_apply_message(self, policy: RoutePolicy, state: dict, *, rollback_at: datetime) -> str:
+        control_plane_ip = str(state.get("control_plane_ip") or "").strip()
+        message = (
+            f"Safe test for route policy '{policy.name}' applied to {state['target_interface']} "
+            f"with automatic rollback at {rollback_at.astimezone(timezone.utc).isoformat()}."
+        )
+        if control_plane_ip:
+            message += f" SSH access from control plane {control_plane_ip}:{int(state.get('ssh_port') or 0)} is preserved."
+        return message
 
     def _render_dns_apply_script(self, state: dict) -> str:
         ingress = shlex.quote(state["ingress_interface"])

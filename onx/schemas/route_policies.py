@@ -111,3 +111,21 @@ class RoutePolicyApplyPlannedRequest(BaseModel):
 
     plan_fingerprint: str = Field(min_length=64, max_length=64)
     enforce_snapshot: bool = True
+
+
+class RoutePolicyTestApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    duration_seconds: int = Field(default=120, ge=30, le=1800)
+
+
+class RoutePolicyTestApplyRead(ONXBaseModel):
+    node_id: str
+    policy_id: str
+    policy_name: str
+    duration_seconds: int
+    rollback_at: datetime
+    target_interface: str
+    control_plane_host: str | None = None
+    control_plane_ip: str | None = None
+    message: str

@@ -1148,6 +1148,66 @@ function nById(id){ return NODES.find(function(n){return n.id===id;})||{name:id,
 function linkById(id){ return LINKS.find(function(l){ return l.id===id; }) || null; }
 function jobById(id){ return JOBS.find(function(j){ return j.id===id; }) || null; }
 function policyById(id){ return POLICIES.find(function(p){ return p.id===id; }) || null; }
+function nodeInterfaceList(nodeId){
+  var node = nById(nodeId);
+  var raw = Array.isArray(node.discovered_interfaces) ? node.discovered_interfaces : [];
+  var seen = {};
+  return raw.map(function(item){ return String(item || '').trim(); }).filter(function(item){
+    if(!item || seen[item]) return false;
+    seen[item] = true;
+    return true;
+  });
+}
+function routePolicyInterfaceOptions(nodeId, currentValue){
+  var options = nodeInterfaceList(nodeId).map(function(item){ return {value:item, label:item}; });
+  var current = String(currentValue || '').trim();
+  if(current && !options.some(function(opt){ return String(opt.value) === current; })){
+    options.unshift({value:current, label:current + ' (saved)'});
+  }
+  if(!options.length){
+    options = [{value:'', label:'Run Probe SSH first'}];
+  }
+  return options;
+}
+function routePolicyDefaultIngress(nodeId, currentValue){
+  var current = String(currentValue || '').trim();
+  if(current) return current;
+  var interfaces = nodeInterfaceList(nodeId);
+  return interfaces.find(function(item){ return /^(awg|wg|tun|tap)/i.test(item); })
+    || interfaces.find(function(item){ return item !== 'lo'; })
+    || '';
+}
+function routePolicyDefaultTarget(nodeId, ingressValue, currentValue){
+  var current = String(currentValue || '').trim();
+  if(current) return current;
+  var ingress = String(ingressValue || '').trim();
+  var interfaces = nodeInterfaceList(nodeId);
+  return interfaces.find(function(item){ return item !== ingress && item !== 'lo'; })
+    || interfaces.find(function(item){ return item !== ingress; })
+    || '';
+}
+function setSelectOptions(selectEl, options, selectedValue){
+  if(!selectEl) return;
+  selectEl.innerHTML = options.map(function(opt){
+    var optionValue = typeof opt === 'string' ? opt : opt.value;
+    var optionLabel = typeof opt === 'string' ? opt : opt.label;
+    return '<option value=\"'+esc(optionValue)+'\" '+(String(optionValue)===String(selectedValue) ? 'selected' : '')+'>'+esc(optionLabel)+'</option>';
+  }).join('');
+}
+function syncRoutePolicyInterfaceSelectors(){
+  var nodeEl = document.getElementById('node_id');
+  var ingressEl = document.getElementById('ingress_interface');
+  var targetEl = document.getElementById('target_interface');
+  if(!nodeEl || !ingressEl || !targetEl) return;
+  var nodeId = String(nodeEl.value || '').trim();
+  var ingressValue = routePolicyDefaultIngress(nodeId, ingressEl.value);
+  setSelectOptions(ingressEl, routePolicyInterfaceOptions(nodeId, ingressValue), ingressValue);
+  var targetValue = String(targetEl.value || '').trim();
+  if(!targetValue || targetValue === ingressValue){
+    targetValue = routePolicyDefaultTarget(nodeId, ingressValue, '');
+  }
+  setSelectOptions(targetEl, routePolicyInterfaceOptions(nodeId, targetValue), targetValue);
+}
 function dnsPolicyById(id){ return DNS_P.find(function(p){ return p.id===id; }) || null; }
 function geoPolicyById(id){ return GEO_P.find(function(p){ return p.id===id; }) || null; }
 function balancerById(id){ return BALANCERS.find(function(b){ return b.id===id; }) || null; }
@@ -1410,6 +1470,7 @@ function renderPolicies(){
       +'<td>'+(p.on?'<span class="pill pg">enabled</span>':'<span class="pill pq">disabled</span>')+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="event.stopPropagation();actionRoutePolicyApply(\''+esc(p.id)+'\')">APPLY</button>'
+        +'<button class="btn sm" onclick="event.stopPropagation();actionRoutePolicyTest(\''+esc(p.id)+'\')">SAFE TEST 2M</button>'
         +'<button class="btn sm" onclick="event.stopPropagation();openRoutePolicyModal(\''+esc(p.id)+'\')">EDIT</button>'
         +'<button class="btn sm red" onclick="event.stopPropagation();deleteRoutePolicyFlow(\''+esc(p.id)+'\')">DEL</button>'
       +'</td>'
@@ -1877,6 +1938,7 @@ function showRoutePolicy(id){
     ])
     +'<div class="dp-actions">'
       +'<button class="btn pri" onclick="actionRoutePolicyApply(\''+esc(p.id)+'\')">APPLY</button>'
+      +'<button class="btn" onclick="actionRoutePolicyTest(\''+esc(p.id)+'\')">SAFE TEST 2M</button>'
       +'<button class="btn" onclick="openRoutePolicyModal(\''+esc(p.id)+'\')">EDIT</button>'
       +'<button class="btn red" onclick="deleteRoutePolicyFlow(\''+esc(p.id)+'\')">DELETE</button>'
     +'</div>',
@@ -3740,12 +3802,15 @@ function openRoutePolicyModal(policyId){
   var policy = policyId ? policyById(policyId) : null;
   var nodeOptions = NODES.map(function(n){ return {value:n.id, label:n.name}; });
   var balancerOptions = [{value:'', label:'-'}].concat(BALANCERS.map(function(b){ return {value:b.id, label:b.name}; }));
+  var initialNodeId = policy ? policy.nid : (NODES[0] ? NODES[0].id : '');
+  var initialIngress = routePolicyDefaultIngress(initialNodeId, policy ? policy.ingress_interface : '');
+  var initialTarget = routePolicyDefaultTarget(initialNodeId, initialIngress, policy ? (policy.target_interface || '') : '');
   var body = '<form id="routePolicyForm"><div class="modal-grid">'
-    +formSelect('Node', 'node_id', policy ? policy.nid : (NODES[0] ? NODES[0].id : ''), nodeOptions)
+    +formSelect('Node', 'node_id', initialNodeId, nodeOptions)
     +formInput('Policy name', 'name', policy ? policy.name : '', {required:true})
-    +formInput('Ingress interface', 'ingress_interface', policy ? policy.ingress_interface : 'awg0', {required:true})
+    +formSelect('Ingress interface', 'ingress_interface', initialIngress, routePolicyInterfaceOptions(initialNodeId, initialIngress), {help:'Interfaces come from the latest Probe SSH snapshot.'})
     +formSelect('Action', 'action', policy ? policy.action : 'next_hop', ['direct','next_hop','balancer'])
-    +formInput('Target interface', 'target_interface', policy ? (policy.target_interface || '') : 'awg1', {})
+    +formSelect('Target interface', 'target_interface', initialTarget, routePolicyInterfaceOptions(initialNodeId, initialTarget), {help:'Control-plane SSH access is preserved automatically.'})
     +formInput('Target gateway', 'target_gateway', policy ? (policy.target_gateway || '') : '', {})
     +formSelect('Balancer', 'balancer_id', policy ? (policy.balancer_id || '') : '', balancerOptions)
     +formInput('Table ID', 'table_id', policy ? policy.table_id : '51820', {type:'number'})
@@ -3759,9 +3824,15 @@ function openRoutePolicyModal(policyId){
   openModal(policy ? 'Edit Route Policy' : 'Create Route Policy', body, {
     buttons:[
       {label:'Cancel', className:'btn', onClick:closeModal},
+      policy ? {label:'Safe test 2m', className:'btn', onClick:function(){ actionRoutePolicyTest(policy.id); }} : null,
       {label: policy ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('routePolicyForm').requestSubmit(); }}
-    ]
+    ].filter(Boolean)
   });
+  var nodeEl = document.getElementById('node_id');
+  var ingressEl = document.getElementById('ingress_interface');
+  if(nodeEl){ nodeEl.addEventListener('change', syncRoutePolicyInterfaceSelectors); }
+  if(ingressEl){ ingressEl.addEventListener('change', syncRoutePolicyInterfaceSelectors); }
+  syncRoutePolicyInterfaceSelectors();
   bindModalForm('routePolicyForm', function(fd){ saveRoutePolicyForm(fd, policyId); });
 }
 async function saveRoutePolicyForm(fd, policyId){
@@ -3812,10 +3883,25 @@ async function actionRoutePolicyApply(policyId){
     var policy = policyById(policyId);
     var job = await apiFetch(API_PREFIX + '/route-policies/' + encodeURIComponent(policyId) + '/apply', { method:'POST', body:{} });
     pushEv('job.created', 'route policy apply queued for ' + (policy ? policy.name : policyId) + ' [' + job.id + ']');
+    showToast('Route policy apply queued: ' + (policy ? policy.name : policyId) + ' [' + job.id + ']', 'success', 'Job queued');
     await refreshJobs();
   }catch(err){
     pushEv('policy.apply.error', 'route policy apply failed: ' + (err && err.message ? err.message : err));
     alert(err && err.message ? err.message : err);
+  }
+}
+async function actionRoutePolicyTest(policyId){
+  try{
+    var policy = policyById(policyId);
+    var result = await apiFetch(API_PREFIX + '/route-policies/' + encodeURIComponent(policyId) + '/test-apply', {
+      method:'POST',
+      body:{duration_seconds:120}
+    });
+    pushEv('policy.test_applied', result && result.message ? result.message : ('safe test applied for ' + (policy ? policy.name : policyId)));
+    showToast(result && result.message ? result.message : ('Safe test applied for ' + (policy ? policy.name : policyId)), 'success', 'Safe test 2m');
+  }catch(err){
+    pushEv('policy.test_apply.error', 'route policy safe test failed: ' + (err && err.message ? err.message : err));
+    showToast(err && err.message ? err.message : String(err), 'error', 'Safe test failed');
   }
 }
 function openDNSPolicyModal(policyId){
