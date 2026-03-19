@@ -288,6 +288,23 @@ def httpx_client(*, timeout: float | int, base_url: str | None = None) -> httpx.
     return httpx.Client(timeout=timeout, trust_env=False, verify=verify)
 
 
+def response_detail(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            detail = payload.get("detail")
+            if detail:
+                return str(detail)
+        if payload is not None:
+            return str(payload)
+    except Exception:
+        pass
+    text = (response.text or "").strip()
+    if text:
+        return text
+    return f"HTTP {response.status_code} with empty response body"
+
+
 def b64u_encode(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -2175,8 +2192,11 @@ class DashboardScreen(QWidget):
                 if auto_connect:
                     current = c.get(base + "/client/bundles/current", params={"device_id": did}, headers=hdrs)
                     if current.status_code >= 400:
-                        raise RuntimeError(current.json().get("detail", current.text))
-                    current_payload = current.json()
+                        raise RuntimeError(response_detail(current))
+                    try:
+                        current_payload = current.json()
+                    except Exception as exc:
+                        raise RuntimeError(f"Unable to parse current bundle response: {exc}. Body: {(current.text or '').strip()[:300]}") from exc
                     if current_payload and current_payload.get("encrypted_bundle"):
                         dec = self._dec_env(current_payload["encrypted_bundle"])
                         return {
@@ -2189,8 +2209,13 @@ class DashboardScreen(QWidget):
                         }
 
                 r=c.post(base+"/client/bundles/issue",json={"device_id":did},headers=hdrs)
-                if r.status_code>=400: raise RuntimeError(r.json().get("detail",r.text))
-                issued=r.json(); dec=self._dec_env(issued["encrypted_bundle"])
+                if r.status_code>=400:
+                    raise RuntimeError(response_detail(r))
+                try:
+                    issued=r.json()
+                except Exception as exc:
+                    raise RuntimeError(f"Unable to parse issued bundle response: {exc}. Body: {(r.text or '').strip()[:300]}") from exc
+                dec=self._dec_env(issued["encrypted_bundle"])
                 return {"source":"issued","bundle_id":issued["bundle_id"],"expires_at":issued["expires_at"],
                         "bundle_hash":issued["bundle_hash"],"profile_count":len(((dec or {}).get("runtime") or {}).get("profiles") or []),"decrypted":dec}
         def _d(data,err):
