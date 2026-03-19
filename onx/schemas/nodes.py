@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 from typing import TYPE_CHECKING
 from onx.compat import StrEnum
 
@@ -103,7 +104,7 @@ def serialize_node_read(node: "Node", *, traffic_used_gb: float | None = None) -
         os_family=node.os_family,
         os_version=node.os_version,
         kernel_version=node.kernel_version,
-        discovered_interfaces=list(node.discovered_interfaces_json or []),
+        discovered_interfaces=_normalize_discovered_interfaces(list(node.discovered_interfaces_json or [])),
         registered_at=node.registered_at,
         traffic_limit_gb=node.traffic_limit_gb,
         traffic_used_gb=traffic_used_gb,
@@ -167,3 +168,28 @@ class NodeSecurityStatusRead(ONXBaseModel):
     timestamp: datetime
     ufw: NodeSecurityFeatureRead
     fail2ban: NodeSecurityFeatureRead
+
+
+_IFACE_NAME_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,32}$")
+
+
+def _normalize_discovered_interfaces(items: list[str] | None) -> list[str]:
+    if not items:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in items:
+        value = str(raw or "").strip()
+        if not value:
+            continue
+        if not _IFACE_NAME_RE.fullmatch(value):
+            match = re.match(r"^\d+:\s*([A-Za-z0-9_.:-]{1,32})", value)
+            if match:
+                value = match.group(1)
+            else:
+                value = value.split()[0].rstrip(":")
+        if not value or not _IFACE_NAME_RE.fullmatch(value) or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return normalized

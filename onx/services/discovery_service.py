@@ -47,7 +47,7 @@ class DiscoveryService:
             kernel_ok, kernel_data = await self._run_remote_command(conn, "uname -r")
             interfaces_ok, interfaces_data = await self._run_remote_command(
                 conn,
-                "sh -lc 'ip -o link show | awk -F\": \" \"{print $2}\" | paste -sd \",\" -'",
+                "sh -lc 'ip -o link show | cut -d: -f2 | sed \"s/^ //\" | paste -sd \",\" -'",
             )
 
             capabilities = {}
