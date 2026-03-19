@@ -83,12 +83,14 @@ class BundleService:
         return bundle
 
     def get_current_for_device(self, db: Session, *, user_id: str, device_id: str) -> IssuedBundle | None:
+        now = datetime.now(timezone.utc)
         return db.scalar(
             select(IssuedBundle)
             .where(
                 IssuedBundle.user_id == user_id,
                 IssuedBundle.device_id == device_id,
                 IssuedBundle.invalidated_at.is_(None),
+                IssuedBundle.expires_at > now,
             )
             .order_by(IssuedBundle.created_at.desc())
         )

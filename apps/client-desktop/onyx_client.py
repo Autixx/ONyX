@@ -2172,20 +2172,21 @@ class DashboardScreen(QWidget):
                 self.refresh()
         def _c():
             with httpx_client(timeout=45, base_url=base) as c:
-                current = c.get(base + "/client/bundles/current", params={"device_id": did}, headers=hdrs)
-                if current.status_code >= 400:
-                    raise RuntimeError(current.json().get("detail", current.text))
-                current_payload = current.json()
-                if current_payload and current_payload.get("encrypted_bundle"):
-                    dec = self._dec_env(current_payload["encrypted_bundle"])
-                    return {
-                        "source": "current",
-                        "bundle_id": current_payload["id"],
-                        "expires_at": current_payload["expires_at"],
-                        "bundle_hash": current_payload["bundle_hash"],
-                        "profile_count": len(((dec or {}).get("runtime") or {}).get("profiles") or []),
-                        "decrypted": dec,
-                    }
+                if auto_connect:
+                    current = c.get(base + "/client/bundles/current", params={"device_id": did}, headers=hdrs)
+                    if current.status_code >= 400:
+                        raise RuntimeError(current.json().get("detail", current.text))
+                    current_payload = current.json()
+                    if current_payload and current_payload.get("encrypted_bundle"):
+                        dec = self._dec_env(current_payload["encrypted_bundle"])
+                        return {
+                            "source": "current",
+                            "bundle_id": current_payload["id"],
+                            "expires_at": current_payload["expires_at"],
+                            "bundle_hash": current_payload["bundle_hash"],
+                            "profile_count": len(((dec or {}).get("runtime") or {}).get("profiles") or []),
+                            "decrypted": dec,
+                        }
 
                 r=c.post(base+"/client/bundles/issue",json={"device_id":did},headers=hdrs)
                 if r.status_code>=400: raise RuntimeError(r.json().get("detail",r.text))
