@@ -171,6 +171,17 @@ class NodeSecurityStatusRead(ONXBaseModel):
 
 
 _IFACE_NAME_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,32}$")
+_IFACE_FLAG_REJECT = {
+    "UP",
+    "DOWN",
+    "LOWER_UP",
+    "BROADCAST",
+    "MULTICAST",
+    "NOARP",
+    "POINTTOPOINT",
+    "UNKNOWN",
+    "DEFAULT",
+}
 
 
 def _normalize_discovered_interfaces(items: list[str] | None) -> list[str]:
@@ -188,6 +199,10 @@ def _normalize_discovered_interfaces(items: list[str] | None) -> list[str]:
                 value = match.group(1)
             else:
                 value = value.split()[0].rstrip(":")
+        value = value.rstrip(":")
+        upper_value = value.upper()
+        if upper_value in _IFACE_FLAG_REJECT:
+            continue
         if not value or not _IFACE_NAME_RE.fullmatch(value) or value in seen:
             continue
         seen.add(value)
