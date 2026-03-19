@@ -126,11 +126,20 @@ class BaseRuntimeAdapter:
             await asyncio.sleep(0.5)
 
         svc_code, svc_out, svc_err = await self._run("sc", "query", tunnel_name)
+        alt_svc_code, alt_svc_out, alt_svc_err = await self._run("sc", "query", f"AmneziaWGTunnel${tunnel_name}")
         adapter_code, adapter_out, adapter_err = await self._run(
             "powershell",
             "-NoProfile",
             "-Command",
             f"Get-NetAdapter -Name '{tunnel_name}' -ErrorAction SilentlyContinue | Format-List -Property Name,Status,InterfaceDescription"
+        )
+        matching_adapters_code, matching_adapters_out, matching_adapters_err = await self._run(
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            f"Get-NetAdapter -ErrorAction SilentlyContinue | "
+            f"Where-Object {{ $_.Name -like '*{tunnel_name}*' -or $_.InterfaceDescription -match 'Amnezia|WireGuard' }} | "
+            f"Format-List -Property Name,Status,InterfaceDescription"
         )
         ip_code, ip_out, ip_err = await self._run(
             "powershell",
@@ -138,12 +147,33 @@ class BaseRuntimeAdapter:
             "-Command",
             f"Get-NetIPAddress -InterfaceAlias '{tunnel_name}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Format-List -Property IPAddress,PrefixLength"
         )
+        any_ip_code, any_ip_out, any_ip_err = await self._run(
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            f"Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | "
+            f"Where-Object {{ $_.IPAddress -eq '{expected_ip or ''}' }} | "
+            f"Format-List -Property InterfaceAlias,IPAddress,PrefixLength"
+        )
+        events_code, events_out, events_err = await self._run(
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            f"$events = Get-WinEvent -LogName Application,System -MaxEvents 80 -ErrorAction SilentlyContinue | "
+            f"Where-Object {{ $_.ProviderName -match 'WireGuard|Amnezia' -or $_.Message -match '{tunnel_name}|Amnezia|WireGuard' }} | "
+            f"Select-Object -First 8; "
+            f"if ($events) {{ $events | Format-List -Property TimeCreated,ProviderName,Id,LevelDisplayName,Message }}"
+        )
         detail_parts = []
         if expected_ip:
             detail_parts.append(f"expected_ip={expected_ip}")
         detail_parts.append(f"sc={svc_err.strip() or svc_out.strip() or svc_code}")
+        detail_parts.append(f"sc_alt={alt_svc_err.strip() or alt_svc_out.strip() or alt_svc_code}")
         detail_parts.append(f"adapter={adapter_err.strip() or adapter_out.strip() or adapter_code}")
+        detail_parts.append(f"matching_adapters={matching_adapters_err.strip() or matching_adapters_out.strip() or matching_adapters_code}")
         detail_parts.append(f"ip={ip_err.strip() or ip_out.strip() or ip_code}")
+        detail_parts.append(f"any_ip={any_ip_err.strip() or any_ip_out.strip() or any_ip_code}")
+        detail_parts.append(f"events={events_err.strip() or events_out.strip() or events_code}")
         log.error("wait_tunnel_fail tunnel=%s detail=%s", tunnel_name, " | ".join(short_text(part, 2000) for part in detail_parts))
         raise RuntimeError(f"Tunnel interface '{tunnel_name}' did not come up. " + " | ".join(detail_parts))
 
