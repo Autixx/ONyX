@@ -2162,8 +2162,16 @@ class DashboardScreen(QWidget):
     def _issue_bundle(self, auto_connect: bool = False):
         if not self.st.device_id: QMessageBox.warning(self,"Bundle","Register device first."); return
         base=self.st.base_url; did=self.st.device_id; hdrs=self._hdrs()
+        resume_connect = bool(auto_connect or self.st.connected)
+        if self.st.connected:
+            try:
+                self._runtime.disconnect()
+            except Exception:
+                pass
+            finally:
+                self.refresh()
         def _c():
-            with httpx_client(timeout=20, base_url=base) as c:
+            with httpx_client(timeout=45, base_url=base) as c:
                 current = c.get(base + "/client/bundles/current", params={"device_id": did}, headers=hdrs)
                 if current.status_code >= 400:
                     raise RuntimeError(current.json().get("detail", current.text))
@@ -2185,7 +2193,7 @@ class DashboardScreen(QWidget):
         def _d(data,err):
             if err: QMessageBox.critical(self,"Bundle",str(err)); return
             self.st.last_bundle=data; self.st.save(); self.refresh()
-            if auto_connect:
+            if resume_connect:
                 self._connect_runtime()
         run_async(self,_c,_d)
 
