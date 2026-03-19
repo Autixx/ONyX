@@ -14,6 +14,8 @@ from onx.schemas.nodes import (
     NodeCapabilityRead,
     NodeActionResult,
     NodeCreate,
+    NodeNetworkTestRead,
+    NodeNetworkTestRequest,
     NodeRead,
     NodeSecurityStatusRead,
     NodeSecretRead,
@@ -26,6 +28,7 @@ from onx.services.job_service import JobConflictError, JobService
 from onx.services.node_control_service import NodeControlService
 from onx.services.node_agent_service import NodeAgentService
 from onx.services.node_security_service import NodeSecurityService
+from onx.services.node_test_service import NodeTestService
 from onx.services.node_traffic_accounting_service import NodeTrafficAccountingService
 from onx.services.realtime_service import realtime_service
 from onx.services.secret_service import SecretService
@@ -38,6 +41,7 @@ event_log_service = EventLogService()
 node_control_service = NodeControlService()
 node_agent_service = NodeAgentService()
 node_security_service = NodeSecurityService()
+node_test_service = NodeTestService()
 node_traffic_accounting_service = NodeTrafficAccountingService()
 
 
@@ -121,6 +125,57 @@ def get_node_security_status(
         return node_security_service.summary(db, node)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.post("/{node_id}/network-test", response_model=NodeNetworkTestRead, status_code=status.HTTP_200_OK)
+def run_node_network_test(
+    node_id: str,
+    payload: NodeNetworkTestRequest,
+    db: Session = Depends(get_database_session),
+) -> NodeNetworkTestRead:
+    node = db.get(Node, node_id)
+    if node is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found.")
+    try:
+        result = node_test_service.run_network_test(db, node, payload)
+        event_log_service.log(
+            db,
+            entity_type="node",
+            entity_id=node.id,
+            level=EventLevel.INFO if result["ok"] else EventLevel.WARNING,
+            message=(
+                f"node network test {payload.mode.value} to {payload.target_host}"
+                + (f":{payload.target_port}" if payload.target_port else "")
+                + (" succeeded" if result["ok"] else " failed")
+            ),
+            details={
+                "mode": payload.mode.value,
+                "target_host": payload.target_host,
+                "target_port": payload.target_port,
+                "dns_server": payload.dns_server,
+                "exit_code": result["exit_code"],
+                "duration_ms": result["duration_ms"],
+            },
+        )
+        realtime_service.publish(
+            "node.test.completed",
+            {
+                "node_id": node.id,
+                "node_name": node.name,
+                "mode": payload.mode.value,
+                "target_host": payload.target_host,
+                "ok": result["ok"],
+                "exit_code": result["exit_code"],
+                "duration_ms": result["duration_ms"],
+            },
+        )
+        return NodeNetworkTestRead.model_validate(result)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except TimeoutError as exc:
         raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc)) from exc
     except RuntimeError as exc:

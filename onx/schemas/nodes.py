@@ -170,6 +170,43 @@ class NodeSecurityStatusRead(ONXBaseModel):
     fail2ban: NodeSecurityFeatureRead
 
 
+class NodeNetworkTestModeValue(StrEnum):
+    PING = "ping"
+    DNS = "dns"
+    TCP = "tcp"
+    HTTP = "http"
+
+
+class NodeNetworkTestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: NodeNetworkTestModeValue
+    target_host: str = Field(min_length=1, max_length=255)
+    target_port: int | None = Field(default=None, ge=1, le=65535)
+    dns_server: str | None = Field(default="8.8.8.8", min_length=1, max_length=255)
+    timeout_seconds: int = Field(default=8, ge=1, le=60)
+    ping_count: int = Field(default=3, ge=1, le=10)
+    http_scheme: str = Field(default="https", min_length=4, max_length=5)
+    http_path: str = Field(default="/", min_length=1, max_length=255)
+
+
+class NodeNetworkTestRead(ONXBaseModel):
+    node_id: str
+    node_name: str
+    mode: NodeNetworkTestModeValue
+    target_host: str
+    target_port: int | None = None
+    dns_server: str | None = None
+    command: str
+    ok: bool
+    exit_code: int
+    stdout: str
+    stderr: str
+    started_at: datetime
+    finished_at: datetime
+    duration_ms: int
+
+
 _IFACE_NAME_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,32}$")
 _IFACE_FLAG_REJECT = {
     "UP",

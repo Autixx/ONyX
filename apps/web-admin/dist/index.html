@@ -1741,6 +1741,102 @@ function parseMembers(text){
 function checked(fd, name){
   return fd.get(name) === 'on';
 }
+function nodeNetworkTestOptions(preferredId){
+  var preferred = String(preferredId || '');
+  var nodes = NODES.slice().sort(function(a,b){ return String(a.name || '').localeCompare(String(b.name || '')); });
+  return nodes.map(function(node){
+    var status = String(node.status || '').toLowerCase();
+    var label = node.name + (status ? ' (' + status + ')' : '');
+    return { value: node.id, label: label };
+  });
+}
+function openNodeNetworkTestModal(sourceNodeId, preset){
+  var sourceId = String(sourceNodeId || '');
+  var config = preset || {};
+  var options = nodeNetworkTestOptions(sourceId);
+  if(!options.length){
+    showToast('Add at least one node before running network tests.', 'error', 'No nodes');
+    return;
+  }
+  var initialSourceId = options.some(function(opt){ return String(opt.value) === sourceId; }) ? sourceId : options[0].value;
+  var initialMode = String(config.mode || 'dns');
+  var initialHost = String(config.target_host || 'google.com');
+  var initialPort = config.target_port != null ? String(config.target_port) : '';
+  var initialDnsServer = String(config.dns_server || '8.8.8.8');
+  var initialTimeout = String(config.timeout_seconds || '8');
+  var initialCount = String(config.ping_count || '3');
+  var initialScheme = String(config.http_scheme || 'https');
+  var initialPath = String(config.http_path || '/');
+  var body = '<form id="nodeNetworkTestForm"><div class="modal-grid">'
+    + formSelect('Source node', 'source_node_id', initialSourceId, options, {help:'Run the test over SSH from this node. Use another node as a temporary test unit.'})
+    + formSelect('Mode', 'mode', initialMode, [
+        {value:'dns', label:'dns'},
+        {value:'ping', label:'ping'},
+        {value:'tcp', label:'tcp'},
+        {value:'http', label:'http'}
+      ])
+    + formInput('Target host', 'target_host', initialHost, {required:true, help:'Examples: google.com, 8.8.8.8, your public service host.'})
+    + formInput('Target port', 'target_port', initialPort, {type:'number', placeholder:'only for tcp/http'})
+    + formInput('DNS server', 'dns_server', initialDnsServer, {placeholder:'8.8.8.8', help:'Used only for DNS tests.'})
+    + formInput('Timeout seconds', 'timeout_seconds', initialTimeout, {type:'number'})
+    + formInput('Ping count', 'ping_count', initialCount, {type:'number', help:'Used only for ping tests.'})
+    + formSelect('HTTP scheme', 'http_scheme', initialScheme, [{value:'https', label:'https'}, {value:'http', label:'http'}])
+    + formInput('HTTP path', 'http_path', initialPath, {placeholder:'/'})
+    + '</div>'
+    + '<div class="mf-help" style="margin-top:10px;">Recommended internet access check: mode <b>dns</b>, target host <b>google.com</b>, DNS server <b>8.8.8.8</b>.</div>'
+    + '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">'
+      + '<button class="btn pri" type="submit">RUN TEST</button>'
+    + '</div>'
+    + '<div style="margin-top:14px;">'
+      + '<label class="mf-label" for="nodeTestResult">Result</label>'
+      + '<textarea id="nodeTestResult" class="mf-textarea" readonly style="min-height:260px;">Ready.</textarea>'
+    + '</div>'
+    + '</form>';
+  openModal('Run network test', body);
+  bindModalForm('nodeNetworkTestForm', runNodeNetworkTestForm);
+}
+async function runNodeNetworkTestForm(fd){
+  var sourceNodeId = String(fd.get('source_node_id') || '').trim();
+  var mode = String(fd.get('mode') || 'dns').trim();
+  var targetHost = String(fd.get('target_host') || '').trim();
+  var resultBox = document.getElementById('nodeTestResult');
+  if(!sourceNodeId || !targetHost){
+    showToast('Source node and target host are required.', 'error', 'Network test');
+    return;
+  }
+  if(resultBox){ resultBox.value = 'Running test from ' + sourceNodeId + ' ...'; }
+  try{
+    var payload = {
+      mode: mode,
+      target_host: targetHost,
+      target_port: String(fd.get('target_port') || '').trim() ? Number(fd.get('target_port')) : null,
+      dns_server: String(fd.get('dns_server') || '').trim() || '8.8.8.8',
+      timeout_seconds: Number(fd.get('timeout_seconds') || 8),
+      ping_count: Number(fd.get('ping_count') || 3),
+      http_scheme: String(fd.get('http_scheme') || 'https').trim(),
+      http_path: String(fd.get('http_path') || '/').trim() || '/'
+    };
+    var result = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(sourceNodeId) + '/network-test', {
+      method:'POST',
+      body: payload
+    });
+    var text = ''
+      + 'Source: ' + String(result.node_name || sourceNodeId) + '\n'
+      + 'Mode: ' + String(result.mode || mode) + '\n'
+      + 'Target: ' + String(result.target_host || targetHost) + (result.target_port != null ? ':' + String(result.target_port) : '') + '\n'
+      + (result.dns_server ? 'DNS server: ' + String(result.dns_server) + '\n' : '')
+      + 'Exit code: ' + String(result.exit_code) + '\n'
+      + 'Duration: ' + String(result.duration_ms) + ' ms\n'
+      + 'Command: ' + String(result.command || '-') + '\n\n'
+      + 'STDOUT\n' + (result.stdout || '(empty)') + '\n\n'
+      + 'STDERR\n' + (result.stderr || '(empty)');
+    if(resultBox){ resultBox.value = text; }
+    showToast((result.ok ? 'Node test succeeded' : 'Node test failed') + ': ' + (result.node_name || sourceNodeId), result.ok ? 'success' : 'error', 'Network test');
+  }catch(err){
+    if(resultBox){ resultBox.value = 'Test failed.\n\n' + String(err && err.message ? err.message : err); }
+    showToast(err && err.message ? err.message : String(err), 'error', 'Network test failed');
+  }
+}
 function showNode(id){
   var n = NODES.find(function(x){return x.id===id;}); if(!n) return;
   var baseHtml =
@@ -1767,6 +1863,7 @@ function showNode(id){
     +'<div class="dp-actions">'
       +'<button class="btn" onclick="actionNodeDiscover(\''+esc(n.id)+'\')">PROBE SSH</button>'
       +'<button class="btn pri" onclick="actionNodeBootstrap(\''+esc(n.id)+'\')">BOOTSTRAP</button>'
+      +'<button class="btn" onclick="openNodeNetworkTestModal(\''+esc(n.id)+'\')">NETWORK TEST</button>'
       +'<button class="btn" onclick="loadNodeSecurityStatus(\''+esc(n.id)+'\')">REFRESH SECURITY</button>'
       +'<button class="btn red" onclick="actionNodeForceReboot(\''+esc(n.id)+'\')">FORCE REBOOT</button>'
       +'<button class="btn" onclick="openNodeModal(\''+esc(n.id)+'\')">EDIT</button>'
