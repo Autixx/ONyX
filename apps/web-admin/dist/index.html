@@ -3489,6 +3489,40 @@ function awgDefaultObfuscation(){
 function obfValue(obf, key, fallback){
   return obf && obf[key] != null ? obf[key] : fallback;
 }
+function awgObfInt(fd, key, label){
+  var raw = String(fd.get(key) || '').trim();
+  if(!raw){ throw new Error(label + ' is required'); }
+  if(!/^-?\d+$/.test(raw)){ throw new Error(label + ' must be an integer'); }
+  return Number(raw);
+}
+function buildAwgObfuscationFromForm(fd, mtu){
+  var jc = awgObfInt(fd, 'jc', 'Jc');
+  var jmin = awgObfInt(fd, 'jmin', 'Jmin');
+  var jmax = awgObfInt(fd, 'jmax', 'Jmax');
+  var s1 = awgObfInt(fd, 's1', 'S1');
+  var s2 = awgObfInt(fd, 's2', 'S2');
+  var s3 = awgObfInt(fd, 's3', 'S3');
+  var s4 = awgObfInt(fd, 's4', 'S4');
+  var h1 = awgObfInt(fd, 'h1', 'H1');
+  var h2 = awgObfInt(fd, 'h2', 'H2');
+  var h3 = awgObfInt(fd, 'h3', 'H3');
+  var h4 = awgObfInt(fd, 'h4', 'H4');
+  if(!Number.isFinite(mtu) || mtu <= 0){ throw new Error('MTU must be a positive integer'); }
+  if(jc < 1 || jc > 128){ throw new Error('Jc must be between 1 and 128'); }
+  if(jmin < 0){ throw new Error('Jmin must be 0 or greater'); }
+  if(jmax <= jmin){ throw new Error('Jmax must be greater than Jmin'); }
+  if(jmax > mtu){ throw new Error('Jmax must be less than or equal to MTU'); }
+  if(s1 < 0 || s1 > Math.max(mtu - 148, 0)){ throw new Error('S1 must be between 0 and MTU-148'); }
+  if(s2 < 0 || s2 > Math.max(mtu - 92, 0)){ throw new Error('S2 must be between 0 and MTU-92'); }
+  if(s1 + 56 === s2){ throw new Error('S1 + 56 must not equal S2'); }
+  if(s3 < 0 || s3 > mtu){ throw new Error('S3 must be between 0 and MTU'); }
+  if(s4 < 0 || s4 > mtu){ throw new Error('S4 must be between 0 and MTU'); }
+  [h1, h2, h3, h4].forEach(function(v, idx){
+    if(v < 0 || v > 4294967295){ throw new Error('H' + String(idx + 1) + ' must be between 0 and 4294967295'); }
+  });
+  if(new Set([h1, h2, h3, h4]).size !== 4){ throw new Error('H1, H2, H3 and H4 must be unique'); }
+  return { jc:jc, jmin:jmin, jmax:jmax, s1:s1, s2:s2, s3:s3, s4:s4, h1:h1, h2:h2, h3:h3, h4:h4 };
+}
 async function createNodeFlow(){
   try{
     var name = promptRequired('Node name'); if(name === null) return;
@@ -5939,7 +5973,8 @@ async function submitOpenvpnCloakAssignPeer(serviceId, fd){
 function openAwgServiceModal(serviceId){
   var service = serviceId ? awgServiceById(serviceId) : null;
   var nodeOptions = NODES.map(function(node){ return {value:node.id, label:node.name}; });
-  var obfJson = service && service.awg_obfuscation_json ? JSON.stringify(service.awg_obfuscation_json, null, 2) : JSON.stringify(awgDefaultObfuscation(), null, 2);
+  var obf = service && service.awg_obfuscation_json ? service.awg_obfuscation_json : awgDefaultObfuscation();
+  var obfDefaults = awgDefaultObfuscation();
   var body = '<form id="awgServiceForm"><div class="modal-grid">'
     +formInput('Name', 'name', service ? service.name : '', {required:true})
     +formSelect('Node', 'node_id', service ? service.node_id : (NODES[0] ? NODES[0].id : ''), nodeOptions, {help:'Managed node where AWG will run.'})
@@ -5952,7 +5987,17 @@ function openAwgServiceModal(serviceId){
     +formInput('MTU', 'mtu', service ? String(service.mtu) : '1420', {type:'number'})
     +formInput('Keepalive', 'persistent_keepalive', service ? String(service.persistent_keepalive) : '25', {type:'number'})
     +formTextarea('Client allowed IPs', 'client_allowed_ips_json', service ? (service.client_allowed_ips_json || []).join(', ') : '0.0.0.0/0, ::/0', {help:'Comma-separated CIDRs.'})
-    +formTextarea('Obfuscation JSON', 'awg_obfuscation_json', obfJson, {help:'Raw AWG obfuscation parameters.'})
+    +formInput('Jc', 'jc', obfValue(obf, 'jc', obfDefaults.jc), {type:'number', help:'Range: 1..128'})
+    +formInput('Jmin', 'jmin', obfValue(obf, 'jmin', obfDefaults.jmin), {type:'number', help:'Range: 0..Jmax-1'})
+    +formInput('Jmax', 'jmax', obfValue(obf, 'jmax', obfDefaults.jmax), {type:'number', help:'Range: Jmin+1..MTU'})
+    +formInput('S1', 's1', obfValue(obf, 's1', obfDefaults.s1), {type:'number', help:'Range: 0..MTU-148'})
+    +formInput('S2', 's2', obfValue(obf, 's2', obfDefaults.s2), {type:'number', help:'Range: 0..MTU-92; S1+56 must not equal S2'})
+    +formInput('S3', 's3', obfValue(obf, 's3', obfDefaults.s3), {type:'number', help:'Range: 0..MTU'})
+    +formInput('S4', 's4', obfValue(obf, 's4', obfDefaults.s4), {type:'number', help:'Range: 0..MTU'})
+    +formInput('H1', 'h1', obfValue(obf, 'h1', obfDefaults.h1), {type:'number', help:'Range: 0..4294967295; unique'})
+    +formInput('H2', 'h2', obfValue(obf, 'h2', obfDefaults.h2), {type:'number', help:'Range: 0..4294967295; unique'})
+    +formInput('H3', 'h3', obfValue(obf, 'h3', obfDefaults.h3), {type:'number', help:'Range: 0..4294967295; unique'})
+    +formInput('H4', 'h4', obfValue(obf, 'h4', obfDefaults.h4), {type:'number', help:'Range: 0..4294967295; unique'})
     +'</div></form>';
   openModal(service ? 'Edit service' : 'Create service', body, {
     buttons:[
@@ -5966,6 +6011,7 @@ function openAwgServiceModal(serviceId){
 
 async function saveAwgServiceForm(fd, serviceId){
   try{
+    var mtu = Number(fd.get('mtu') || 1420);
     var body = {
       name: String(fd.get('name') || '').trim(),
       node_id: String(fd.get('node_id') || '').trim(),
@@ -5976,10 +6022,10 @@ async function saveAwgServiceForm(fd, serviceId){
       public_port: String(fd.get('public_port') || '').trim() ? Number(fd.get('public_port')) : null,
       server_address_v4: String(fd.get('server_address_v4') || '').trim(),
       dns_server_v4: String(fd.get('dns_server_v4') || '').trim() || null,
-      mtu: Number(fd.get('mtu') || 1420),
+      mtu: mtu,
       persistent_keepalive: Number(fd.get('persistent_keepalive') || 25),
       client_allowed_ips_json: parseCsvList(fd.get('client_allowed_ips_json')),
-      awg_obfuscation_json: JSON.parse(String(fd.get('awg_obfuscation_json') || '{}'))
+      awg_obfuscation_json: buildAwgObfuscationFromForm(fd, mtu)
     };
     if(serviceId){
       await apiFetch(API_PREFIX + '/awg-services/' + encodeURIComponent(serviceId), { method:'PATCH', body:body });
@@ -5992,7 +6038,7 @@ async function saveAwgServiceForm(fd, serviceId){
     await refreshAwgServices();
   }catch(err){
     pushEv('awg_service.error', 'save failed: ' + (err && err.message ? err.message : err));
-    alert(err && err.message ? err.message : err);
+    showToast(err && err.message ? err.message : String(err), 'error', 'AWG validation');
   }
 }
 
