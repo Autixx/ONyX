@@ -126,6 +126,9 @@ class RoutePolicyTestApplyRead(ONXBaseModel):
     duration_seconds: int
     rollback_at: datetime
     target_interface: str
+    table_id: int
+    rule_priority: int
+    firewall_mark: int
     control_plane_host: str | None = None
     control_plane_ip: str | None = None
     message: str

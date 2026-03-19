@@ -152,6 +152,9 @@ def test_apply_route_policy(
                 "duration_seconds": result["duration_seconds"],
                 "rollback_at": result["rollback_at"].isoformat() if result.get("rollback_at") else None,
                 "target_interface": result["target_interface"],
+                "table_id": result["table_id"],
+                "rule_priority": result["rule_priority"],
+                "firewall_mark": result["firewall_mark"],
                 "control_plane_ip": result.get("control_plane_ip"),
             },
         )

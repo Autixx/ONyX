@@ -3898,7 +3898,12 @@ async function actionRoutePolicyTest(policyId){
       body:{duration_seconds:120}
     });
     pushEv('policy.test_applied', result && result.message ? result.message : ('safe test applied for ' + (policy ? policy.name : policyId)));
-    showToast(result && result.message ? result.message : ('Safe test applied for ' + (policy ? policy.name : policyId)), 'success', 'Safe test 2m');
+    var message = (result && result.message ? result.message : ('Safe test applied for ' + (policy ? policy.name : policyId)));
+    if(result){
+      message += '\n\nRuntime ids: table ' + String(result.table_id) + ', fwmark ' + String(result.firewall_mark) + ', priority ' + String(result.rule_priority);
+      message += '\nTest target: nslookup google.com 8.8.8.8';
+    }
+    showToast(message, 'success', 'Safe test 2m');
   }catch(err){
     pushEv('policy.test_apply.error', 'route policy safe test failed: ' + (err && err.message ? err.message : err));
     showToast(err && err.message ? err.message : String(err), 'error', 'Safe test failed');
