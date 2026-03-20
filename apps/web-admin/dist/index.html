@@ -4027,6 +4027,7 @@ async function saveRoutePolicyForm(fd, policyId){
       masquerade: checked(fd, 'masquerade'),
       enabled: checked(fd, 'enabled')
     };
+    if(policyId){ delete body.node_id; }
     var policy = await apiFetch(policyId ? (API_PREFIX + '/route-policies/' + encodeURIComponent(policyId)) : (API_PREFIX + '/route-policies'), {
       method: policyId ? 'PATCH' : 'POST',
       body: body
