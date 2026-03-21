@@ -27,6 +27,7 @@ from onx.db.models.peer_registry import PeerRegistry
 from onx.db.models.peer import Peer
 from onx.db.models.peer_traffic_state import PeerTrafficState
 from onx.db.models.referral_code import ReferralCode
+from onx.db.models.referral_pool import ReferralPool
 from onx.db.models.probe_result import ProbeResult
 from onx.db.models.registration import Registration
 from onx.db.models.route_policy import RoutePolicy
@@ -56,6 +57,7 @@ __all__ = [
     "TransportPackage",
     "TransitPolicy",
     "ReferralCode",
+    "ReferralPool",
     "PeerRegistry",
     "Peer",
     "PeerTrafficState",

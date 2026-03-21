@@ -34,6 +34,7 @@ from onx.api.routers.peer_traffic import router as peer_traffic_router
 from onx.api.routers.peers import router as peers_router
 from onx.api.routers.probes import router as probes_router
 from onx.api.routers.referral_codes import router as referral_codes_router
+from onx.api.routers.referral_pools import router as referral_pools_router
 from onx.api.routers.registrations import router as registrations_router
 from onx.api.routers.realtime import router as realtime_router
 from onx.api.routers.route_policies import router as route_policies_router
@@ -161,6 +162,7 @@ def create_app() -> FastAPI:
     app.include_router(plans_router, prefix=settings.api_prefix)
     app.include_router(subscriptions_router, prefix=settings.api_prefix)
     app.include_router(referral_codes_router, prefix=settings.api_prefix)
+    app.include_router(referral_pools_router, prefix=settings.api_prefix)
     app.include_router(peer_traffic_router, prefix=settings.api_prefix)
     app.include_router(peers_router, prefix=settings.api_prefix)
     app.include_router(awg_services_router, prefix=settings.api_prefix)

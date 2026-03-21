@@ -10,6 +10,7 @@ class ReferralCodeRead(ONXBaseModel):
     code: str
     enabled: bool
     auto_approve: bool
+    pool_id: str | None
     plan_id: str | None
     max_uses: int | None
     used_count: int

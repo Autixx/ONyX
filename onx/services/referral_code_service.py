@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from onx.db.models.plan import Plan
 from onx.db.models.referral_code import ReferralCode
+from onx.db.models.referral_pool import ReferralPool
 from onx.schemas.referral_codes import ReferralCodePoolGenerateRequest, ReferralCodePoolGenerateResponse
 
 
@@ -97,6 +98,54 @@ class ReferralCodeService:
             expires_at=expires_at,
             codes=generated_codes,
         )
+
+
+    def generate_for_pool(
+        self,
+        db: Session,
+        pool: ReferralPool,
+        *,
+        code_length: int = 10,
+        quantity: int = 10,
+    ) -> list[str]:
+        generated_codes: list[str] = []
+        seen_codes: set[str] = set()
+        max_attempts = max(quantity * 50, 200)
+        attempts = 0
+        while len(generated_codes) < quantity:
+            attempts += 1
+            if attempts > max_attempts:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Unable to generate enough unique referral codes. Try shorter batch size or longer code length.",
+                )
+            candidate = "".join(secrets.choice(REFERRAL_CODE_ALPHABET) for _ in range(int(code_length)))
+            if candidate in seen_codes:
+                continue
+            existing = db.scalar(select(ReferralCode.id).where(func.upper(ReferralCode.code) == candidate))
+            if existing is not None:
+                continue
+            seen_codes.add(candidate)
+            generated_codes.append(candidate)
+
+        db.add_all(
+            [
+                ReferralCode(
+                    code=code_value,
+                    enabled=True,
+                    auto_approve=pool.auto_approve,
+                    pool_id=pool.id,
+                    plan_id=pool.plan_id,
+                    max_uses=1,
+                    used_count=0,
+                    expires_at=pool.expires_at,
+                    note=f"pool:{pool.id}",
+                )
+                for code_value in generated_codes
+            ]
+        )
+        db.commit()
+        return generated_codes
 
 
 referral_code_service = ReferralCodeService()

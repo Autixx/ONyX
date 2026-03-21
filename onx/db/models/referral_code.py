@@ -14,6 +14,12 @@ class ReferralCode(Base):
     code: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     auto_approve: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pool_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("referral_pools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     plan_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("plans.id", ondelete="SET NULL"),

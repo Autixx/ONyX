@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from onx.db.models.device import Device
 from onx.db.models.event_log import EventLog
 from onx.db.models.probe_result import ProbeResult
+from onx.db.models.referral_code import ReferralCode
+from onx.db.models.referral_pool import ReferralPool
 from onx.db.models.subscription import Subscription, SubscriptionStatus
 
 
@@ -32,12 +34,14 @@ class RetentionService:
         probe_deleted = self._delete_probe_results_before(db, probe_cutoff)
         event_deleted = self._delete_event_logs_before(db, event_cutoff)
         expired_subscriptions, devices_deleted = self._expire_subscriptions_and_delete_devices(db, now)
+        expired_pool_codes_deleted = self._cleanup_expired_pool_codes(db, now)
         db.commit()
         return {
             "probe_results_deleted": probe_deleted,
             "event_logs_deleted": event_deleted,
             "expired_subscriptions": expired_subscriptions,
             "expired_devices_deleted": devices_deleted,
+            "expired_pool_codes_deleted": expired_pool_codes_deleted,
             "probe_result_cutoff": probe_cutoff.isoformat(),
             "event_log_cutoff": event_cutoff.isoformat(),
             "ran_at": now.isoformat(),
@@ -51,6 +55,27 @@ class RetentionService:
     @staticmethod
     def _delete_event_logs_before(db: Session, cutoff: datetime) -> int:
         result = db.execute(delete(EventLog).where(EventLog.created_at < cutoff))
+        return int(result.rowcount or 0)
+
+    @staticmethod
+    def _cleanup_expired_pool_codes(db: Session, now: datetime) -> int:
+        """Delete unused codes that belong to expired referral pools."""
+        expired_pool_ids = list(
+            db.scalars(
+                select(ReferralPool.id).where(
+                    ReferralPool.expires_at.is_not(None),
+                    ReferralPool.expires_at <= now,
+                )
+            ).all()
+        )
+        if not expired_pool_ids:
+            return 0
+        result = db.execute(
+            delete(ReferralCode).where(
+                ReferralCode.pool_id.in_(expired_pool_ids),
+                ReferralCode.used_count == 0,
+            )
+        )
         return int(result.rowcount or 0)
 
     @staticmethod
