@@ -117,6 +117,19 @@ class RoutePolicyService:
         return policy
 
     def delete_policy(self, db: Session, policy: RoutePolicy) -> None:
+        if policy.applied_state:
+            node = db.get(Node, policy.node_id)
+            if node is not None:
+                try:
+                    secret = self._get_management_secret(db, node)
+                    self._run_remote_script(
+                        node,
+                        secret,
+                        self._render_cleanup_script(policy.applied_state),
+                        f"cleanup-{policy.id}",
+                    )
+                except Exception:
+                    pass
         db.delete(policy)
         db.commit()
 
@@ -1126,8 +1139,8 @@ class RoutePolicyService:
                 "# Allow forwarded traffic for the selected ingress/egress pair.",
                 "iptables -C FORWARD -i \"$INGRESS_IF\" -o \"$TARGET_IF\" -j ACCEPT 2>/dev/null || "
                 "iptables -I FORWARD 1 -i \"$INGRESS_IF\" -o \"$TARGET_IF\" -j ACCEPT",
-                "iptables -C FORWARD -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || "
-                "iptables -I FORWARD 1 -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
+                "iptables -C FORWARD -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -j ACCEPT 2>/dev/null || "
+                "iptables -I FORWARD 1 -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -j ACCEPT",
                 "# Best-effort sync with UFW routed policy when it is present.",
                 "if command -v ufw >/dev/null 2>&1; then",
                 "  ufw route allow in on \"$INGRESS_IF\" out on \"$TARGET_IF\" >/dev/null 2>&1 || true",
@@ -1178,8 +1191,8 @@ class RoutePolicyService:
             "ip rule del fwmark \"$FWMARK\" table \"$TABLE_ID\" priority \"$RULE_PRIORITY\" 2>/dev/null || true",
             "while iptables -C FORWARD -i \"$INGRESS_IF\" -o \"$TARGET_IF\" -j ACCEPT 2>/dev/null; do "
             "iptables -D FORWARD -i \"$INGRESS_IF\" -o \"$TARGET_IF\" -j ACCEPT; done",
-            "while iptables -C FORWARD -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null; do "
-            "iptables -D FORWARD -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT; done",
+            "while iptables -C FORWARD -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -j ACCEPT 2>/dev/null; do "
+            "iptables -D FORWARD -i \"$TARGET_IF\" -o \"$INGRESS_IF\" -j ACCEPT; done",
         ]
         if masq:
             lines.append(

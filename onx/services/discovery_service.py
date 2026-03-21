@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 from datetime import datetime, timezone
 
 import asyncssh
@@ -53,6 +54,10 @@ class DiscoveryService:
                 conn,
                 "sh -lc 'ip -o route show default | sed -n \"s/^default via \\([^ ]*\\) dev \\([^ ]*\\).*$/\\2|\\1/p\" | paste -sd \",\" -'",
             )
+            iface_addrs_ok, iface_addrs_data = await self._run_remote_command(
+                conn,
+                "sh -lc 'ip -o addr show | sed -n \"s/^[0-9][0-9]*: *\\([^ ]*\\).*inet \\([0-9][0-9.]*\\/[0-9][0-9]*\\).*/\\1|\\2/p\" | paste -sd \",\" -'",
+            )
 
             capabilities = {}
             for capability_name, command in {
@@ -85,8 +90,45 @@ class DiscoveryService:
                 "kernel_version": kernel_data if kernel_ok else None,
                 "interfaces": interfaces_data.split(",") if interfaces_ok and interfaces_data else [],
                 "gateways": self._parse_gateway_snapshot(gateways_data if gateways_ok else ""),
+                "iface_addrs": iface_addrs_data if iface_addrs_ok else "",
                 "capabilities": capabilities,
             }
+
+    @staticmethod
+    def _parse_ptp_gateways(raw: str) -> dict[str, str]:
+        """Derive peer IPs for point-to-point tunnel interfaces (/30 or /31 subnets).
+
+        For AWG/WG links using Table=off, WireGuard does not add kernel routes,
+        so discovered_gateways would be empty for tunnel interfaces. This fills
+        in the peer IP computed from the interface address, which the UI uses
+        as the Target Gateway autofill for next_hop route policies.
+        """
+        peers: dict[str, str] = {}
+        for item in str(raw or "").split(","):
+            value = item.strip()
+            if not value or "|" not in value:
+                continue
+            iface, addr_prefix = value.split("|", 1)
+            iface = iface.strip().rstrip(":")
+            addr_prefix = addr_prefix.strip()
+            if not iface or not addr_prefix:
+                continue
+            try:
+                iface_obj = ipaddress.ip_interface(addr_prefix)
+                prefix_len = iface_obj.network.prefixlen
+                if prefix_len == 30:
+                    others = [h for h in iface_obj.network.hosts() if h != iface_obj.ip]
+                    if others:
+                        peers[iface] = str(others[0])
+                elif prefix_len == 31:
+                    net = iface_obj.network
+                    all_addrs = [net.network_address, net.broadcast_address]
+                    others = [a for a in all_addrs if a != iface_obj.ip]
+                    if others:
+                        peers[iface] = str(others[0])
+            except Exception:
+                continue
+        return peers
 
     @staticmethod
     def _parse_gateway_snapshot(raw: str) -> dict[str, str]:
@@ -133,7 +175,12 @@ class DiscoveryService:
         node.os_version = result["os_version"]
         node.kernel_version = result["kernel_version"]
         node.discovered_interfaces_json = list(result["interfaces"] or [])
-        node.discovered_gateways_json = dict(result["gateways"] or {})
+        # Merge explicit default-route gateways with peer IPs derived from
+        # point-to-point interface addresses (/30, /31). Explicit routes win.
+        ptp_gateways = self._parse_ptp_gateways(result.get("iface_addrs", ""))
+        merged_gateways = dict(ptp_gateways)
+        merged_gateways.update(result["gateways"] or {})
+        node.discovered_gateways_json = merged_gateways
         node.last_seen_at = datetime.now(timezone.utc)
         node.status = NodeStatus.REACHABLE
         db.add(node)

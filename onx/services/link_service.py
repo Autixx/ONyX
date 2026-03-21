@@ -175,6 +175,44 @@ class LinkService:
                 f"Link '{link.name}' has active job '{active_job.id}' "
                 f"in state '{active_job.state.value}'."
             )
+        # Tear down interfaces and routes on nodes if link was ever applied.
+        if link.applied_spec_json:
+            left_node = db.get(Node, link.left_node_id)
+            right_node = db.get(Node, link.right_node_id)
+            left_endpoint = db.scalar(
+                select(LinkEndpoint).where(
+                    LinkEndpoint.link_id == link.id,
+                    LinkEndpoint.side == LinkSide.LEFT,
+                )
+            )
+            right_endpoint = db.scalar(
+                select(LinkEndpoint).where(
+                    LinkEndpoint.link_id == link.id,
+                    LinkEndpoint.side == LinkSide.RIGHT,
+                )
+            )
+            _SKIP_ROUTES = {"0.0.0.0/0", "::/0"}
+            peer_spec = link.desired_spec_json.get("peer", {})
+            for node, endpoint, ips_key in (
+                (left_node, left_endpoint, "left_allowed_ips"),
+                (right_node, right_endpoint, "right_allowed_ips"),
+            ):
+                if node is None or endpoint is None:
+                    continue
+                try:
+                    secret = self._get_management_secret(db, node)
+                    self._runtime.stop_interface(node, secret, endpoint.interface_name)
+                    if link.driver_name == "awg":
+                        for cidr in peer_spec.get(ips_key, []):
+                            if cidr in _SKIP_ROUTES:
+                                continue
+                            self._executor.run(
+                                node, secret,
+                                f"ip route del {cidr} dev {endpoint.interface_name} 2>/dev/null || true",
+                            )
+                except Exception:
+                    pass
+
         db.delete(link)
         db.commit()
         from onx.services.transit_policy_service import transit_policy_manager
@@ -388,6 +426,23 @@ class LinkService:
                 comment=f"onx-link-{right_endpoint.interface_name}",
             )
 
+            # AWG links use Table=off so WireGuard does not add kernel routes
+            # automatically. Add explicit routes for any non-default AllowedIPs
+            # so that return traffic is routed back through the tunnel.
+            if link.driver_name == "awg":
+                _SKIP_ROUTES = {"0.0.0.0/0", "::/0"}
+                peer_spec = link.desired_spec_json.get("peer", {})
+                for node, secret, iface, ips_key in (
+                    (left_node, left_mgmt_secret, left_endpoint.interface_name, "left_allowed_ips"),
+                    (right_node, right_mgmt_secret, right_endpoint.interface_name, "right_allowed_ips"),
+                ):
+                    for cidr in peer_spec.get(ips_key, []):
+                        if cidr in _SKIP_ROUTES:
+                            continue
+                        if progress_callback:
+                            progress_callback(f"adding route {cidr} dev {iface} on {node.name}")
+                        self._executor.run(node, secret, f"ip route replace {cidr} dev {iface}")
+
             left_peer_pub = right_public
             if progress_callback:
                 progress_callback("verifying handshake")
@@ -451,6 +506,19 @@ class LinkService:
         from onx.services.transit_policy_service import transit_policy_manager
         transit_policy_manager.sync_for_next_hop(db, "link", link.id)
         db.refresh(link)
+
+        # Re-discover both nodes so discovered_gateways is up to date
+        # (tunnel interfaces appear after apply and need their peer IPs recorded).
+        from onx.services.discovery_service import DiscoveryService
+        _discovery = DiscoveryService()
+        for _node in (left_node, right_node):
+            try:
+                if progress_callback:
+                    progress_callback(f"refreshing node snapshot for {_node.name}")
+                _discovery.discover_node(db, _node)
+            except Exception:
+                pass
+
         if progress_callback:
             progress_callback("completed")
         return {
