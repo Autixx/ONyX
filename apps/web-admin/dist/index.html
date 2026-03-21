@@ -7306,14 +7306,51 @@ function openPlanModal(planId){
         +'</div>';
     })()
     +formTextarea('Comment', 'comment', plan ? (plan.comment || '') : '', {help:'Free text note'})
+    +(plan ? (function(){
+      var poolsForPlan = (REFERRAL_POOLS || []).filter(function(p){ return p.plan_id === plan.id; });
+      var freePools = (REFERRAL_POOLS || []).filter(function(p){ return !p.plan_id; });
+      var poolList = poolsForPlan.length
+        ? poolsForPlan.map(function(p){
+            return '<span class="pill pg" style="margin-right:4px;">'+esc(p.name)+'</span>'
+              +'<span class="muted" style="font-size:11px;">'+esc(String(p.live_codes))+' live, '+esc(String(p.used_codes))+' used</span> ';
+          }).join('')
+        : '<span class="muted" style="font-size:12px;">no pools assigned</span>';
+      var assignRow = freePools.length
+        ? '<div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap;">'
+            +'<select class="mf-select" id="planPoolAssignSelect" style="min-width:160px">'
+              +'<option value="">— assign existing pool —</option>'
+              +freePools.map(function(p){ return '<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>'; }).join('')
+            +'</select>'
+            +'<button class="btn sm" type="button" onclick="assignPoolToPlan(\''+esc(plan.id)+'\')">ASSIGN</button>'
+          +'</div>'
+        : '';
+      return '<div class="mf-row full" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">'
+        +'<div class="mf-label">Referral Pools</div>'
+        +'<div style="margin-top:4px;">'+poolList+'</div>'
+        +assignRow
+        +'</div>';
+    })() : '')
     +'</div></form>';
   var modalButtons = [{label:'Cancel', className:'btn', onClick:closeModal}];
   if(plan){
-    modalButtons.push({label:'Referral Pool', className:'btn', onClick:function(){ closeModal(); openReferralPoolModal(plan.id); }});
+    modalButtons.push({label:'Create Pool', className:'btn', onClick:function(){ closeModal(); openReferralPoolModal(plan.id); }});
   }
   modalButtons.push({label:plan ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('planForm').requestSubmit(); }});
   openModal(plan ? 'Edit Subscription' : 'New Subscription', body, { buttons: modalButtons });
   bindModalForm('planForm', function(fd){ savePlanForm(fd, planId); });
+}
+
+async function assignPoolToPlan(planId){
+  var sel = document.getElementById('planPoolAssignSelect');
+  var poolId = sel ? sel.value : '';
+  if(!poolId){ alert('Select a pool first.'); return; }
+  await apiFetch(API_PREFIX + '/referral-pools/' + encodeURIComponent(poolId), {
+    method:'PATCH',
+    body:{ plan_id: planId }
+  });
+  await loadReferralCodes();
+  closeModal();
+  openPlanModal(planId);
 }
 
 function copyReferralCode(referralId){
