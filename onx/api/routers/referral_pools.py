@@ -207,7 +207,16 @@ def delete_referral_pool(
                    "Delete unused codes first or pass ?force=true to delete all unused codes and keep the pool.",
         )
 
-    # Delete only unused codes; keep pool and used codes
+    if force and live == 0:
+        # No live codes left — force-delete pool and all used codes
+        all_codes = list(db.scalars(select(ReferralCode).where(ReferralCode.pool_id == pool_id)).all())
+        for code in all_codes:
+            db.delete(code)
+        db.delete(pool)
+        db.commit()
+        return ReferralPoolDeleteResponse(deleted_pool=True, deleted_codes=len(all_codes))
+
+    # force=True and live > 0: delete only unused codes; keep pool and used codes
     unused_codes = list(
         db.scalars(
             select(ReferralCode).where(
