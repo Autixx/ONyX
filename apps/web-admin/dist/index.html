@@ -7269,12 +7269,12 @@ function openPlanModal(planId){
     })()
     +formTextarea('Comment', 'comment', plan ? (plan.comment || '') : '', {help:'Free text note'})
     +'</div></form>';
-  openModal(plan ? 'Edit Subscription' : 'New Subscription', body, {
-    buttons:[
-      {label:'Cancel', className:'btn', onClick:closeModal},
-      {label:plan ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('planForm').requestSubmit(); }}
-    ]
-  });
+  var modalButtons = [{label:'Cancel', className:'btn', onClick:closeModal}];
+  if(plan){
+    modalButtons.push({label:'Referral Pool', className:'btn', onClick:function(){ closeModal(); openReferralPoolModal(plan.id); }});
+  }
+  modalButtons.push({label:plan ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('planForm').requestSubmit(); }});
+  openModal(plan ? 'Edit Subscription' : 'New Subscription', body, { buttons: modalButtons });
   bindModalForm('planForm', function(fd){ savePlanForm(fd, planId); });
 }
 
@@ -7298,19 +7298,19 @@ function copyReferralCode(referralId){
   pushEv('referral_code.copied', 'referral code copied: ' + code);
 }
 
-function openReferralPoolModal(){
-  var planOptions = PLANS.map(function(p){ return {value:p.id, label:(p.code + ' — ' + p.name)}; });
+function openReferralPoolModal(planId){
+  var planOptions = PLANS.map(function(p){ return {value:p.id, label:p.name}; });
   if(!planOptions.length){
-    alert('Create a plan first.');
+    alert('Create a subscription first.');
     return;
   }
+  var defaultPlanId = planId || (planOptions[0] ? planOptions[0].value : '');
   var body = '<form id="referralPoolForm"><div class="modal-grid">'
-    +formSelect('Plan', 'plan_id', planOptions[0] ? planOptions[0].value : '', planOptions)
-    +'<div class="mf-row"><label class="mf-label">Subscription</label><div class="mf-help">Subscriptions are issued per user after registration approval. Pool codes bind to plans, not concrete subscriptions.</div></div>'
+    +formSelect('Subscription', 'plan_id', defaultPlanId, planOptions)
     +formCheckbox('Auto approve', 'auto_approve', false, {caption:'Approve registration automatically'})
     +formInput('Length', 'code_length', '10', {type:'number', required:true})
     +formInput('Quantity', 'quantity', '10', {type:'number', required:true})
-    +formInput('Lifetime days', 'lifetime_days', '', {type:'number'})
+    +formInput('Lifetime days', 'lifetime_days', '', {type:'number', help:'Leave empty for no expiry'})
     +'</div></form>';
   openModal('Generate Referral Codes', body, {
     buttons:[
