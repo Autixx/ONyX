@@ -519,6 +519,36 @@ class LinkService:
             except Exception:
                 pass
 
+        # Re-apply all active route policies on both nodes.
+        # Restarting a WireGuard interface causes the kernel to remove all routes
+        # that used that interface — including entries in custom policy routing
+        # tables (e.g. table 51820).  Re-applying policies here restores ip rules,
+        # routing table entries, and iptables chains so that traffic flows
+        # immediately after link apply without requiring a manual policy re-apply.
+        from onx.db.models.route_policy import RoutePolicy
+        from onx.services.route_policy_service import RoutePolicyService
+        _policy_svc = RoutePolicyService()
+        for _node in (left_node, right_node):
+            try:
+                _policies = db.scalars(
+                    select(RoutePolicy).where(
+                        RoutePolicy.node_id == _node.id,
+                        RoutePolicy.enabled.is_(True),
+                        RoutePolicy.applied_state.isnot(None),
+                    )
+                ).all()
+                for _policy in _policies:
+                    try:
+                        if progress_callback:
+                            progress_callback(
+                                f"re-applying route policy {_policy.name} on {_node.name}"
+                            )
+                        _policy_svc.apply_policy(db, _policy)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
         if progress_callback:
             progress_callback("completed")
         return {

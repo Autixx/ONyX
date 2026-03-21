@@ -1,3 +1,5 @@
+import logging
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -73,6 +75,7 @@ async def lifespan(_: FastAPI):
         admin_web_auth_service.ensure_bootstrap_user(db)
     realtime_service.start()
     worker.start()
+    _start_policy_restore_thread()
     if settings.probe_scheduler_enabled:
         probe_scheduler.start()
     if settings.retention_scheduler_enabled:
@@ -82,6 +85,43 @@ async def lifespan(_: FastAPI):
     retention_scheduler.stop()
     probe_scheduler.stop()
     worker.stop()
+
+
+def _start_policy_restore_thread() -> None:
+    """Restore route policy state in the background after control-plane startup.
+
+    When a server reboots, the kernel loses all ip rules, custom routing table
+    entries, and iptables chains that were set up by route policies.  This
+    thread re-applies every enabled policy that has a recorded applied_state,
+    so the network configuration is recovered without operator intervention.
+    Errors per policy are silently swallowed so one unreachable node does not
+    block recovery of the others.
+    """
+    def _restore() -> None:
+        _log = logging.getLogger(__name__)
+        try:
+            from sqlalchemy import select
+            from onx.db.models.route_policy import RoutePolicy
+            from onx.db.session import SessionLocal
+            from onx.services.route_policy_service import RoutePolicyService
+            _svc = RoutePolicyService()
+            with SessionLocal() as db:
+                policies = db.scalars(
+                    select(RoutePolicy).where(
+                        RoutePolicy.enabled.is_(True),
+                        RoutePolicy.applied_state.isnot(None),
+                    )
+                ).all()
+                for policy in policies:
+                    try:
+                        _svc.apply_policy(db, policy)
+                    except Exception as exc:
+                        _log.warning("startup policy restore failed for %s: %s", policy.name, exc)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("startup policy restore thread error: %s", exc)
+
+    t = threading.Thread(target=_restore, name="policy-restore", daemon=True)
+    t.start()
 
 
 def create_app() -> FastAPI:
