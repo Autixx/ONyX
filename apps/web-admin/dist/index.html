@@ -762,46 +762,29 @@ td.m{color:var(--t0);}
 
       <!-- MANAGEMENT -->
       <div class="page" id="page-management">
-        <div class="two">
-          <div>
-            <div class="ph">
-              <span class="ptitle">Subscriptions</span>
-              <div class="pbtn-row">
-                <button class="btn pri" id="btnAddSubscription">+ ADD SUBSCRIPTION</button>
-              </div>
-            </div>
-            <div class="tw">
-              <table>
-                <thead><tr><th>User</th><th>Plan</th><th>Status</th><th>Expires</th><th>Access Window</th><th>Actions</th></tr></thead>
-                <tbody id="subtb"></tbody>
-              </table>
-            </div>
+        <div class="ph">
+          <span class="ptitle">Subscriptions</span>
+          <div class="pbtn-row">
+            <button class="btn pri" id="btnAddPlan">+ ADD SUBSCRIPTION</button>
           </div>
-          <div>
-            <div class="ph">
-              <span class="ptitle">Plans</span>
-              <div class="pbtn-row">
-                <button class="btn pri" id="btnAddPlan">+ ADD PLAN</button>
-              </div>
-            </div>
-            <div class="tw">
-              <table>
-                <thead><tr><th>Code</th><th>Name</th><th>Mode</th><th>Enabled</th><th>Devices</th><th>Actions</th></tr></thead>
-                <tbody id="plantb"></tbody>
-              </table>
-            </div>
-          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Name</th><th>Mode</th><th>Transport Package</th><th>Devices</th><th>Access Window</th><th>Enabled</th><th>Actions</th></tr></thead>
+            <tbody id="plantb"></tbody>
+          </table>
         </div>
 
         <div class="ph">
           <span class="ptitle">Transport Packages</span>
           <div class="pbtn-row">
+            <button class="btn pri" id="btnAddTransportPackage">+ ADD</button>
             <button class="btn" onclick="loadTransportPackages()">REFRESH</button>
           </div>
         </div>
         <div class="tw">
           <table>
-            <thead><tr><th>User</th><th>Enabled</th><th>Priority</th><th>Preferred Services</th><th>Last Reconciled</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Enabled</th><th>Priority</th><th>Actions</th></tr></thead>
             <tbody id="tptb"></tbody>
           </table>
         </div>
@@ -4591,8 +4574,13 @@ document.getElementById('logoutBtn').addEventListener('click', async function(){
   }
 });
 document.getElementById('modalClose').addEventListener('click', closeModal);
+var _modalMdOnOverlay = false;
+document.getElementById('modal').addEventListener('mousedown', function(event){
+  _modalMdOnOverlay = !!(event.target && event.target.id === 'modal');
+});
 document.getElementById('modal').addEventListener('click', function(event){
-  if(event.target && event.target.id === 'modal'){ closeModal(); }
+  if(_modalMdOnOverlay && event.target && event.target.id === 'modal'){ closeModal(); }
+  _modalMdOnOverlay = false;
 });
 document.addEventListener('mousedown', function(event){
   var dp = document.getElementById('dp');
@@ -6793,16 +6781,22 @@ function renderPlans(){
   var tb = document.getElementById('plantb');
   if(!tb) return;
   if(!PLANS.length){
-    tb.innerHTML = '<tr><td class="empty-state" colspan="6">No plans.</td></tr>';
+    tb.innerHTML = '<tr><td class="empty-state" colspan="7">No subscriptions.</td></tr>';
     return;
   }
   tb.innerHTML = PLANS.map(function(p){
+    var tpName = '-';
+    if(p.transport_package_id){
+      var tp = (TRANSPORT_PACKAGES || []).find(function(x){ return x.id === p.transport_package_id; });
+      tpName = tp ? (tp.name || tp.id) : p.transport_package_id;
+    }
     return '<tr>'
-      +'<td class="m">'+esc(p.code)+'</td>'
-      +'<td>'+esc(p.name)+'</td>'
+      +'<td class="m">'+esc(p.name)+'</td>'
       +'<td>'+esc(p.billing_mode)+'</td>'
-      +'<td>'+(p.enabled ? sp('active') : sp('deleted'))+'</td>'
+      +'<td>'+esc(tpName)+'</td>'
       +'<td>'+esc(String(p.default_device_limit || '-'))+'</td>'
+      +'<td>'+esc(subscriptionAccessSummary(p))+'</td>'
+      +'<td>'+(p.enabled ? sp('active') : sp('deleted'))+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="showPlan(\''+esc(p.id)+'\')">VIEW</button>'
         +'<button class="btn sm" onclick="openPlanModal(\''+esc(p.id)+'\')">EDIT</button>'
@@ -6925,7 +6919,7 @@ function renderTransportPackages(){
   var tb = document.getElementById('tptb');
   if(!tb) return;
   if(!TRANSPORT_PACKAGES.length){
-    tb.innerHTML = '<tr><td class="empty-state" colspan="6">No transport packages.</td></tr>';
+    tb.innerHTML = '<tr><td class="empty-state" colspan="4">No transport packages.</td></tr>';
     return;
   }
   tb.innerHTML = TRANSPORT_PACKAGES.map(function(pkg){
@@ -6934,22 +6928,14 @@ function renderTransportPackages(){
     if(pkg.enable_awg) enabled.push('AWG');
     if(pkg.enable_wg) enabled.push('WG');
     if(pkg.enable_openvpn_cloak) enabled.push('OVPN');
-    var preferred = [
-      'XRAY: ' + esc(transportServiceLabel('xray', pkg.preferred_xray_service_id)),
-      'AWG: ' + esc(transportServiceLabel('awg', pkg.preferred_awg_service_id)),
-      'WG: ' + esc(transportServiceLabel('wg', pkg.preferred_wg_service_id)),
-      'OVPN: ' + esc(transportServiceLabel('openvpn_cloak', pkg.preferred_openvpn_cloak_service_id))
-    ].join('<br>');
     return '<tr>'
-      +'<td class="m">'+esc(userNameById(pkg.user_id))+'</td>'
+      +'<td class="m">'+esc(pkg.name || '-')+'</td>'
       +'<td>'+esc(enabled.join(', ') || '-')+'</td>'
       +'<td class="m">'+esc((pkg.priority_order_json || []).join(' > '))+'</td>'
-      +'<td style="font-size:12px;color:var(--t1);">'+preferred+'</td>'
-      +'<td>'+esc(pkg.last_reconciled_at ? new Date(pkg.last_reconciled_at).toLocaleString() : '-')+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="showTransportPackage(\''+esc(pkg.id)+'\')">VIEW</button>'
-        +'<button class="btn sm" onclick="openTransportPackageModal(\''+esc(pkg.user_id)+'\')">EDIT</button>'
-        +'<button class="btn sm pri" onclick="reconcileTransportPackageFlow(\''+esc(pkg.user_id)+'\')">RECONCILE</button>'
+        +'<button class="btn sm" onclick="openTransportPackageModal(\''+esc(pkg.id)+'\')">EDIT</button>'
+        +'<button class="btn sm red" onclick="deleteTransportPackageFlow(\''+esc(pkg.id)+'\')">DEL</button>'
       +'</td>'
       +'</tr>';
   }).join('');
@@ -7000,15 +6986,24 @@ function showUser(id){
 
 function showPlan(id){
   var p = planById(id); if(!p) return;
-  openDP('Plan ' + p.code, rows([
+  var tpName = '-';
+  if(p.transport_package_id){
+    var tp = (TRANSPORT_PACKAGES || []).find(function(x){ return x.id === p.transport_package_id; });
+    tpName = tp ? (tp.name || tp.id) : p.transport_package_id;
+  }
+  openDP('Subscription ' + p.name, rows([
     ['ID', p.id],
-    ['Code', p.code],
     ['Name', p.name],
     ['Billing Mode', p.billing_mode],
     ['Enabled', p.enabled ? 'yes' : 'no'],
     ['Duration Days', p.duration_days != null ? String(p.duration_days) : '-'],
-    ['Default Device Limit', String(p.default_device_limit || '-')],
-    ['Traffic Quota Bytes', p.traffic_quota_bytes != null ? String(p.traffic_quota_bytes) : '-'],
+    ['Fixed Expires At', p.fixed_expires_at ? new Date(p.fixed_expires_at).toLocaleString() : '-'],
+    ['Device Limit', String(p.default_device_limit || '-')],
+    ['Traffic Quota', p.traffic_quota_bytes != null ? String(p.traffic_quota_bytes) + ' B' : '-'],
+    ['Speed Limit', p.speed_limit_kbps != null ? String(p.speed_limit_kbps) + ' kbps' : '-'],
+    ['Transport Package', tpName],
+    ['Access Window', subscriptionAccessSummary(p)],
+    ['Comment', p.comment || '-'],
     ['Description', p.description || '-']
   ]), { kind:'plan', id:p.id });
 }
@@ -7071,10 +7066,9 @@ function showDevice(id){
 
 function showTransportPackage(id){
   var pkg = transportPackageById(id); if(!pkg) return;
-  var summary = pkg.last_reconcile_summary_json || {};
-  openDP('Transport Package — ' + userNameById(pkg.user_id), rows([
+  openDP('Transport Package — ' + (pkg.name || pkg.id), rows([
     ['ID', pkg.id],
-    ['User', userNameById(pkg.user_id)],
+    ['Name', pkg.name || '-'],
     ['Enabled', [
       pkg.enable_xray ? 'xray' : null,
       pkg.enable_awg ? 'awg' : null,
@@ -7082,68 +7076,42 @@ function showTransportPackage(id){
       pkg.enable_openvpn_cloak ? 'openvpn_cloak' : null
     ].filter(Boolean).join(', ') || '-'],
     ['Priority', (pkg.priority_order_json || []).join(' > ') || '-'],
-    ['Preferred XRAY', transportServiceLabel('xray', pkg.preferred_xray_service_id)],
-    ['Preferred AWG', transportServiceLabel('awg', pkg.preferred_awg_service_id)],
-    ['Preferred WG', transportServiceLabel('wg', pkg.preferred_wg_service_id)],
-    ['Preferred OVPN', transportServiceLabel('openvpn_cloak', pkg.preferred_openvpn_cloak_service_id)],
     ['Split Tunnel', pkg.split_tunnel_enabled ? 'enabled' : 'disabled'],
-    ['Split Routes', (pkg.split_tunnel_routes_json || []).join(', ') || '-'],
-    ['Last Reconciled', pkg.last_reconciled_at ? new Date(pkg.last_reconciled_at).toLocaleString() : '-'],
-    ['Last Summary', Object.keys(summary).length ? JSON.stringify(summary) : '-']
+    ['Split Routes', (pkg.split_tunnel_routes_json || []).join(', ') || '-']
   ])
   +'<div class="dp-actions">'
-    +'<button class="btn" onclick="openTransportPackageModal(\''+esc(pkg.user_id)+'\')">EDIT</button>'
-    +'<button class="btn pri" onclick="reconcileTransportPackageFlow(\''+esc(pkg.user_id)+'\')">RECONCILE</button>'
+    +'<button class="btn" onclick="openTransportPackageModal(\''+esc(pkg.id)+'\')">EDIT</button>'
+    +'<button class="btn red" onclick="deleteTransportPackageFlow(\''+esc(pkg.id)+'\')">DEL</button>'
   +'</div>', { kind:'transport-package', id:pkg.id });
 }
 
-async function openTransportPackageModal(userId){
-  var user = userById(userId); if(!user){ alert('User not found.'); return; }
-  try{
-    var pkg = await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId));
-    var xrayOptions = [{value:'', label:'-'}].concat(XRAY_SERVICES.map(function(s){ return {value:s.id, label:s.name}; }));
-    var awgOptions = [{value:'', label:'-'}].concat(AWG_SERVICES.map(function(s){ return {value:s.id, label:s.name}; }));
-    var wgOptions = [{value:'', label:'-'}].concat(WG_SERVICES.map(function(s){ return {value:s.id, label:s.name}; }));
-    var ovpnOptions = [{value:'', label:'-'}].concat(OVPN_CLOAK_SERVICES.map(function(s){ return {value:s.id, label:s.name}; }));
-    var body = '<form id="transportPackageForm"><div class="modal-grid">'
-      +formInput('User', 'user_label', user.username, {readonly:true})
-      +formTextarea('Priority order', 'priority_order', (pkg.priority_order_json || []).join(', '), {help:'Comma-separated transport order: xray, awg, wg, openvpn_cloak'})
-      +formCheckbox('Enable XRAY', 'enable_xray', !!pkg.enable_xray, {caption:'Include xray profiles'})
-      +formCheckbox('Enable AWG', 'enable_awg', !!pkg.enable_awg, {caption:'Include AWG profiles'})
-      +formCheckbox('Enable WG', 'enable_wg', !!pkg.enable_wg, {caption:'Include WG profiles'})
-      +formCheckbox('Enable OpenVPN+Cloak', 'enable_openvpn_cloak', !!pkg.enable_openvpn_cloak, {caption:'Include OpenVPN+Cloak profiles'})
-      +formCheckbox('Enable Split Tunnel', 'split_tunnel_enabled', !!pkg.split_tunnel_enabled, {caption:'Apply only listed CIDRs through WG/AWG client tunnel'})
-      +formTextarea('Split Tunnel Routes', 'split_tunnel_routes', (pkg.split_tunnel_routes_json || []).join(', '), {help:'Comma-separated CIDRs, for example: 10.0.0.0/8, 172.16.0.0/12'})
-      +formSelect('Preferred XRAY Service', 'preferred_xray_service_id', pkg.preferred_xray_service_id || '', xrayOptions)
-      +formSelect('Preferred AWG Service', 'preferred_awg_service_id', pkg.preferred_awg_service_id || '', awgOptions)
-      +formSelect('Preferred WG Service', 'preferred_wg_service_id', pkg.preferred_wg_service_id || '', wgOptions)
-      +formSelect('Preferred OVPN Service', 'preferred_openvpn_cloak_service_id', pkg.preferred_openvpn_cloak_service_id || '', ovpnOptions)
-      +'</div></form>';
-    openModal('Edit Transport Package — ' + user.username, body, {
-      buttons:[
-        {label:'Cancel', className:'btn', onClick:closeModal},
-        {label:'Save', className:'btn', onClick:function(){ document.getElementById('transportPackageForm').requestSubmit(); }},
-        {label:'Save + Reconcile', className:'btn pri', onClick:function(){ document.getElementById('transportPackageForm').dataset.reconcile = '1'; document.getElementById('transportPackageForm').requestSubmit(); }}
-      ]
-    });
-    bindModalForm('transportPackageForm', function(fd){ saveTransportPackageForm(userId, fd); });
-  }catch(err){
-    alert(err && err.message ? err.message : err);
-  }
+async function openTransportPackageModal(pkgId){
+  var pkg = pkgId ? transportPackageById(pkgId) : null;
+  var body = '<form id="transportPackageForm"><div class="modal-grid">'
+    +formInput('Name', 'name', pkg ? (pkg.name || '') : '', {required:true})
+    +formTextarea('Priority order', 'priority_order', pkg ? (pkg.priority_order_json || []).join(', ') : 'xray, awg, wg, openvpn_cloak', {help:'Comma-separated transport order: xray, awg, wg, openvpn_cloak'})
+    +formCheckbox('Enable XRAY', 'enable_xray', pkg ? !!pkg.enable_xray : true, {caption:'Include xray profiles'})
+    +formCheckbox('Enable AWG', 'enable_awg', pkg ? !!pkg.enable_awg : true, {caption:'Include AWG profiles'})
+    +formCheckbox('Enable WG', 'enable_wg', pkg ? !!pkg.enable_wg : true, {caption:'Include WG profiles'})
+    +formCheckbox('Enable OpenVPN+Cloak', 'enable_openvpn_cloak', pkg ? !!pkg.enable_openvpn_cloak : true, {caption:'Include OpenVPN+Cloak profiles'})
+    +formCheckbox('Enable Split Tunnel', 'split_tunnel_enabled', pkg ? !!pkg.split_tunnel_enabled : false, {caption:'Apply only listed CIDRs through WG/AWG client tunnel'})
+    +formTextarea('Split Tunnel Routes', 'split_tunnel_routes', pkg ? (pkg.split_tunnel_routes_json || []).join(', ') : '', {help:'Comma-separated CIDRs, for example: 10.0.0.0/8, 172.16.0.0/12'})
+    +'</div></form>';
+  openModal(pkgId ? 'Edit Transport Package' : 'New Transport Package', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label: pkgId ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('transportPackageForm').requestSubmit(); }}
+    ]
+  });
+  bindModalForm('transportPackageForm', function(fd){ saveTransportPackageForm(pkgId, fd); });
 }
 
-async function saveTransportPackageForm(userId, fd){
-  var form = document.getElementById('transportPackageForm');
-  var doReconcile = !!(form && form.dataset.reconcile === '1');
-  if(form){ form.dataset.reconcile = ''; }
+async function saveTransportPackageForm(pkgId, fd){
   try{
     var priorityOrder = parseCsvList(fd.get('priority_order'));
     if(!priorityOrder.length){ priorityOrder = ['xray', 'awg', 'wg', 'openvpn_cloak']; }
     var body = {
-      preferred_xray_service_id: String(fd.get('preferred_xray_service_id') || '').trim() || null,
-      preferred_awg_service_id: String(fd.get('preferred_awg_service_id') || '').trim() || null,
-      preferred_wg_service_id: String(fd.get('preferred_wg_service_id') || '').trim() || null,
-      preferred_openvpn_cloak_service_id: String(fd.get('preferred_openvpn_cloak_service_id') || '').trim() || null,
+      name: String(fd.get('name') || '').trim(),
       enable_xray: checked(fd, 'enable_xray'),
       enable_awg: checked(fd, 'enable_awg'),
       enable_wg: checked(fd, 'enable_wg'),
@@ -7152,14 +7120,27 @@ async function saveTransportPackageForm(userId, fd){
       split_tunnel_routes: parseCsvList(fd.get('split_tunnel_routes')),
       priority_order: priorityOrder
     };
-    await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId), { method:'PUT', body:body });
-    if(doReconcile){
-      await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId) + '/reconcile', { method:'POST', body:{} });
-      pushEv('transport_package.reconciled', 'transport package reconciled for ' + userNameById(userId));
+    if(pkgId){
+      await apiFetch(API_PREFIX + '/transport-packages/' + encodeURIComponent(pkgId), { method:'PATCH', body:body });
+      pushEv('transport_package.updated', 'transport package updated: ' + body.name);
     }else{
-      pushEv('transport_package.updated', 'transport package updated for ' + userNameById(userId));
+      await apiFetch(API_PREFIX + '/transport-packages', { method:'POST', body:body });
+      pushEv('transport_package.created', 'transport package created: ' + body.name);
     }
     closeModal();
+    await loadTransportPackages();
+  }catch(err){
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+async function deleteTransportPackageFlow(pkgId){
+  var pkg = transportPackageById(pkgId);
+  if(!confirm('Delete transport package ' + (pkg ? (pkg.name || pkgId) : pkgId) + '?')) return;
+  try{
+    await apiFetch(API_PREFIX + '/transport-packages/' + encodeURIComponent(pkgId), { method:'DELETE' });
+    pushEv('transport_package.deleted', 'transport package deleted: ' + (pkg ? (pkg.name || pkgId) : pkgId));
+    closeDP();
     await loadTransportPackages();
   }catch(err){
     alert(err && err.message ? err.message : err);
@@ -7236,18 +7217,29 @@ async function deleteUserFlow(userId){
 
 function openPlanModal(planId){
   var plan = planId ? planById(planId) : null;
+  var tpOptions = [{value:'', label:'— none —'}].concat((TRANSPORT_PACKAGES || []).map(function(tp){ return {value:tp.id, label:(tp.name || tp.id)}; }));
+  var dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  var mask = plan ? (plan.access_days_mask != null ? plan.access_days_mask : 127) : 127;
+  var dayCheckboxes = '<div class="mf-row"><label class="mf-label">Access days</label><div class="mf-controls" style="display:flex;gap:8px;flex-wrap:wrap;">'
+    + dayNames.map(function(d,i){ var checked = !!(mask & (1 << i)); return '<label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" name="access_day_'+i+'" '+(checked?'checked':'')+'>'+d+'</label>'; }).join('')
+    + '</div></div>';
   var body = '<form id="planForm"><div class="modal-grid">'
-    +formInput('Code', 'code', plan ? plan.code : '', {required:true, readonly:!!plan})
     +formInput('Name', 'name', plan ? plan.name : '', {required:true})
-    +formSelect('Billing mode', 'billing_mode', plan ? plan.billing_mode : 'manual', ['manual','lifetime','periodic','trial'])
-    +formCheckbox('Enabled', 'enabled', plan ? plan.enabled : true, {caption:'Plan enabled'})
-    +formInput('Duration days', 'duration_days', plan && plan.duration_days != null ? String(plan.duration_days) : '', {type:'number'})
-    +formInput('Default device limit', 'default_device_limit', plan ? String(plan.default_device_limit || 1) : '1', {type:'number', required:true})
-    +formInput('Usage goal policy', 'default_usage_goal_policy', plan ? (plan.default_usage_goal_policy || '') : '')
-    +formInput('Traffic quota bytes', 'traffic_quota_bytes', plan && plan.traffic_quota_bytes != null ? String(plan.traffic_quota_bytes) : '', {type:'number'})
-    +formTextarea('Description', 'description', plan ? (plan.description || '') : '', {full:true})
+    +formSelect('Billing mode', 'billing_mode', plan ? plan.billing_mode : 'periodic', ['manual','lifetime','periodic','trial','fixed_date'])
+    +formCheckbox('Enabled', 'enabled', plan ? plan.enabled : true, {caption:'Subscription enabled'})
+    +formInput('Duration days', 'duration_days', plan && plan.duration_days != null ? String(plan.duration_days) : '', {type:'number', help:'For periodic/trial modes'})
+    +formInput('Fixed expires at', 'fixed_expires_at', plan && plan.fixed_expires_at ? plan.fixed_expires_at.slice(0,16) : '', {type:'datetime-local', help:'For fixed_date mode'})
+    +formInput('Device limit', 'default_device_limit', plan ? String(plan.default_device_limit || 1) : '1', {type:'number', required:true})
+    +formInput('Traffic quota bytes', 'traffic_quota_bytes', plan && plan.traffic_quota_bytes != null ? String(plan.traffic_quota_bytes) : '', {type:'number', help:'0 = unlimited'})
+    +formInput('Speed limit kbps', 'speed_limit_kbps', plan && plan.speed_limit_kbps != null ? String(plan.speed_limit_kbps) : '', {type:'number', help:'Client-side limit, 0 = unlimited'})
+    +formSelect('Transport package', 'transport_package_id', plan ? (plan.transport_package_id || '') : '', tpOptions)
+    +formCheckbox('Access window', 'access_window_enabled', plan ? !!plan.access_window_enabled : false, {caption:'Restrict access by time schedule'})
+    +dayCheckboxes
+    +formInput('Window start (local)', 'access_window_start_local', plan ? (plan.access_window_start_local || '') : '', {help:'HH:MM, e.g. 08:00'})
+    +formInput('Window end (local)', 'access_window_end_local', plan ? (plan.access_window_end_local || '') : '', {help:'HH:MM, e.g. 22:00'})
+    +formTextarea('Comment', 'comment', plan ? (plan.comment || '') : '', {help:'Free text note'})
     +'</div></form>';
-  openModal(plan ? 'Edit Plan' : 'Create Plan', body, {
+  openModal(plan ? 'Edit Subscription' : 'New Subscription', body, {
     buttons:[
       {label:'Cancel', className:'btn', onClick:closeModal},
       {label:plan ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('planForm').requestSubmit(); }}
@@ -7327,20 +7319,32 @@ async function generateReferralCodePool(fd){
 }
 
 async function savePlanForm(fd, planId){
+  var name = String(fd.get('name') || '').trim();
+  var fixedExpiresRaw = String(fd.get('fixed_expires_at') || '').trim();
+  var daysMask = 0;
+  for(var di = 0; di < 7; di++){
+    if(fd.get('access_day_'+di) === 'on'){ daysMask |= (1 << di); }
+  }
   var body = {
-    name: String(fd.get('name') || '').trim(),
-    description: String(fd.get('description') || '').trim() || null,
+    name: name,
     enabled: checked(fd, 'enabled'),
-    billing_mode: String(fd.get('billing_mode') || 'manual').trim(),
+    billing_mode: String(fd.get('billing_mode') || 'periodic').trim(),
     duration_days: String(fd.get('duration_days') || '').trim() ? Number(fd.get('duration_days')) : null,
+    fixed_expires_at: fixedExpiresRaw ? new Date(fixedExpiresRaw).toISOString() : null,
     default_device_limit: Number(fd.get('default_device_limit') || 1),
-    default_usage_goal_policy: String(fd.get('default_usage_goal_policy') || '').trim() || null,
-    traffic_quota_bytes: String(fd.get('traffic_quota_bytes') || '').trim() ? Number(fd.get('traffic_quota_bytes')) : null
+    traffic_quota_bytes: String(fd.get('traffic_quota_bytes') || '').trim() ? Number(fd.get('traffic_quota_bytes')) : null,
+    speed_limit_kbps: String(fd.get('speed_limit_kbps') || '').trim() ? Number(fd.get('speed_limit_kbps')) : null,
+    transport_package_id: String(fd.get('transport_package_id') || '').trim() || null,
+    access_window_enabled: checked(fd, 'access_window_enabled'),
+    access_days_mask: daysMask,
+    access_window_start_local: String(fd.get('access_window_start_local') || '').trim() || null,
+    access_window_end_local: String(fd.get('access_window_end_local') || '').trim() || null,
+    comment: String(fd.get('comment') || '').trim() || null
   };
   if(planId){
     await apiFetch(API_PREFIX + '/plans/' + encodeURIComponent(planId), { method:'PATCH', body:body });
   } else {
-    body.code = String(fd.get('code') || '').trim();
+    body.code = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('plan_' + Date.now());
     await apiFetch(API_PREFIX + '/plans', { method:'POST', body:body });
   }
   closeModal();
@@ -7556,6 +7560,8 @@ async function unbanDeviceFlow(deviceId){
   if(addSubscriptionBtn){ addSubscriptionBtn.addEventListener('click', function(){ openSubscriptionModal(); }); }
   if(addReferralCodeBtn){ addReferralCodeBtn.addEventListener('click', function(){ openReferralCodeModal(); }); }
   if(generateReferralPoolBtn){ generateReferralPoolBtn.addEventListener('click', function(){ openReferralPoolModal(); }); }
+  var addTransportPackageBtn = document.getElementById('btnAddTransportPackage');
+  if(addTransportPackageBtn){ addTransportPackageBtn.addEventListener('click', function(){ openTransportPackageModal(); }); }
 })();
 
 // ═══════════════════════════════════════

@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
+from onx.db.models.transport_package import TransportPackage
 from onx.db.models.user import User
 from onx.schemas.transport_packages import (
+    TransportPackageCreate,
     TransportPackageRead,
     TransportPackageReconcileResponse,
+    TransportPackageUpdate,
     TransportPackageUpsert,
 )
 from onx.services.event_log_service import EventLogService
@@ -17,10 +20,70 @@ router = APIRouter(prefix="/transport-packages", tags=["transport-packages"])
 event_log_service = EventLogService()
 
 
+# ── Standalone template CRUD ──────────────────────────────────────────────────
+
 @router.get("", response_model=list[TransportPackageRead], status_code=status.HTTP_200_OK)
 def list_transport_packages(db: Session = Depends(get_database_session)):
     return transport_package_service.list_packages(db)
 
+
+@router.post("", response_model=TransportPackageRead, status_code=status.HTTP_201_CREATED)
+def create_transport_package(
+    payload: TransportPackageCreate,
+    db: Session = Depends(get_database_session),
+) -> TransportPackage:
+    pkg = TransportPackage(
+        name=payload.name,
+        enable_xray=payload.enable_xray,
+        enable_awg=payload.enable_awg,
+        enable_wg=payload.enable_wg,
+        enable_openvpn_cloak=payload.enable_openvpn_cloak,
+        split_tunnel_enabled=payload.split_tunnel_enabled,
+        split_tunnel_routes_json=payload.split_tunnel_routes,
+        priority_order_json=payload.priority_order,
+    )
+    db.add(pkg)
+    db.commit()
+    db.refresh(pkg)
+    return pkg
+
+
+@router.patch("/{package_id}", response_model=TransportPackageRead, status_code=status.HTTP_200_OK)
+def update_transport_package(
+    package_id: str,
+    payload: TransportPackageUpdate,
+    db: Session = Depends(get_database_session),
+) -> TransportPackage:
+    pkg = db.get(TransportPackage, package_id)
+    if pkg is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transport package not found.")
+    for field_name, value in payload.model_dump(exclude_unset=True).items():
+        if field_name == "split_tunnel_routes":
+            pkg.split_tunnel_routes_json = value
+        elif field_name == "priority_order":
+            pkg.priority_order_json = value
+        else:
+            setattr(pkg, field_name, value)
+    db.add(pkg)
+    db.commit()
+    db.refresh(pkg)
+    return pkg
+
+
+@router.delete("/{package_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_transport_package(
+    package_id: str,
+    db: Session = Depends(get_database_session),
+) -> Response:
+    pkg = db.get(TransportPackage, package_id)
+    if pkg is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transport package not found.")
+    db.delete(pkg)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── Per-user endpoints (backward-compatible) ──────────────────────────────────
 
 @router.get("/by-user/{user_id}", response_model=TransportPackageRead, status_code=status.HTTP_200_OK)
 def get_transport_package_for_user(user_id: str, db: Session = Depends(get_database_session)):

@@ -34,6 +34,7 @@ from onx.db.models.subscription import Subscription
 from onx.db.models.transport_package import TransportPackage
 from onx.db.models.transit_policy import TransitPolicy
 from onx.db.models.user import User
+from onx.db.models.system_config import SystemConfig
 from onx.db.models.wg_service import WgService
 from onx.db.models.xray_service import XrayService
 
@@ -72,6 +73,7 @@ __all__ = [
     "Job",
     "JobLock",
     "EventLog",
+    "SystemConfig",
     "WgService",
     "XrayService",
 ]

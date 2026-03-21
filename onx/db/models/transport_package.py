@@ -11,11 +11,14 @@ class TransportPackage(Base):
     __tablename__ = "transport_packages"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    user_id: Mapped[str] = mapped_column(
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # user_id is NULL for subscription-level template packages.
+    # Partial unique index (WHERE user_id IS NOT NULL) enforced at DB level
+    # on PostgreSQL; see migration 0031_subscription_refactor.
+    user_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,
+        nullable=True,
         index=True,
     )
     preferred_xray_service_id: Mapped[str | None] = mapped_column(

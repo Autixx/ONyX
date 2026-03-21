@@ -25,6 +25,7 @@ from onx.api.routers.health import router as health_router
 from onx.api.routers.jobs import router as jobs_router
 from onx.api.routers.links import router as links_router
 from onx.api.routers.maintenance import router as maintenance_router
+from onx.api.routers.system_config import router as system_config_router
 from onx.api.routers.nodes import router as nodes_router
 from onx.api.routers.node_traffic import router as node_traffic_router
 from onx.api.routers.openvpn_cloak_services import router as openvpn_cloak_services_router
@@ -176,6 +177,7 @@ def create_app() -> FastAPI:
     app.include_router(probes_router, prefix=settings.api_prefix)
     app.include_router(topology_router, prefix=settings.api_prefix)
     app.include_router(maintenance_router, prefix=settings.api_prefix)
+    app.include_router(system_config_router, prefix=settings.api_prefix)
     app.include_router(realtime_router, prefix=settings.api_prefix)
     _mount_static_ui(app, settings)
     return app

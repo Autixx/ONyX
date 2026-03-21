@@ -14,6 +14,7 @@ from onx.services.discovery_service import DiscoveryService
 from onx.services.interface_runtime_service import InterfaceRuntimeService
 from onx.services.node_agent_service import NODE_AGENT_CAPABILITY, NodeAgentService
 from onx.services.secret_service import SecretService
+from onx.services.system_config_service import SystemConfigService
 
 
 RUNTIME_CAPABILITY_NAME = "onx_link_runtime"
@@ -28,11 +29,18 @@ class NodeRuntimeBootstrapService:
         self._secrets = SecretService()
         self._discovery = DiscoveryService()
         self._node_agent = NodeAgentService()
+        self._system_config = SystemConfigService()
 
-    def _resolve_public_base_url(self) -> str:
+    def _resolve_public_base_url(self, db: Session) -> str:
+        # 1. DB-backed setting (set via admin UI).
+        db_url = self._system_config.get_public_base_url(db)
+        if db_url:
+            return db_url
+        # 2. Environment / config file.
         configured = str(self._settings.onx_public_base_url or "").strip().rstrip("/")
         if configured:
             return configured
+        # 3. Fallback: FQDN when TLS is enabled, otherwise localhost.
         hostname = socket.getfqdn() or socket.gethostname()
         if self._settings.admin_web_secure_cookies:
             return f"https://{hostname}"
@@ -87,7 +95,7 @@ class NodeRuntimeBootstrapService:
         if progress_callback:
             progress_callback("installing node agent")
         agent_token = self._node_agent.ensure_agent_token(db, node)
-        report_url = f"{self._resolve_public_base_url()}{self._settings.api_prefix}/agent/peer-traffic/report"
+        report_url = f"{self._resolve_public_base_url(db)}{self._settings.api_prefix}/agent/peer-traffic/report"
         agent_install = self._runtime.ensure_node_agent(
             node,
             management_secret,

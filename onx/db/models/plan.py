@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum, Integer, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from onx.compat import StrEnum, enum_values
@@ -13,6 +13,7 @@ class BillingMode(StrEnum):
     LIFETIME = "lifetime"
     PERIODIC = "periodic"
     TRIAL = "trial"
+    FIXED_DATE = "fixed_date"
 
 
 class Plan(Base):
@@ -22,6 +23,7 @@ class Plan(Base):
     code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     billing_mode: Mapped[BillingMode] = mapped_column(
         Enum(BillingMode, name="billing_mode", values_callable=enum_values, validate_strings=True),
@@ -29,9 +31,22 @@ class Plan(Base):
         default=BillingMode.MANUAL,
     )
     duration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fixed_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     default_device_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     default_usage_goal_policy: Mapped[str | None] = mapped_column(String(32), nullable=True)
     traffic_quota_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    speed_limit_kbps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    transport_package_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("transport_packages.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # Access schedule (template-level; inherited when creating user subscriptions)
+    access_window_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    access_days_mask: Mapped[int] = mapped_column(Integer, nullable=False, default=127)
+    access_window_start_local: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    access_window_end_local: Mapped[str | None] = mapped_column(String(5), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
