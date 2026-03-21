@@ -37,6 +37,8 @@ class PlanRead(ONXBaseModel):
     access_days_mask: int
     access_window_start_local: str | None
     access_window_end_local: str | None
+    access_schedule_json: dict | None
+    access_exception_dates_json: list[str] | None
     created_at: datetime
     updated_at: datetime
 
@@ -61,6 +63,8 @@ class PlanCreate(BaseModel):
     access_days_mask: int = Field(default=127, ge=0, le=127)
     access_window_start_local: str | None = None
     access_window_end_local: str | None = None
+    access_schedule_json: dict | None = None
+    access_exception_dates_json: list[str] | None = None
 
     @field_validator("access_window_start_local", "access_window_end_local")
     @classmethod
@@ -89,6 +93,8 @@ class PlanUpdate(BaseModel):
     access_days_mask: int | None = Field(default=None, ge=0, le=127)
     access_window_start_local: str | None = None
     access_window_end_local: str | None = None
+    access_schedule_json: dict | None = None
+    access_exception_dates_json: list[str] | None = None
 
     @field_validator("access_window_start_local", "access_window_end_local")
     @classmethod

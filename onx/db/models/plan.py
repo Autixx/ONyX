@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from onx.compat import StrEnum, enum_values
@@ -47,6 +47,11 @@ class Plan(Base):
     access_days_mask: Mapped[int] = mapped_column(Integer, nullable=False, default=127)
     access_window_start_local: Mapped[str | None] = mapped_column(String(5), nullable=True)
     access_window_end_local: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    # Per-day schedule: {"mon": {"start": "08:00", "end": "22:00"}, "tue": null, ...}
+    # null entry = day is blocked when schedule is enabled.
+    access_schedule_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Exception dates: ["2026-01-01", "2026-05-09"] — always blocked regardless of schedule
+    access_exception_dates_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
