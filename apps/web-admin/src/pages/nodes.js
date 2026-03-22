@@ -1,5 +1,22 @@
 // Page module - all functions exposed as window globals
 
+window.refreshNodes = async function refreshNodes() {
+  var nodes = await apiFetch(API_PREFIX + '/nodes');
+  var withCaps = await Promise.all((nodes || []).map(async function(node) {
+    try {
+      var caps = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(node.id) + '/capabilities');
+      node.caps = (caps || []).filter(function(c) { return c.supported; }).map(function(c) { return c.capability_name; });
+    } catch (_) {
+      node.caps = [];
+    }
+    return node;
+  }));
+  window.NODES = withCaps;
+  window.renderNodes?.();
+  window.renderFailbanSourceTabs?.();
+  window.updateShellCounters?.();
+};
+
 window.nodeInterfaceList = function nodeInterfaceList(nodeId){
   var node = nById(nodeId);
   var raw = Array.isArray(node.discovered_interfaces) ? node.discovered_interfaces : [];
