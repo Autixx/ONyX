@@ -2819,9 +2819,6 @@ class SupportChatPanel(QWidget):
             lambda: self._typing_throttle_active.__setitem__(0, False)
         )
 
-        self.setStyleSheet(
-            f"background:{C_BG0};border-left:1px solid {C_BDR};"
-        )
         self._build_ui()
 
     # ── UI ─────────────────────────────────────────────────────────────────────
@@ -2990,9 +2987,10 @@ class SupportChatPanel(QWidget):
 
     def _open_ws(self, ticket_id: str) -> None:
         import re as _re
+        # self._base already ends with /api/v1 — don't add it again
         ws_base = _re.sub(r"^http", "ws", self._base)
         ws_url  = (
-            f"{ws_base}/api/v1/ws/client/support/{ticket_id}"
+            f"{ws_base}/ws/client/support/{ticket_id}"
             f"?token={self._tok}&device_id={self._did}"
         )
         try:
@@ -3148,7 +3146,20 @@ class ONyXClient(QMainWindow):
 
         self._backdrop = None
 
-        # Left column: titlebar + page stack (always 410 px wide)
+        # Left column: support chat panel (hidden by default, zero width)
+        self._chat_panel = SupportChatPanel(self)
+        self._chat_panel.setFixedWidth(0)
+        self._chat_panel.hide()
+        root_lay.addWidget(self._chat_panel)
+
+        # 1-px separator between panel and main content (hidden with panel)
+        self._panel_sep = QFrame()
+        self._panel_sep.setFixedWidth(1)
+        self._panel_sep.setStyleSheet(f"background:{C_BDR};border:none;")
+        self._panel_sep.hide()
+        root_lay.addWidget(self._panel_sep)
+
+        # Right column: titlebar + page stack (always 410 px wide)
         left_col = QWidget()
         left_col.setFixedWidth(410)
         left_col.setStyleSheet(f"background:{C_BG0};")
@@ -3164,12 +3175,6 @@ class ONyXClient(QMainWindow):
         left_lay.addWidget(self._stack)
 
         root_lay.addWidget(left_col)
-
-        # Right column: embedded support chat panel (hidden by default)
-        self._chat_panel = SupportChatPanel(self)
-        self._chat_panel.setFixedWidth(410)
-        self._chat_panel.hide()
-        root_lay.addWidget(self._chat_panel)
 
         self._ls = LoginScreen(self.st)
         self._rs = RegisterScreen(self.st)
@@ -3296,12 +3301,15 @@ class ONyXClient(QMainWindow):
             self._tray.setToolTip(f"ONyX\n{state}\n{user}")
 
     def toggle_support_panel(self):
-        """Show or hide the embedded support chat panel."""
+        """Show or hide the embedded support chat panel (to the left of main content)."""
         if self._chat_panel.isVisible():
             self._chat_panel.hide()
+            self._chat_panel.setFixedWidth(0)   # exclude from layout so window can shrink
+            self._panel_sep.hide()
             self.setFixedSize(410, 760)
         else:
             ds = self._ds
+            self._chat_panel.setFixedWidth(410)
             self._chat_panel.open(
                 base=ds.st.base_url,
                 tok=ds.st.session_token or "",
@@ -3310,7 +3318,8 @@ class ONyXClient(QMainWindow):
                 runtime=ds._runtime,
             )
             self._chat_panel.show()
-            self.setFixedSize(820, 760)
+            self._panel_sep.show()
+            self.setFixedSize(821, 760)  # 410 + 1 (sep) + 410
 
     def closeEvent(self, event):
         if self._tray is not None and not self._quit_requested:
