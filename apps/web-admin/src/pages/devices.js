@@ -85,4 +85,4 @@ window.openDeviceBanModal = function openDeviceBanModal(deviceId){
   bindModalForm('deviceBanForm', function(fd){ saveDeviceBanForm(deviceId, fd); });
 };
 
-export { loadDevices, renderDevices, showDevice, openDeviceBanModal };
+export {};

@@ -146,12 +146,4 @@ window.loadNodeTrafficEvents = async function loadNodeTrafficEvents(nodeId, cont
   }
 };
 
-export {
-  renderNodeTraffic,
-  nodeTrafficState,
-  showNodeTraffic,
-  refreshNodeTrafficSummary,
-  actionNodeTrafficReset,
-  actionNodeTrafficRollover,
-  loadNodeTrafficEvents
-};
+export {};

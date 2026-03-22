@@ -161,4 +161,4 @@ window.actionAwgAssignPeer = async function actionAwgAssignPeer(serviceId){
   bindModalForm('awgAssignPeerForm', function(fd){ submitAwgAssignPeer(serviceId, fd); });
 };
 
-export { refreshAwgServices, renderAwgServices, showAwgService, openAwgServiceModal, deleteAwgServiceFlow, actionAwgApply, actionAwgAssignPeer };
+export {};

@@ -105,4 +105,4 @@ window.showPeerDetail = function showPeerDetail(id){
   );
 };
 
-export { loadPeers, renderPeers, updatePeersBadge, showPeerDetail };
+export {};

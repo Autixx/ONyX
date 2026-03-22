@@ -156,4 +156,4 @@ window.actionOpenvpnCloakAssignPeer = async function actionOpenvpnCloakAssignPee
   bindModalForm('openvpnCloakAssignPeerForm', function(fd){ submitOpenvpnCloakAssignPeer(serviceId, fd); });
 };
 
-export { refreshOpenvpnCloakServices, renderOpenvpnCloakServices, showOpenvpnCloakService, openOpenvpnCloakServiceModal, deleteOpenvpnCloakServiceFlow, actionOpenvpnCloakApply, actionOpenvpnCloakAssignPeer };
+export {};

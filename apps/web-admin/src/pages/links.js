@@ -222,12 +222,4 @@ window.actionLinkApply = async function actionLinkApply(linkId){
   }
 };
 
-export {
-  renderLinks,
-  showLink,
-  refreshLinks,
-  openLinkModal,
-  deleteLinkFlow,
-  actionLinkValidate,
-  actionLinkApply
-};
+export {};

@@ -148,4 +148,4 @@ window.actionWgAssignPeer = async function actionWgAssignPeer(serviceId){
   bindModalForm('wgAssignPeerForm', function(fd){ submitWgAssignPeer(serviceId, fd); });
 };
 
-export { refreshWgServices, renderWgServices, showWgService, openWgServiceModal, deleteWgServiceFlow, actionWgApply, actionWgAssignPeer };
+export {};

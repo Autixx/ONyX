@@ -126,4 +126,4 @@ window.startHealthPolling = function startHealthPolling(){
   }, 15000);
 };
 
-export { refreshHealth, updateOpenTicketCount, healthCheck, startHealthPolling };
+export {};

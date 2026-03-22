@@ -79,4 +79,4 @@ window.deleteUserFlow = async function deleteUserFlow(userId){
   await Promise.all([loadUsers(), loadSubscriptions(), loadDevices(), loadTransportPackages()]);
 };
 
-export { loadUsers, renderUsers, showUser, openUserModal, deleteUserFlow };
+export {};

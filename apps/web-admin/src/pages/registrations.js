@@ -59,4 +59,4 @@ window.renderRegistrations = function renderRegistrations(){
   }).join('');
 };
 
-export { loadRegistrations, renderRegistrations, updateRegBadge };
+export {};

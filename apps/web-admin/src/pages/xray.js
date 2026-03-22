@@ -166,4 +166,4 @@ window.actionXrayAssignPeer = async function actionXrayAssignPeer(serviceId){
   bindModalForm('xrayAssignPeerForm', function(fd){ submitXrayAssignPeer(serviceId, fd); });
 };
 
-export { refreshXrayServices, renderXrayServices, showXrayService, openXrayServiceModal, deleteXrayServiceFlow, actionXrayApply, actionXrayAssignPeer };
+export {};

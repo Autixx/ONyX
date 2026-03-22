@@ -36,4 +36,4 @@ window.refreshAudit = async function refreshAudit(){
   renderElog();
 };
 
-export { renderAudit, renderElog, refreshAudit };
+export {};

@@ -98,4 +98,4 @@ window.failbanPauseToggle = function failbanPauseToggle(){
   document.getElementById('failbanPauseLabel').textContent = window._failbanPaused ? 'RESUME' : 'PAUSE';
 };
 
-export { refreshFailban, renderFailban, renderFailbanSourceTabs, startFailbanPolling, failbanPauseToggle };
+export {};
