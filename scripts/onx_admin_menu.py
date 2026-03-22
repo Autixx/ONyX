@@ -676,6 +676,7 @@ def _nodes_menu(base_url: str, admin_token: str | None) -> None:
             [
                 "ONX / Nodes",
                 "",
+                "0. Back",
                 "1. Create node",
                 "2. Provision node",
                 "3. List nodes",
@@ -844,6 +845,7 @@ def _system_menu(
             [
                 "ONX / System",
                 "",
+                "0. Back",
                 "1. Daemon status",
                 "2. Service check",
                 "3. Worker health",
@@ -1091,6 +1093,7 @@ def _jobs_menu(base_url: str, admin_token: str | None) -> None:
             [
                 "ONX / Jobs",
                 "",
+                "0. Back",
                 "1. List jobs",
                 "2. View last job result",
                 "3. View job events",
@@ -1256,6 +1259,7 @@ def _links_menu(base_url: str, admin_token: str | None) -> None:
             [
                 "ONX / Links",
                 "",
+                "0. Back",
                 "1. List links",
                 "2. View link",
                 "3. Create link",
@@ -1386,6 +1390,7 @@ def _route_policies_menu(base_url: str, admin_token: str | None) -> None:
             [
                 "ONX / Policies / Route",
                 "",
+                "0. Back",
                 "1. List route policies",
                 "2. Create route policy",
                 "3. Update route policy",
@@ -1427,7 +1432,7 @@ def _pick_simple_policy(base_url: str, admin_token: str | None, title: str, fetc
 
 def _dns_policies_menu(base_url: str, admin_token: str | None) -> None:
     while True:
-        _render(["ONX / Policies / DNS", "", "1. List DNS policies", "2. Create DNS policy", "3. Update DNS policy", "4. Delete DNS policy", "5. Apply DNS policy", "6. Back", ""])
+        _render(["ONX / Policies / DNS", "", "0. Back", "1. List DNS policies", "2. Create DNS policy", "3. Update DNS policy", "4. Delete DNS policy", "5. Apply DNS policy", "6. Back", ""])
         choice = input("Choice: ").strip()
         if choice == "0":
             return
@@ -1460,7 +1465,7 @@ def _dns_policies_menu(base_url: str, admin_token: str | None) -> None:
 
 def _geo_policies_menu(base_url: str, admin_token: str | None) -> None:
     while True:
-        _render(["ONX / Policies / Geo", "", "1. List geo policies", "2. Create geo policy", "3. Update geo policy", "4. Delete geo policy", "5. Apply geo policy", "6. Back", ""])
+        _render(["ONX / Policies / Geo", "", "0. Back", "1. List geo policies", "2. Create geo policy", "3. Update geo policy", "4. Delete geo policy", "5. Apply geo policy", "6. Back", ""])
         choice = input("Choice: ").strip()
         if choice == "0":
             return
@@ -1493,7 +1498,7 @@ def _geo_policies_menu(base_url: str, admin_token: str | None) -> None:
 
 def _balancers_menu(base_url: str, admin_token: str | None) -> None:
     while True:
-        _render(["ONX / Policies / Balancers", "", "1. List balancers", "2. Create balancer", "3. Update balancer", "4. Delete balancer", "5. Pick balancer member", "6. Run balancer probes", "7. Back", ""])
+        _render(["ONX / Policies / Balancers", "", "0. Back", "1. List balancers", "2. Create balancer", "3. Update balancer", "4. Delete balancer", "5. Pick balancer member", "6. Run balancer probes", "7. Back", ""])
         choice = input("Choice: ").strip()
         if choice == "0":
             return
@@ -1530,7 +1535,7 @@ def _balancers_menu(base_url: str, admin_token: str | None) -> None:
 
 def _policies_menu(base_url: str, admin_token: str | None) -> None:
     while True:
-        _render(["ONX / Policies", "", "1. Route policies", "2. DNS policies", "3. Geo policies", "4. Balancers", "5. Back", ""])
+        _render(["ONX / Policies", "", "0. Back", "1. Route policies", "2. DNS policies", "3. Geo policies", "4. Balancers", "5. Back", ""])
         choice = input("Choice: ").strip()
         if choice == "0":
             return
@@ -1604,7 +1609,7 @@ def _delete_access_rule_screen(base_url: str, admin_token: str | None) -> None:
 
 def _audit_access_menu(base_url: str, admin_token: str | None) -> None:
     while True:
-        _render(["ONX / Audit & Access", "", "1. Audit logs", "2. List access rules", "3. View access rule matrix", "4. Upsert access rule", "5. Delete access rule", "6. Back", ""])
+        _render(["ONX / Audit & Access", "", "0. Back", "1. Audit logs", "2. List access rules", "3. View access rule matrix", "4. Upsert access rule", "5. Delete access rule", "6. Back", ""])
         choice = input("Choice: ").strip()
         if choice == "0":
             return
@@ -1667,7 +1672,7 @@ def _plan_path_screen(base_url: str, admin_token: str | None) -> None:
 
 def _topology_menu(base_url: str, admin_token: str | None) -> None:
     while True:
-        _render(["ONX / Topology", "", "1. Graph summary", "2. Plan path", "3. Back", ""])
+        _render(["ONX / Topology", "", "0. Back", "1. Graph summary", "2. Plan path", "3. Back", ""])
         choice = input("Choice: ").strip()
         if choice == "0":
             return
@@ -1681,7 +1686,7 @@ def _topology_menu(base_url: str, admin_token: str | None) -> None:
 
 def _api_debug_menu(base_url: str, admin_token: str | None, client_token: str | None) -> None:
     while True:
-        _render(["ONX / API Debug", "", "1. Raw GET", "2. Raw POST", "3. Raw PATCH", "4. Raw PUT", "5. Raw DELETE", "6. Back", ""])
+        _render(["ONX / API Debug", "", "0. Back", "1. Raw GET", "2. Raw POST", "3. Raw PATCH", "4. Raw PUT", "5. Raw DELETE", "6. Back", ""])
         choice = input("Choice: ").strip()
         if choice in ("0", "6"):
             return
@@ -1748,7 +1753,7 @@ def main() -> int:
                     "6. Audit / Access",
                     "7. Topology",
                     "8. API Debug",
-                    "9. Exit",
+                    "9/0. Exit",
                     "",
                 ]
             )
