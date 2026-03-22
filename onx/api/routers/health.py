@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 
 import psutil
 from fastapi import APIRouter, Depends
@@ -7,15 +8,24 @@ from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
 from onx.core.config import get_settings
+from onx.db.models.awg_service import AwgService
 from onx.db.models.job import Job, JobState
 from onx.db.models.job_lock import JobLock
 from onx.db.models.link import Link, LinkState
 from onx.db.models.node import Node, NodeStatus
+from onx.db.models.openvpn_cloak_service import OpenVpnCloakService
+from onx.db.models.peer_traffic_state import PeerTrafficState
+from onx.db.models.support_ticket import SupportTicket
+from onx.db.models.wg_service import WgService
+from onx.db.models.xray_service import XrayService
 from onx.schemas.common import HealthResponse, SystemSummaryResponse, WorkerHealthResponse
 from onx.workers.runtime_state import get_worker_runtime_state
 
 
 router = APIRouter(tags=["health"])
+
+_last_net_io = None
+_last_net_time: float = 0.0
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -126,10 +136,42 @@ def system_summary(db: Session = Depends(get_database_session)) -> SystemSummary
     degraded_links = _count_links(LinkState.DEGRADED)
     total_links = int(db.scalar(select(func.count()).select_from(Link)) or 0)
 
+    services_total = (
+        int(db.scalar(select(func.count()).select_from(XrayService)) or 0) +
+        int(db.scalar(select(func.count()).select_from(AwgService)) or 0) +
+        int(db.scalar(select(func.count()).select_from(WgService)) or 0) +
+        int(db.scalar(select(func.count()).select_from(OpenVpnCloakService)) or 0)
+    )
+    five_min_ago = now - timedelta(minutes=5)
+    peers_online = int(
+        db.scalar(
+            select(func.count()).select_from(PeerTrafficState)
+            .where(PeerTrafficState.updated_at >= five_min_ago)
+        ) or 0
+    )
+    tickets_open = int(
+        db.scalar(
+            select(func.count()).select_from(SupportTicket)
+            .where(SupportTicket.status.in_(["pending", "in_progress"]))
+        ) or 0
+    )
+
     host_mem = psutil.virtual_memory()
     cpu_percent = float(psutil.cpu_percent(interval=0.1))
     memory_used_gb = round(host_mem.used / (1024 ** 3), 1)
     memory_total_gb = round(host_mem.total / (1024 ** 3), 1)
+
+    global _last_net_io, _last_net_time
+    net_counters = psutil.net_io_counters()
+    _now_t = time.time()
+    net_rx_kbps = 0.0
+    net_tx_kbps = 0.0
+    if _last_net_io is not None and (_now_t - _last_net_time) > 0.1:
+        dt = _now_t - _last_net_time
+        net_rx_kbps = max(0.0, (net_counters.bytes_recv - _last_net_io.bytes_recv) / dt / 1024)
+        net_tx_kbps = max(0.0, (net_counters.bytes_sent - _last_net_io.bytes_sent) / dt / 1024)
+    _last_net_io = net_counters
+    _last_net_time = _now_t
 
     worker_running = bool(runtime.get("running"))
     worker_last_error_message = runtime.get("last_error_message")
@@ -169,5 +211,10 @@ def system_summary(db: Session = Depends(get_database_session)) -> SystemSummary
             "memory_total_bytes": int(host_mem.total),
             "memory_used_gb": memory_used_gb,
             "memory_total_gb": memory_total_gb,
+            "net_rx_kbps": round(net_rx_kbps, 2),
+            "net_tx_kbps": round(net_tx_kbps, 2),
         },
+        services_total=services_total,
+        tickets_open=tickets_open,
+        peers_online=peers_online,
     )

@@ -96,6 +96,8 @@ class SystemSummaryHost(ONXBaseModel):
     memory_total_bytes: int
     memory_used_gb: float
     memory_total_gb: float
+    net_rx_kbps: float = 0.0
+    net_tx_kbps: float = 0.0
 
 
 class SystemSummaryResponse(ONXBaseModel):
@@ -108,3 +110,6 @@ class SystemSummaryResponse(ONXBaseModel):
     nodes: SystemSummaryNodes
     links: SystemSummaryLinks
     host: SystemSummaryHost
+    services_total: int = 0
+    tickets_open: int = 0
+    peers_online: int = 0

@@ -1,7 +1,11 @@
 // nav.js — Two-level navigation, group/page switching, hash router
 
 window.NAV_GROUPS = {
-  system:   { label:'System',         pages:['system'],   subs:[] },
+  system:   { label:'System',         pages:['system','tickets'],
+              subs:[
+                {p:'system',  label:'Main'},
+                {p:'tickets', label:'Support Chat', badge:'supportBadge'},
+              ]},
   network:  { label:'Network',        pages:['routing-summary','nodes','traffic','links','policies','transit','jobs'],
               subs:[
                 {p:'routing-summary', label:'Routing Summary'},
@@ -32,11 +36,7 @@ window.NAV_GROUPS = {
                 {p:'email', label:'E-Mail'},
               ]},
   topology: { label:'Topology',       pages:['topology'], subs:[] },
-  debug:    { label:'Debug',          pages:['apidebug','tickets'],
-              subs:[
-                {p:'apidebug', label:'API Debug'},
-                {p:'tickets',  label:'Support Chat', badge:'supportBadge'},
-              ]},
+  debug:    { label:'Debug',          pages:['apidebug'], subs:[] },
 };
 
 window.PAGE_TO_GROUP = {};

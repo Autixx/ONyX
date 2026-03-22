@@ -91,25 +91,55 @@
 
       <!-- ── SYSTEM ── -->
       <div class="page active" id="page-system">
-        <div class="ph">
-          <span class="ptitle">System <span class="tag">v0.2.0</span></span>
-          <button class="btn" onclick="healthCheck()">PROBE HEALTH</button>
-        </div>
-        <div class="sgrid">
-          <div class="scard"><div class="slbl">Backend</div><div class="sval" style="color:var(--grn)" id="sb">OK</div><div class="ssub">/api/v1/health</div></div>
-          <div class="scard"><div class="slbl">Worker</div><div class="sval" style="color:var(--grn)" id="sw">OK</div><div class="ssub">/api/v1/health/worker</div></div>
-          <div class="scard"><div class="slbl">Nodes Online</div><div class="sval" id="sn">0/0</div><div class="ssub" id="snSub">0 degraded</div></div>
-          <div class="scard"><div class="slbl">Active Links</div><div class="sval" id="sl">0</div><div class="ssub" id="slSub">0 degraded</div></div>
-        </div>
-        <div class="sgrid" style="margin-top:8px;">
-          <div class="scard" id="openTicketsCard" style="cursor:pointer;transition:background .15s;" onclick="switchGroup('debug');showPage('tickets');" title="Open support tickets — click to open Support Chat">
-            <div class="slbl">Open Tickets</div>
-            <div class="sval" id="sOpenTickets" style="color:var(--acc)">—</div>
-            <div class="ssub">pending + in progress</div>
+        <!-- Status row -->
+        <div class="sys-status-row">
+          <div class="sys-stat-card" onclick="healthCheck()" title="Click to probe health">
+            <div class="sys-stat-lbl">Backend</div>
+            <div class="sys-stat-val" id="sb" style="color:var(--grn)">OK</div>
+          </div>
+          <div class="sys-stat-card" onclick="switchGroup('network');showPage('jobs')" title="Go to Jobs">
+            <div class="sys-stat-lbl">Worker</div>
+            <div class="sys-stat-val" id="sw" style="color:var(--grn)">OK</div>
+          </div>
+          <div class="sys-stat-card" onclick="switchGroup('network');showPage('nodes')" title="Go to Nodes">
+            <div class="sys-stat-lbl">Nodes Online</div>
+            <div class="sys-stat-val" id="sn">0/0</div>
+          </div>
+          <div class="sys-stat-card" onclick="switchGroup('network');showPage('links')" title="Go to Links">
+            <div class="sys-stat-lbl">Active Links</div>
+            <div class="sys-stat-val" id="sl">0</div>
+          </div>
+          <div class="sys-stat-card" onclick="switchGroup('services')" title="Go to Services">
+            <div class="sys-stat-lbl">Active Services</div>
+            <div class="sys-stat-val" id="sServicesTotal" style="color:var(--acc)">0</div>
+          </div>
+          <div class="sys-stat-card" id="openTicketsCard" onclick="switchGroup('system');showPage('tickets')" title="Go to Support Chat">
+            <div class="sys-stat-lbl">Support Requests</div>
+            <div class="sys-stat-val" id="sOpenTickets" style="color:var(--grn)">0</div>
           </div>
         </div>
-        <div class="stitle">Live Event Stream » WS /api/v1/ws/admin/events</div>
-        <div class="elog" id="elog"></div>
+
+        <!-- Charts 2×2 -->
+        <div class="sys-charts-grid">
+          <div class="sys-chart-wrap">
+            <canvas id="chartCpu"></canvas>
+          </div>
+          <div class="sys-chart-wrap">
+            <canvas id="chartRam"></canvas>
+          </div>
+          <div class="sys-chart-wrap">
+            <canvas id="chartPeers"></canvas>
+          </div>
+          <div class="sys-chart-wrap">
+            <canvas id="chartNet"></canvas>
+          </div>
+        </div>
+
+        <!-- Event log -->
+        <div class="sys-elog-section">
+          <div class="stitle" style="margin:6px 0 4px;">Live Event Stream » WS /api/v1/ws/admin/events</div>
+          <div class="elog" id="elog"></div>
+        </div>
       </div>
 
       <!-- ── NODES ── -->
