@@ -17,18 +17,33 @@ Protocol (JSON frames):
                                         "text": …, "sent_at": <ISO8601>}
                     {"type": "typing", "sender": "client|agent"}
 
-Text sanitisation: any frame whose "text" field is not a plain str is rejected
-with system.error.  Length is capped at 4000 characters.  No HTML parsing is
-performed — plain strings only.
+Text sanitisation: "text" must be a plain str (numbers and URLs allowed as text).
+ANSI/VT escape sequences and non-printable control characters are stripped before
+storage to prevent terminal-injection attacks when operators view messages in a
+terminal or log stream.  Length is capped at 4000 characters.
 
 Idle timeout: 30 s of inactivity closes the connection from the server side.
 """
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
+
+# Matches all ANSI/VT escape sequences (CSI, OSC, DCS, SS2/SS3, etc.)
+_RE_ANSI = re.compile(
+    r"\x1b"
+    r"(?:"
+    r"[@-Z\\-_]"           # Fe sequences (ESC + single byte 0x40-0x5F)
+    r"|\[[0-?]*[ -/]*[@-~]"  # CSI sequences ESC [ ... final-byte
+    r"|\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC sequences ESC ] ... BEL or ST
+    r"|[PX^_][^\x1b]*\x1b\\"  # DCS / PM / APC / SOS
+    r")"
+)
+# Non-printable control characters except \n (newline), \r (CR), \t (tab)
+_RE_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
@@ -52,10 +67,23 @@ _MAX_TEXT = 4000
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 def _sanitize_text(raw: Any) -> str | None:
-    """Strict string gate.  Returns None if value is not a plain non-empty str."""
+    """Sanitize an incoming chat message.
+
+    Gate 1 — type: must be a plain Python str (rejects int, float, list, None …).
+    Gate 2 — ANSI/VT escape sequences stripped (prevents terminal-injection attacks
+              when operators view messages in a terminal or log stream).
+    Gate 3 — remaining non-printable control characters stripped
+              (null bytes, BEL, BS, DEL, …); newline/CR/tab are kept because they
+              are legitimate in multi-line messages.
+    Gate 4 — must be non-empty after stripping, and ≤ 4000 characters.
+
+    Numbers, URLs, punctuation, and all printable Unicode are left intact.
+    """
     if not isinstance(raw, str):
         return None
-    text = raw.strip()
+    text = _RE_ANSI.sub("", raw)   # remove escape sequences first
+    text = _RE_CTRL.sub("", text)  # then remaining control chars
+    text = text.strip()
     if not text or len(text) > _MAX_TEXT:
         return None
     return text
