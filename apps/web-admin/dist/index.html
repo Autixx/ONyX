@@ -454,6 +454,8 @@ td.m{color:var(--t0);}
     <!-- populated by switchGroup() -->
   </div>
   <div class="sidebar" style="display:none"></div>
+  <!-- hidden badge source for Support Chat nav item, cloned by switchGroup() -->
+  <span id="supportBadge" style="display:none;margin-left:5px;background:var(--red);color:#fff;border-radius:10px;padding:0 5px;font-size:11px;font-weight:bold;">0</span>
 
   <div class="layout">
     <!-- MAIN -->
@@ -470,6 +472,13 @@ td.m{color:var(--t0);}
           <div class="scard"><div class="slbl">Worker</div><div class="sval" style="color:var(--grn)" id="sw">OK</div><div class="ssub">/api/v1/health/worker</div></div>
           <div class="scard"><div class="slbl">Nodes Online</div><div class="sval" id="sn">0/0</div><div class="ssub" id="snSub">0 degraded</div></div>
           <div class="scard"><div class="slbl">Active Links</div><div class="sval" id="sl">0</div><div class="ssub" id="slSub">0 degraded</div></div>
+        </div>
+        <div class="sgrid" style="margin-top:8px;">
+          <div class="scard" id="openTicketsCard" style="cursor:pointer;transition:background .15s;" onclick="switchGroup('debug');showPage('tickets');" title="Open support tickets — click to open Support Chat">
+            <div class="slbl">Open Tickets</div>
+            <div class="sval" id="sOpenTickets" style="color:var(--acc)">—</div>
+            <div class="ssub">pending + in progress</div>
+          </div>
         </div>
         <div class="stitle">Live Event Stream ” WS /api/v1/ws/admin/events</div>
         <div class="elog" id="elog"></div>
@@ -2522,6 +2531,22 @@ function hpBarColor(pct){
   }
   pushEv('system.ping', 'GET /api/v1/system/summary completed');
   scheduleLocaleRefresh();
+  updateOpenTicketCount();
+}
+
+function updateOpenTicketCount() {
+  apiFetch(API_PREFIX + '/admin/support-tickets?limit=500').then(function(data) {
+    var count = 0;
+    if (data && data.length) {
+      count = data.filter(function(t){ return t.status === 'pending' || t.status === 'in_progress'; }).length;
+    }
+    var el = document.getElementById('sOpenTickets');
+    if (!el) return;
+    el.textContent = String(count);
+    el.style.color = count > 0 ? 'var(--amb)' : 'var(--grn)';
+    var card = document.getElementById('openTicketsCard');
+    if (card) card.title = count > 0 ? (count + ' open ticket(s) — click to open Support Chat') : 'No open tickets';
+  }).catch(function(){});
 }
 async function loadData(){
   await Promise.all([
@@ -7882,7 +7907,7 @@ var NAV_GROUPS = {
   debug:    { label:'Debug',          pages:['apidebug','tickets'],
               subs:[
                 {p:'apidebug', label:'API Debug'},
-                {p:'tickets',  label:'Support Chat'},
+                {p:'tickets',  label:'Support Chat', badge:'supportBadge'},
               ]},
 };
 var PAGE_TO_GROUP = {};
@@ -7981,7 +8006,7 @@ function showPage(pageId){
   }
   syncTopologyAutoButton();
   if(pageId==='failban'){ refreshFailban().catch(function(){}); }
-  if(pageId==='tickets'){ loadSupportTickets(); startSupportTicketsRefresh(); }
+  if(pageId==='tickets'){ loadSupportTickets(); startSupportTicketsRefresh(); if(_supportTicketId) _clearSupportUnread(_supportTicketId); }
   else { stopSupportTicketsRefresh(); }
 }
 
@@ -8126,6 +8151,58 @@ var _supportTypingTimer = null;
 var _supportTypingThrottle = false;
 var _supportTickets = {};
 var _supportTicketsTimer = null;
+var _supportUnread = {};   // ticketId → unread count
+
+function _addSupportUnread(ticketId) {
+  if (!ticketId) return;
+  _supportUnread[ticketId] = (_supportUnread[ticketId] || 0) + 1;
+  _updateSupportBadge();
+}
+
+function _clearSupportUnread(ticketId) {
+  if (!ticketId || !_supportUnread[ticketId]) return;
+  delete _supportUnread[ticketId];
+  _updateSupportBadge();
+}
+
+function _updateSupportBadge() {
+  var total = 0;
+  Object.keys(_supportUnread).forEach(function(k){ total += _supportUnread[k]; });
+
+  // Badge element (hidden span in DOM, cloned into sub-tab by switchGroup)
+  var badge = document.getElementById('supportBadge');
+  if (badge) { badge.textContent = String(total); badge.style.display = total > 0 ? '' : 'none'; }
+  var badgeSub = document.getElementById('supportBadge_sub');
+  if (badgeSub) { badgeSub.textContent = String(total); badgeSub.style.display = total > 0 ? '' : 'none'; }
+
+  // Red dot on "Debug" main group tab
+  var debugTab = document.querySelector('.nav-group-tab[data-g="debug"]');
+  if (debugTab) {
+    var dot = debugTab.querySelector('.support-unread-dot');
+    if (total > 0 && !dot) {
+      dot = document.createElement('span');
+      dot.className = 'support-unread-dot';
+      dot.style.cssText = 'width:6px;height:6px;border-radius:50%;background:var(--red);display:inline-block;margin-left:4px;vertical-align:middle;';
+      debugTab.appendChild(dot);
+    } else if (total === 0 && dot) {
+      dot.remove();
+    }
+  }
+
+  // Sidebar badges per ticket
+  Object.keys(_supportUnread).forEach(function(tid) {
+    var card = document.querySelector('.ticket-user-item[data-tid="' + tid + '"]');
+    if (!card) return;
+    var badge = card.querySelector('.ticket-unread-badge');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'ticket-unread-badge';
+      badge.style.cssText = 'float:right;background:var(--red);color:#fff;border-radius:10px;padding:0 5px;font-size:11px;font-weight:bold;margin-top:1px;';
+      card.appendChild(badge);
+    }
+    badge.textContent = String(_supportUnread[tid]);
+  });
+}
 
 function _renderTicketChatHeader(ticket) {
   var hdr = document.getElementById('ticketsChatHeader');
@@ -8217,6 +8294,7 @@ function selectSupportTicket(el, ticketId) {
   if (!ticket) return;
   document.querySelectorAll('.ticket-user-item').forEach(function(i) { i.classList.remove('active'); });
   el.classList.add('active');
+  _clearSupportUnread(ticketId);
   if (_supportWs) { _supportWs.close(); _supportWs = null; }
   _supportTicketId = ticket.id;
   var displayName = ticket.username || (ticket.user_id ? ticket.user_id.slice(0, 12) : '?');
@@ -8279,6 +8357,9 @@ function _handleSupportFrame(frame) {
     if (empty) empty.remove();
     _appendSupportMsg(box, frame);
     box.scrollTop = box.scrollHeight;
+    if (frame.sender !== 'agent' && _currentPage !== 'tickets') {
+      _addSupportUnread(_supportTicketId);
+    }
   } else if (frame.type === 'typing' && frame.sender === 'client') {
     if (typInd) {
       typInd.style.display = '';
