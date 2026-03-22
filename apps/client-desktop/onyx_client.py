@@ -2331,7 +2331,9 @@ class DashboardScreen(QWidget):
         bb.setStyleSheet(f"background:{C_BG1};border-top:1px solid {C_BDR};")
         bl = QHBoxLayout(bb); bl.setContentsMargins(20,0,20,0)
         sup = QLabel(f'<a href="#" style="color:{C_T2};text-decoration:none;font-size:11px;">⚑ Support</a>')
-        sup.linkActivated.connect(lambda _: self._support()); bl.addWidget(sup); bl.addStretch()
+        sup.linkActivated.connect(lambda _: self._support())
+        bl.addWidget(sup); bl.addStretch()
+        self._sup_lbl = sup
         sett = QLabel(f'<a href="#" style="color:{C_T2};text-decoration:none;font-size:11px;">⚙ Settings</a>')
         sett.linkActivated.connect(lambda _: self._show_settings()); bl.addWidget(sett)
         outer.addWidget(bb)
@@ -2694,23 +2696,22 @@ class DashboardScreen(QWidget):
         self._connect_runtime()
 
     def _support(self):
-        # If already open — bring to front
-        if hasattr(self, "_chat_win") and self._chat_win and self._chat_win.isVisible():
-            self._chat_win.raise_()
-            self._chat_win.activateWindow()
+        w = self.window()
+        if hasattr(w, "toggle_support_panel"):
+            w.toggle_support_panel()
+
+    def set_support_badge(self, n: int) -> None:
+        if not hasattr(self, "_sup_lbl"):
             return
-        win = SupportChatWindow(
-            base=self.st.base_url,
-            tok=self.st.session_token or "",
-            did=self.st.device_id or "",
-            hdrs_fn=self._hdrs,
-            runtime=self._runtime,
+        badge = (
+            f' <span style="color:#000;background:{C_ACC};border-radius:8px;'
+            f'padding:0 5px;font-size:10px;font-weight:bold;">{n}</span>'
+            if n > 0 else ""
         )
-        self._chat_win = win
-        # Position to the left of the main window
-        geo = self.window().geometry()
-        win.move(geo.x() - 410 - 8, geo.y())
-        win.show()
+        self._sup_lbl.setText(
+            f'<a href="#" style="color:{C_T2};text-decoration:none;font-size:11px;">'
+            f'⚑ Support{badge}</a>'
+        )
 
     def _settings(self):
         self._show_settings()
@@ -2789,20 +2790,22 @@ class TitleBar(QWidget):
         # Double-click on titlebar does nothing (app has fixed size)
         pass
 
-# ── Support chat window ────────────────────────────────────────────────────────
+# ── Support chat panel ─────────────────────────────────────────────────────────
 
-class SupportChatWindow(QMainWindow):
-    """Standalone support chat window — opens to the left of the main client."""
+class SupportChatPanel(QWidget):
+    """Embedded support chat panel — attached to the right side of the main window."""
 
-    def __init__(self, base: str, tok: str, did: str, hdrs_fn, runtime):
-        super().__init__()
-        self._base     = base
-        self._tok      = tok
-        self._did      = did
-        self._hdrs_fn  = hdrs_fn
-        self._runtime  = runtime
-        self._ws       = None
-        self._drag_pos = None
+    unread_changed = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._base    = ""
+        self._tok     = ""
+        self._did     = ""
+        self._hdrs_fn = None
+        self._runtime = None
+        self._ws      = None
+        self._unread  = 0
 
         self._agent_typing_timer = QTimer(self)
         self._agent_typing_timer.setSingleShot(True)
@@ -2816,33 +2819,22 @@ class SupportChatWindow(QMainWindow):
             lambda: self._typing_throttle_active.__setitem__(0, False)
         )
 
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Window
-            | Qt.WindowType.Tool
+        self.setStyleSheet(
+            f"background:{C_BG0};border-left:1px solid {C_BDR};"
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setFixedSize(410, 760)
-        self.setStyleSheet(APP_STYLE + f"QMainWindow{{border:1px solid {C_BDR};}}")
         self._build_ui()
-        QTimer.singleShot(0, self._auto_connect)
 
     # ── UI ─────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        root = QWidget()
-        root.setStyleSheet(f"background:{C_BG0};")
-        rl = QVBoxLayout(root)
+        rl = QVBoxLayout(self)
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(0)
-        self.setCentralWidget(root)
 
         # Titlebar
         tb = QWidget()
         tb.setFixedHeight(38)
         tb.setStyleSheet(f"background:{C_BG1};border-bottom:1px solid {C_BDR};")
-        tb.installEventFilter(self)
-        self._tb = tb
         tb_lay = QHBoxLayout(tb)
         tb_lay.setContentsMargins(14, 0, 10, 0)
         tb_lay.setSpacing(0)
@@ -2856,7 +2848,7 @@ class SupportChatWindow(QMainWindow):
         sub.setStyleSheet(f"color:{C_T2};font-size:12px;letter-spacing:2px;")
         tb_lay.addWidget(sub)
         tb_lay.addStretch()
-        tb_lay.addWidget(TitleBar._mk_btn("✕", "Close", self.close, C_RED))
+        tb_lay.addWidget(TitleBar._mk_btn("✕", "Close", self._close_panel, C_RED))
         rl.addWidget(tb)
 
         # Status line
@@ -2917,18 +2909,46 @@ class SupportChatWindow(QMainWindow):
         self._inp.returnPressed.connect(self._send_msg)
         self._send_btn.clicked.connect(self._send_msg)
 
-    def eventFilter(self, obj, event):
-        """Titlebar drag."""
-        if obj is self._tb:
-            t = event.type()
-            if t == event.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
-                self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            elif t == event.Type.MouseMove and self._drag_pos is not None:
-                if event.buttons() == Qt.MouseButton.LeftButton:
-                    self.move(event.globalPosition().toPoint() - self._drag_pos)
-            elif t == event.Type.MouseButtonRelease:
-                self._drag_pos = None
-        return super().eventFilter(obj, event)
+    def _close_panel(self):
+        w = self.parent()
+        if hasattr(w, "toggle_support_panel"):
+            w.toggle_support_panel()
+        else:
+            self.hide()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Clear unread badge when panel becomes visible
+        self._unread = 0
+        self.unread_changed.emit(0)
+
+    # ── Open / reconnect ───────────────────────────────────────────────────────
+
+    def open(self, base: str, tok: str, did: str, hdrs_fn, runtime) -> None:
+        """Reset state and open a new chat session."""
+        self._base    = base
+        self._tok     = tok
+        self._did     = did
+        self._hdrs_fn = hdrs_fn
+        self._runtime = runtime
+        self._unread  = 0
+
+        # Close previous WS
+        if self._ws is not None:
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+            self._ws = None
+
+        self._msgs.clear()
+        self._hdr.setText("Connecting…")
+        self._typing_lbl.setText("")
+        self._inp.setEnabled(False)
+        self._send_btn.setEnabled(False)
+        self._typing_throttle_active[0] = False
+
+        QTimer.singleShot(0, self._auto_connect)
 
     # ── Ticket + WebSocket ──────────────────────────────────────────────────────
 
@@ -2982,6 +3002,7 @@ class SupportChatWindow(QMainWindow):
             return
         ws = _QWS()
         self._ws = ws
+        ws.sslErrors.connect(lambda errors: ws.ignoreSslErrors())  # Fix 3: accept self-signed certs
         ws.textMessageReceived.connect(self._on_ws_text)
         ws.disconnected.connect(
             lambda: self._typing_lbl.setText("Disconnected.")
@@ -3008,11 +3029,11 @@ class SupportChatWindow(QMainWindow):
                     str(m.get("sent_at", "")),
                 )
         elif ftype == "message":
-            self._append_msg(
-                str(frame.get("sender", "")),
-                str(frame.get("text", "")),
-                str(frame.get("sent_at", "")),
-            )
+            sender = str(frame.get("sender", ""))
+            self._append_msg(sender, str(frame.get("text", "")), str(frame.get("sent_at", "")))
+            if sender == "agent" and not self.isVisible():
+                self._unread += 1
+                self.unread_changed.emit(self._unread)
         elif ftype == "typing" and str(frame.get("sender", "")) == "agent":
             self._typing_lbl.setText("Support is typing…")
             self._agent_typing_timer.start()
@@ -3088,14 +3109,14 @@ class SupportChatWindow(QMainWindow):
         self._send_frame({"type": "message", "text": text})
         self._inp.clear()
 
-    def closeEvent(self, event):
-        if self._ws:
+    def cleanup(self):
+        """Close WS on app exit."""
+        if self._ws is not None:
             try:
                 self._ws.close()
             except Exception:
                 pass
             self._ws = None
-        super().closeEvent(event)
 
 
 # ── Main window ────────────────────────────────────────────────────────────────
@@ -3120,19 +3141,35 @@ class ONyXClient(QMainWindow):
 
         root = QWidget()
         root.setStyleSheet(f"background:{C_BG0};")
-        root_lay = QVBoxLayout(root)
+        root_lay = QHBoxLayout(root)
         root_lay.setContentsMargins(0, 0, 0, 0)
         root_lay.setSpacing(0)
         self.setCentralWidget(root)
 
         self._backdrop = None
 
+        # Left column: titlebar + page stack (always 410 px wide)
+        left_col = QWidget()
+        left_col.setFixedWidth(410)
+        left_col.setStyleSheet(f"background:{C_BG0};")
+        left_lay = QVBoxLayout(left_col)
+        left_lay.setContentsMargins(0, 0, 0, 0)
+        left_lay.setSpacing(0)
+
         self._titlebar = TitleBar(self)
-        root_lay.addWidget(self._titlebar)
+        left_lay.addWidget(self._titlebar)
 
         self._stack = QStackedWidget()
         self._stack.setStyleSheet("background:transparent;")
-        root_lay.addWidget(self._stack)
+        left_lay.addWidget(self._stack)
+
+        root_lay.addWidget(left_col)
+
+        # Right column: embedded support chat panel (hidden by default)
+        self._chat_panel = SupportChatPanel(self)
+        self._chat_panel.setFixedWidth(410)
+        self._chat_panel.hide()
+        root_lay.addWidget(self._chat_panel)
 
         self._ls = LoginScreen(self.st)
         self._rs = RegisterScreen(self.st)
@@ -3147,6 +3184,7 @@ class ONyXClient(QMainWindow):
         self._rs.reg_done.connect(lambda: self._go(0))
         self._ds.logout_requested.connect(self._on_logout)
         self._ds.connection_state_changed.connect(self._update_tray_state)
+        self._chat_panel.unread_changed.connect(self._ds.set_support_badge)
 
         self._create_tray()
 
@@ -3257,11 +3295,29 @@ class ONyXClient(QMainWindow):
             user = self.st.username or "Not signed in"
             self._tray.setToolTip(f"ONyX\n{state}\n{user}")
 
+    def toggle_support_panel(self):
+        """Show or hide the embedded support chat panel."""
+        if self._chat_panel.isVisible():
+            self._chat_panel.hide()
+            self.setFixedSize(410, 760)
+        else:
+            ds = self._ds
+            self._chat_panel.open(
+                base=ds.st.base_url,
+                tok=ds.st.session_token or "",
+                did=ds.st.device_id or "",
+                hdrs_fn=ds._hdrs,
+                runtime=ds._runtime,
+            )
+            self._chat_panel.show()
+            self.setFixedSize(820, 760)
+
     def closeEvent(self, event):
         if self._tray is not None and not self._quit_requested:
             self.hide()
             event.ignore()
             return
+        self._chat_panel.cleanup()
         super().closeEvent(event)
 
     def _go(self,idx):
