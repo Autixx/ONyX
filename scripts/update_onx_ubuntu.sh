@@ -185,6 +185,9 @@ fi
 if ! grep -q '^ONX_WEB_UI_DIR=' "${ENV_FILE_PATH}"; then
   echo "ONX_WEB_UI_DIR=${INSTALL_DIR}/apps/web-admin/dist" >> "${ENV_FILE_PATH}"
 fi
+if ! grep -q '^ONX_WEB_UI_PATH=' "${ENV_FILE_PATH}"; then
+  echo 'ONX_WEB_UI_PATH=/' >> "${ENV_FILE_PATH}"
+fi
 if ! grep -q '^ONX_PUBLIC_BASE_URL=' "${ENV_FILE_PATH}"; then
   BASE_IP="${TLS_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
   if [[ -n "${TLS_DOMAIN}" ]]; then

@@ -60,6 +60,23 @@ def _load_env(path: Path) -> None:
     nodes_cli._load_env_file(path)
 
 
+def _set_env_key(env_file: Path, key: str, value: str) -> None:
+    """Set or add a KEY=value line in the env file, preserving all other lines."""
+    lines: list[str] = []
+    found = False
+    if env_file.exists():
+        for raw in env_file.read_text(encoding="utf-8").splitlines():
+            stripped = raw.strip()
+            if stripped.startswith(f"{key}=") or stripped == key:
+                lines.append(f"{key}={value}")
+                found = True
+            else:
+                lines.append(raw)
+    if not found:
+        lines.append(f"{key}={value}")
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _derive_base_url(value: str | None) -> str:
     return nodes_cli._derive_base_url(value)
 
@@ -796,6 +813,45 @@ def _show_web_ui_credentials_screen(admin_web_auth_file: Path) -> None:
     _pause()
 
 
+def _set_web_ui_path_screen(env_file: Path, service_name: str) -> None:
+    current = _read_key_value_file(env_file).get("ONX_WEB_UI_PATH", "/")
+    _render(
+        [
+            "ONX / Admin Panel Path",
+            "",
+            f"Current path: {current}",
+            "",
+            "Set a secret URL path for the admin panel (e.g. /admin-xK9mN3).",
+            "After changing, rebuild the frontend with the same path as ONX_WEB_UI_BASE",
+            "and restart the daemon.",
+            "",
+        ]
+    )
+    try:
+        new_path = input("New path (leave empty to cancel): ").strip()
+    except EOFError:
+        return
+    if not new_path:
+        return
+    if not new_path.startswith("/"):
+        new_path = "/" + new_path
+    new_path = new_path.rstrip("/") or "/"
+    _set_env_key(env_file, "ONX_WEB_UI_PATH", new_path)
+    _render(
+        [
+            "ONX / Admin Panel Path",
+            "",
+            f"ONX_WEB_UI_PATH set to: {new_path}",
+            "",
+            "Next steps:",
+            f"  1. Rebuild frontend with ONX_WEB_UI_BASE={new_path}/",
+            f"  2. Restart daemon: systemctl restart {service_name}",
+            "",
+        ]
+    )
+    _pause()
+
+
 def _retention_policy_screen(base_url: str, admin_token: str | None) -> None:
     try:
         payload = nodes_cli._request_json(base_url, "GET", "/maintenance/retention", token=admin_token)
@@ -839,6 +895,7 @@ def _system_menu(
     client_auth_file: Path,
     admin_auth_file: Path,
     admin_web_auth_file: Path,
+    env_file: Path | None = None,
 ) -> None:
     while True:
         _render(
@@ -856,7 +913,8 @@ def _system_menu(
                 "8. Restart daemon",
                 "9. Safe update",
                 "10. Smoke-test",
-                "11. Back",
+                "11. Set admin panel path",
+                "12. Back",
                 "",
             ]
         )
@@ -884,6 +942,8 @@ def _system_menu(
         elif choice == "10":
             _run_smoke(base_url, install_dir, client_auth_file, admin_auth_file)
         elif choice == "11":
+            _set_web_ui_path_screen(env_file or Path(DEFAULT_ENV_FILE), service_name)
+        elif choice == "12":
             return
 
 
@@ -1761,7 +1821,7 @@ def main() -> int:
             if choice in ("0", "9"):
                 return 0
             elif choice == "1":
-                _system_menu(base_url, admin_token, args.service_name, install_dir, client_auth_file, admin_auth_file, admin_web_auth_file)
+                _system_menu(base_url, admin_token, args.service_name, install_dir, client_auth_file, admin_auth_file, admin_web_auth_file, env_file=Path(args.env_file).resolve())
             elif choice == "2":
                 _nodes_menu(base_url, admin_token)
             elif choice == "3":
