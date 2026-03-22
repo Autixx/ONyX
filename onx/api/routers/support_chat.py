@@ -355,6 +355,9 @@ async def agent_support_ws(
     await websocket.send_json(
         {"type": "system.connected", "ticket_id": ticket_id, "history": history}
     )
+    # If the client is already connected, notify the agent immediately
+    if support_chat_service.is_client_connected(ticket_id):
+        await websocket.send_json({"type": "system.client_online", "ticket_id": ticket_id})
 
     async def _on_text(text: str) -> None:
         saved = await asyncio.to_thread(_persist_message, ticket_id, "agent", text)

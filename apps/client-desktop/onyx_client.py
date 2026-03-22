@@ -2799,13 +2799,14 @@ class SupportChatPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._base    = ""
-        self._tok     = ""
-        self._did     = ""
-        self._hdrs_fn = None
-        self._runtime = None
-        self._ws      = None
-        self._unread  = 0
+        self._base      = ""
+        self._tok       = ""
+        self._did       = ""
+        self._hdrs_fn   = None
+        self._runtime   = None
+        self._ws        = None
+        self._unread    = 0
+        self._ticket_id: str | None = None
 
         self._agent_typing_timer = QTimer(self)
         self._agent_typing_timer.setSingleShot(True)
@@ -2922,7 +2923,11 @@ class SupportChatPanel(QWidget):
     # ── Open / reconnect ───────────────────────────────────────────────────────
 
     def open(self, base: str, tok: str, did: str, hdrs_fn, runtime) -> None:
-        """Reset state and open a new chat session."""
+        """Reset state and open (or resume) a chat session."""
+        # If the session token changed, discard the cached ticket
+        if tok != self._tok:
+            self._ticket_id = None
+
         self._base    = base
         self._tok     = tok
         self._did     = did
@@ -2930,7 +2935,7 @@ class SupportChatPanel(QWidget):
         self._runtime = runtime
         self._unread  = 0
 
-        # Close previous WS
+        # Close previous WS (keep _ticket_id to reuse it)
         if self._ws is not None:
             try:
                 self._ws.close()
@@ -2950,6 +2955,12 @@ class SupportChatPanel(QWidget):
     # ── Ticket + WebSocket ──────────────────────────────────────────────────────
 
     def _auto_connect(self):
+        # Reuse existing ticket if we have one (panel was just closed and reopened)
+        if self._ticket_id:
+            self._hdr.setText(f"TICKET  #{self._ticket_id[:8].upper()}")
+            self._open_ws(self._ticket_id)
+            return
+
         def _worker():
             diag = {}
             try:
@@ -2980,6 +2991,7 @@ class SupportChatPanel(QWidget):
                 self._hdr.setText(f"Error: {err}")
                 return
             tid = result.get("id", "")
+            self._ticket_id = tid
             self._hdr.setText(f"TICKET  #{tid[:8].upper()}")
             self._open_ws(tid)
 

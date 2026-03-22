@@ -45,6 +45,10 @@ class SupportChatService:
         if room:
             room["client"] = None
 
+    def is_client_connected(self, ticket_id: str) -> bool:
+        room = self._rooms.get(ticket_id)
+        return bool(room and room.get("client") is not None)
+
     def connect_agent(self, ticket_id: str) -> asyncio.Queue:
         room = self._room(ticket_id)
         q: asyncio.Queue = asyncio.Queue(maxsize=128)
