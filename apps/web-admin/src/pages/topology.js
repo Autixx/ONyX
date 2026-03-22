@@ -218,7 +218,9 @@ window.showGraphNode = function showGraphNode(id){
       ['Management Address', node.management_address || '-'],
       ['Last Seen', node.last_seen_at ? fmtTime(node.last_seen_at) : '-'],
       ['Ping', metrics.ping_ms != null ? (Number(metrics.ping_ms).toFixed(1) + ' ms') : '-'],
-      ['Load', metrics.load_ratio != null ? Number(metrics.load_ratio).toFixed(3) : '-']
+      ['Load', metrics.load_ratio != null ? Number(metrics.load_ratio).toFixed(3) : '-'],
+      ['Peers Online', String(metrics.peer_count || 0)],
+      ['Peers Total', String(metrics.peer_count_total || 0)]
     ])
     +'<div class="dp-actions">'
       +'<button class="btn" onclick="showNode(\''+esc(node.id)+'\')">NODE DETAIL</button>'
@@ -525,18 +527,31 @@ window.drawTopo = function drawTopo(){
     loadLbl.textContent = 'CPU ' + loadPct + '%';
     g.appendChild(loadLbl);
 
-    // Peers label
-    var peersLbl = mk('text',{
+    // Peers online label
+    var peersOnlineLbl = mk('text',{
       id:'topo-peers-'+n.id,
       x:0, y:R+44,
       'text-anchor':'middle',
-      fill:'#b8d0e8',
+      fill:'#00e676',
       'font-size':'11',
       'font-family':'Courier New,monospace',
       style:'pointer-events:none'
     });
-    peersLbl.textContent = (metrics.peer_count||0) + ' peers';
-    g.appendChild(peersLbl);
+    peersOnlineLbl.textContent = (metrics.peer_count||0) + ' online';
+    g.appendChild(peersOnlineLbl);
+
+    // Peers total label
+    var peersTotalLbl = mk('text',{
+      id:'topo-peers-total-'+n.id,
+      x:0, y:R+57,
+      'text-anchor':'middle',
+      fill:'#6e8fa8',
+      'font-size':'11',
+      'font-family':'Courier New,monospace',
+      style:'pointer-events:none'
+    });
+    peersTotalLbl.textContent = (metrics.peer_count_total||0) + ' total';
+    g.appendChild(peersTotalLbl);
 
     // Click
     g.addEventListener('click', function(e){

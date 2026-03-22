@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from onx.db.models.link import Link, LinkState
 from onx.db.models.link_endpoint import LinkEndpoint, LinkSide
 from onx.db.models.node import Node, NodeStatus
+from onx.db.models.peer_registry import PeerRegistry
 from onx.db.models.peer_traffic_state import PeerTrafficState
 from onx.db.models.probe_result import ProbeResult, ProbeType
 from onx.schemas.topology import PathPlanRequest
@@ -22,13 +23,20 @@ class TopologyService:
         endpoint_map = self._load_endpoint_map(db, [link.id for link in links])
 
         graph_nodes = []
-        peer_count_rows = db.execute(
+        peer_online_rows = db.execute(
             select(
                 PeerTrafficState.node_id,
                 func.count(distinct(PeerTrafficState.peer_public_key)),
             ).group_by(PeerTrafficState.node_id)
         ).all()
-        peer_count_map = {str(node_id): int(count) for node_id, count in peer_count_rows}
+        peer_online_map = {str(node_id): int(count) for node_id, count in peer_online_rows}
+        peer_total_rows = db.execute(
+            select(
+                PeerRegistry.first_node_id,
+                func.count(PeerRegistry.id),
+            ).where(PeerRegistry.first_node_id.isnot(None)).group_by(PeerRegistry.first_node_id)
+        ).all()
+        peer_total_map = {str(node_id): int(count) for node_id, count in peer_total_rows}
         for node in nodes:
             ping_probe = self._latest_probe(db, node_id=node.id, interface_name=None, probe_type=ProbeType.PING)
             load_probe = self._latest_probe(db, node_id=node.id, interface_name=None, probe_type=ProbeType.INTERFACE_LOAD)
@@ -44,7 +52,8 @@ class TopologyService:
                     "traffic_suspension_reason": node.traffic_suspension_reason,
                     "metrics": {
                         "load_ratio": self._extract_load_ratio(load_probe),
-                        "peer_count": peer_count_map.get(node.id, 0),
+                        "peer_count": peer_online_map.get(node.id, 0),
+                        "peer_count_total": peer_total_map.get(node.id, 0),
                         "ping_ms": self._extract_latency_ms(ping_probe),
                         "last_probe_at": self._probe_timestamp(ping_probe, load_probe),
                     },
