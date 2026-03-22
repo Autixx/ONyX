@@ -596,6 +596,134 @@ window.drawTopo = function drawTopo(){
   renderTopologyMeta();
 };
 
+// ── Missing helpers (were in old monolith scope) ─────────────────────────────
+
+function graphNodeById(id){
+  return (window.GRAPH_DATA.nodes || []).find(function(n){ return n.id === id; }) || null;
+}
+
+function graphEdgeById(id){
+  return (window.GRAPH_DATA.edges || []).find(function(e){ return e.id === id; }) || null;
+}
+
+function getNodeTrafficState(n){
+  if(!n || !n.traffic_limit_gb || n.traffic_used_gb == null) return null;
+  var pct = n.traffic_used_gb / n.traffic_limit_gb;
+  if(pct >= 1.0) return 'crit';
+  if(pct >= 0.8) return 'warn';
+  return null;
+}
+
+function _redrawEdges(pos, graphEdges, edgeG, ns, mk){
+  renderTopologyEdges(pos, graphEdges, edgeG, mk);
+}
+
+function _updateNodeMetricLabels(){
+  (window.GRAPH_DATA.nodes || []).forEach(function(n){
+    var m = n.metrics || {};
+    var loadEl = document.getElementById('topo-load-' + n.id);
+    var peersEl = document.getElementById('topo-peers-' + n.id);
+    if(loadEl){
+      var pct = Math.round((m.load_ratio || 0) * 100);
+      loadEl.textContent = 'CPU ' + pct + '%';
+      loadEl.setAttribute('fill', pct > 80 ? '#ff4560' : pct > 50 ? '#f5a623' : '#00e676');
+    }
+    if(peersEl){
+      peersEl.textContent = (m.peer_count || 0) + ' peers';
+    }
+  });
+}
+
+function bindTopologyPan(svg){
+  if(!svg || svg._panBound) return;
+  var dragging = false;
+  var dragStart = null;
+  function stopPan(){
+    if(!dragging) return;
+    dragging = false;
+    svg.style.cursor = 'grab';
+  }
+  svg.addEventListener('mousedown', function(event){
+    if(event.button !== 0) return;
+    if(event.target !== svg && event.target !== svg._topoPanSurface) return;
+    event.preventDefault();
+    dragging = true;
+    dragStart = {
+      mx: event.clientX,
+      my: event.clientY,
+      px: window.TOPO_PAN_X,
+      py: window.TOPO_PAN_Y
+    };
+    svg.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', function(event){
+    if(!dragging || !dragStart) return;
+    window.TOPO_PAN_X = dragStart.px + (event.clientX - dragStart.mx);
+    window.TOPO_PAN_Y = dragStart.py + (event.clientY - dragStart.my);
+    applyTopologyZoom(svg);
+  });
+  window.addEventListener('mouseup', stopPan);
+  window.addEventListener('mouseleave', stopPan);
+  svg._panBound = true;
+}
+
+async function submitPathPlanner(fd){
+  try{
+    var response = await window.apiFetch(window.API_PREFIX + '/paths/plan', {
+      method: 'POST',
+      body: {
+        source_node_id: String(fd.get('source_node_id') || '').trim(),
+        destination_node_id: String(fd.get('destination_node_id') || '').trim(),
+        max_hops: Number(fd.get('max_hops') || 8),
+        require_active_links: fd.get('require_active_links') === 'on',
+        avoid_node_ids: (fd.get('avoid_node_ids') || '').split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+        latency_weight: Number(fd.get('latency_weight') || 1),
+        load_weight: Number(fd.get('load_weight') || 1.2),
+        loss_weight: Number(fd.get('loss_weight') || 1.5)
+      }
+    });
+    window.TOPO_PATH = {
+      nodeIds: response.node_path || [],
+      linkIds: (response.hops || []).map(function(h){ return h.link_id; }),
+      total_score: response.total_score
+    };
+    window.closeModal();
+    renderTopologyMeta();
+    window.drawTopo();
+    window.pushEv?.('topology.path', 'planned path with ' + String((response.hops || []).length) + ' hops');
+  }catch(err){
+    window.pushEv?.('topology.path.error', 'path planning failed: ' + (err && err.message ? err.message : err));
+    alert(err && err.message ? err.message : err);
+  }
+}
+
+window.openPathPlanner = function openPathPlanner(defaultSourceId){
+  if((window.GRAPH_DATA.nodes || []).length < 2){
+    alert('At least two topology nodes are required.');
+    return;
+  }
+  var nodeOptions = window.GRAPH_DATA.nodes.map(function(node){ return {value: node.id, label: node.name}; });
+  var fallbackDest = window.GRAPH_DATA.nodes.find(function(node){ return node.id !== defaultSourceId; });
+  var body = '<form id="pathPlannerForm"><div class="modal-grid">'
+    + window.formSelect('Source node', 'source_node_id', defaultSourceId || (window.GRAPH_DATA.nodes[0] && window.GRAPH_DATA.nodes[0].id), nodeOptions)
+    + window.formSelect('Destination node', 'destination_node_id', fallbackDest ? fallbackDest.id : (window.GRAPH_DATA.nodes[1] && window.GRAPH_DATA.nodes[1].id), nodeOptions)
+    + window.formInput('Max hops', 'max_hops', '8', {type: 'number'})
+    + window.formCheckbox('Active links only', 'require_active_links', true, {caption: 'Require active links'})
+    + window.formInput('Latency weight', 'latency_weight', '1.0', {type: 'number'})
+    + window.formInput('Load weight', 'load_weight', '1.2', {type: 'number'})
+    + window.formInput('Loss weight', 'loss_weight', '1.5', {type: 'number'})
+    + window.formTextarea('Avoid node IDs (CSV)', 'avoid_node_ids', '', {full: true})
+    + '</div></form>';
+  window.openModal('Plan Path', body, {
+    buttons: [
+      {label: 'Clear Overlay', className: 'btn', onClick: function(){ window.TOPO_PATH = null; window.closeModal(); renderTopologyMeta(); window.drawTopo(); }},
+      {label: 'Cancel', className: 'btn', onClick: window.closeModal},
+      {label: 'Plan', className: 'btn pri', onClick: function(){ document.getElementById('pathPlannerForm').requestSubmit(); }}
+    ]
+  });
+  window.bindModalForm('pathPlannerForm', function(fd){ submitPathPlanner(fd); });
+};
+
 // ── DEMO MODE DATA ───────────────────────────────────────────────────────────
 
 window.DEMO_MODE = false;
