@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ONyX Panel</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+
+<!-- ════════════════ LOGIN ════════════════ -->
+<div id="loginWrap">
+  <canvas id="loginCanvas"></canvas>
+  <div class="lbox">
+    <div class="llogo">ONyX</div>
+    <div class="lsub">CONTROL PLANE // ADMIN ACCESS</div>
+    <label class="flbl">Username</label>
+    <input class="finp" id="iu" type="text" autocomplete="username" placeholder="operator">
+    <label class="flbl">Password</label>
+    <input class="finp" id="ip" type="password" autocomplete="current-password" placeholder="••••••••">
+    <div class="lerr" id="lerr"></div>
+    <button class="lbtn" id="lbtn">AUTHENTICATE</button>
+  </div>
+</div>
+
+<!-- ════════════════ APP ════════════════ -->
+<div id="appWrap">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="logo">ONyX<div class="logo-meta"><span class="logo-ver">ver. 0.5</span><span style="font-size:12px;font-weight:400;color:var(--t1);letter-spacing:.08em;">control plane</span></div></div>
+    <div class="topbar-center">
+      <div class="sys-stats">
+        <div class="sys-stats-dot"></div>
+        <div class="sys-bar-group">
+          <span class="sys-bar-lbl">CPU</span>
+          <div class="sys-bar-outer">
+            <div class="sys-bar-fill" id="sysCpuFill" style="width:0%;background:#00b440;"></div>
+            <div class="sys-bar-val" id="sysCpu">--%</div>
+          </div>
+        </div>
+        <span class="sys-sep">/</span>
+        <div class="sys-bar-group">
+          <span class="sys-bar-lbl">RAM</span>
+          <div class="sys-bar-outer">
+            <div class="sys-bar-fill" id="sysRamFill" style="width:0%;background:#00b440;"></div>
+            <div class="sys-bar-val" id="sysRam">-- GB</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="wsdot" id="wsd"></div>
+      <span class="wslbl" id="wsl" style="display:none"></span>
+      <div class="theme-switcher" title="Palette">
+        <div class="theme-dot th-teal active" onclick="setTheme('')" title="Teal"></div>
+        <div class="theme-dot th-crimson" onclick="setTheme('crimson')" title="Crimson"></div>
+        <div class="theme-dot th-pink" onclick="setTheme('pink')" title="Pink"></div>
+        <div class="theme-dot th-yellow" onclick="setTheme('yellow')" title="Yellow"></div>
+        <div class="theme-dot th-green" onclick="setTheme('green')" title="Green"></div>
+      </div>
+      <div class="lang-switcher">
+        <button class="lang-btn active" onclick="setLang('en')">EN</button>
+        <button class="lang-btn" onclick="setLang('ru')">RU</button>
+      </div>
+      <button class="ubtn" id="ubtn">user &#9662;</button>
+      <button class="logout-btn" id="logoutBtn">Logout</button>
+    </div>
+  </div>
+
+  <!-- NAV MAIN GROUPS -->
+  <div class="nav-main" id="navMain">
+    <div class="nav-group-tab active" data-g="system" onclick="switchGroup('system')">System</div>
+    <div class="nav-group-tab" data-g="network" onclick="switchGroup('network')">Network</div>
+    <div class="nav-group-tab" data-g="access" onclick="switchGroup('access')">Access Control</div>
+    <div class="nav-group-tab" data-g="services" onclick="switchGroup('services')">Services</div>
+    <div class="nav-group-tab" data-g="topology" onclick="switchGroup('topology')">Topology</div>
+    <div class="nav-group-tab" data-g="debug" onclick="switchGroup('debug')">Debug</div>
+  </div>
+  <!-- NAV SUB-TABS -->
+  <div class="nav-sub" id="navSub">
+    <!-- populated by switchGroup() -->
+  </div>
+  <div class="sidebar" style="display:none"></div>
+  <!-- hidden badge source for Support Chat nav item, cloned by switchGroup() -->
+  <span id="supportBadge" style="display:none;margin-left:5px;background:var(--red);color:#fff;border-radius:10px;padding:0 5px;font-size:11px;font-weight:bold;">0</span>
+
+  <div class="layout">
+    <!-- MAIN -->
+    <div class="main">
+
+      <!-- ── SYSTEM ── -->
+      <div class="page active" id="page-system">
+        <div class="ph">
+          <span class="ptitle">System <span class="tag">v0.2.0</span></span>
+          <button class="btn" onclick="healthCheck()">PROBE HEALTH</button>
+        </div>
+        <div class="sgrid">
+          <div class="scard"><div class="slbl">Backend</div><div class="sval" style="color:var(--grn)" id="sb">OK</div><div class="ssub">/api/v1/health</div></div>
+          <div class="scard"><div class="slbl">Worker</div><div class="sval" style="color:var(--grn)" id="sw">OK</div><div class="ssub">/api/v1/health/worker</div></div>
+          <div class="scard"><div class="slbl">Nodes Online</div><div class="sval" id="sn">0/0</div><div class="ssub" id="snSub">0 degraded</div></div>
+          <div class="scard"><div class="slbl">Active Links</div><div class="sval" id="sl">0</div><div class="ssub" id="slSub">0 degraded</div></div>
+        </div>
+        <div class="sgrid" style="margin-top:8px;">
+          <div class="scard" id="openTicketsCard" style="cursor:pointer;transition:background .15s;" onclick="switchGroup('debug');showPage('tickets');" title="Open support tickets — click to open Support Chat">
+            <div class="slbl">Open Tickets</div>
+            <div class="sval" id="sOpenTickets" style="color:var(--acc)">—</div>
+            <div class="ssub">pending + in progress</div>
+          </div>
+        </div>
+        <div class="stitle">Live Event Stream » WS /api/v1/ws/admin/events</div>
+        <div class="elog" id="elog"></div>
+      </div>
+
+      <!-- ── NODES ── -->
+      <div class="page" id="page-nodes">
+        <div class="ph">
+          <span class="ptitle">Nodes</span>
+          <div class="pbtn-row">
+            <input class="mf-input" id="nodeSearch" placeholder="search nodes" style="width:180px;padding:7px 10px;font-size:13px;">
+            <select class="mf-select" id="nodeStatusFilter" style="width:140px;padding:7px 10px;font-size:13px;">
+              <option value="">all statuses</option>
+              <option value="reachable">reachable</option>
+              <option value="degraded">degraded</option>
+              <option value="offline">offline</option>
+              <option value="unknown">unknown</option>
+            </select>
+            <button class="btn pri" id="btnAddNode">+ ADD NODE</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Name</th><th>Role</th><th>Mgmt Address</th><th>Status</th><th>Traffic Used</th><th>Limit</th><th>Capabilities</th><th>Actions</th></tr></thead>
+            <tbody id="ntb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="page" id="page-traffic">
+        <div class="ph">
+          <span class="ptitle">Node Traffic</span>
+          <div class="pbtn-row">
+            <input class="mf-input" id="trafficSearch" placeholder="search node traffic" style="width:180px;padding:7px 10px;font-size:13px;">
+            <select class="mf-select" id="trafficStateFilter" style="width:160px;padding:7px 10px;font-size:13px;">
+              <option value="">all states</option>
+              <option value="normal">normal</option>
+              <option value="warning">warning</option>
+              <option value="exceeded">exceeded</option>
+              <option value="suspended">suspended</option>
+              <option value="hard-enforced">hard enforced</option>
+            </select>
+            <button class="btn" onclick="refreshNodeTrafficSummary()">REFRESH</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Node</th><th>Status</th><th>Cycle Start</th><th>Cycle End</th><th>Used</th><th>Limit</th><th>Usage</th><th>Suspended</th><th>Enforced</th><th>Actions</th></tr></thead>
+            <tbody id="ttb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── LINKS ── -->
+      <div class="page" id="page-links">
+        <div class="ph">
+          <span class="ptitle">Links</span>
+          <div class="pbtn-row">
+            <input class="mf-input" id="linkSearch" placeholder="search links" style="width:180px;padding:7px 10px;font-size:13px;">
+            <select class="mf-select" id="linkStateFilter" style="width:140px;padding:7px 10px;font-size:13px;">
+              <option value="">all states</option>
+              <option value="planned">planned</option>
+              <option value="active">active</option>
+              <option value="failed">failed</option>
+              <option value="degraded">degraded</option>
+              <option value="deleted">deleted</option>
+            </select>
+            <button class="btn pri" id="btnAddLink">+ NEW LINK</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Name</th><th>Driver</th><th>Left Node</th><th>Right Node</th><th>Topology</th><th>State</th><th>Actions</th></tr></thead>
+            <tbody id="ltb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── POLICIES ── -->
+      <div class="page" id="page-policies">
+        <div class="ph">
+          <span class="ptitle">Policies</span>
+          <div class="pbtn-row">
+            <button class="btn pri" id="btnAddRoutePolicy">+ ROUTE POLICY</button>
+            <button class="btn" id="btnAddDNSPolicy">+ DNS POLICY</button>
+            <button class="btn" id="btnAddGeoPolicy">+ GEO POLICY</button>
+            <button class="btn" id="btnAddBalancer">+ BALANCER</button>
+          </div>
+        </div>
+        <div class="two">
+          <div>
+            <div class="stitle">Route Policies</div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Name</th><th>Node</th><th>Action</th><th>Priority</th><th>State</th><th>Actions</th></tr></thead>
+                <tbody id="ptb"></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div class="stitle">DNS Policies</div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Route Policy</th><th>DNS Address</th><th>State</th><th>Actions</th></tr></thead>
+                <tbody id="dtb"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="two">
+          <div>
+            <div class="stitle">Geo Policies</div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Route Policy</th><th>Country</th><th>Mode</th><th>State</th><th>Actions</th></tr></thead>
+                <tbody id="gtb"></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div class="stitle">Balancers</div>
+            <div class="tw">
+              <table>
+                <thead><tr><th>Name</th><th>Node</th><th>Method</th><th>Members</th><th>State</th><th>Actions</th></tr></thead>
+                <tbody id="btb"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── JOBS ── -->
+      <div class="page" id="page-jobs">
+        <div class="ph">
+          <span class="ptitle">Jobs</span>
+          <select style="background:var(--bg2);border:1px solid var(--bdr);color:var(--t1);padding:6px 10px;border-radius:3px;font-family:var(--mono);font-size:13px;">
+            <option>All states</option><option>pending</option><option>running</option><option>success</option><option>failed</option>
+          </select>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>ID</th><th>Kind</th><th>Target</th><th>State</th><th>Created</th><th>Age</th><th>Lease</th><th></th></tr></thead>
+            <tbody id="jtb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── AUDIT ── -->
+      <div class="page" id="page-audit">
+        <div class="ph"><span class="ptitle">Audit / Access</span></div>
+        <div class="elog" style="height:500px;" id="alog"></div>
+      </div>
+
+      <!-- ── TOPOLOGY ── -->
+      <div class="page" id="page-topology">
+        <div class="ph">
+          <span class="ptitle">Topology</span>
+          <div class="pbtn-row">
+            <button class="btn" id="btnPlanPath" data-i18n="topo.planpath">PLAN PATH</button>
+            <button class="btn" onclick="refreshTopology().then(drawTopo)" data-i18n="topo.refresh">REFRESH</button>
+            <button class="btn" id="btnTopoAuto" onclick="toggleTopologyAutoRefresh()" data-i18n="topo.auto">LIVE</button>
+          </div>
+        </div>
+        <div class="topo-toolbar">
+          <div class="topo-legend">
+            <span><span style="color:var(--grn)">●</span> <span data-i18n="topo.reachable">reachable</span></span>
+            <span><span style="color:var(--amb)">●</span> <span data-i18n="topo.degraded">degraded</span></span>
+            <span><span style="color:var(--red)">●</span> <span data-i18n="topo.unreachable">unreachable</span></span>
+            <span><span style="color:var(--t1)">●</span> <span data-i18n="topo.unknown">unknown</span></span>
+          </div>
+          <div class="topo-hint" data-i18n="topo.hint">click node or link for detail</div>
+        </div>
+        <div class="topo-map-wrap">
+          <svg id="tc" width="100%" height="100%" style="width:100%;height:100%;background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;display:block;cursor:grab;"></svg>
+          <div class="topo-zoom-controls">
+            <button class="topo-zoom-btn" type="button" onclick="adjustTopologyZoom(0.9)">-</button>
+            <div class="topo-zoom-indicator" id="topoZoomLabel">ZOOM 100%</div>
+            <button class="topo-zoom-btn" type="button" onclick="adjustTopologyZoom(1.1)">+</button>
+            <button class="topo-zoom-btn reset" type="button" onclick="resetTopologyView()">RESET</button>
+          </div>
+        </div>
+        <div class="topo-meta">
+          <div class="tw">
+            <div class="th-row"><span data-i18n="topo.snapshot">Graph Snapshot</span></div>
+            <div style="padding:3px 12px;font-size:14px;color:var(--t1);line-height:1.15;" id="topoSummary">// awaiting graph...</div>
+          </div>
+          <div class="tw">
+            <div class="th-row"><span data-i18n="topo.pathoverlay">Path Overlay</span></div>
+            <div style="padding:3px 12px;font-size:14px;color:var(--t1);line-height:1.15;" id="topoPathSummary">// no path planned</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── API DEBUG ── -->
+      <div class="page" id="page-apidebug">
+        <div class="ph"><span class="ptitle">API Debug</span></div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+          <select id="am" style="background:var(--bg2);border:1px solid var(--bdr);color:var(--acc);padding:8px 10px;border-radius:3px;font-size:14px;width:90px;">
+            <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
+          </select>
+          <input id="ap" style="flex:1;background:var(--bg2);border:1px solid var(--bdr);border-radius:3px;padding:8px 12px;color:var(--t0);font-size:15px;outline:none;transition:border-color .12s;" value="/api/v1/health" onfocus="this.style.borderColor='var(--acc)'" onblur="this.style.borderColor='var(--bdr)'">
+          <button class="btn pri" onclick="apiCall()">SEND</button>
+        </div>
+        <textarea id="ab" style="width:100%;height:80px;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:10px 12px;color:var(--t1);font-size:14px;outline:none;resize:vertical;font-family:var(--mono);" placeholder="// JSON request body (for POST / PUT)"></textarea>
+        <div class="stitle">Response</div>
+        <pre id="ar" style="background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:14px;font-size:14px;color:var(--t1);overflow:auto;max-height:340px;white-space:pre-wrap;line-height:1.7;">// awaiting request...</pre>
+      </div>
+
+
+      <!-- REGISTRATIONS -->
+      <div class="page" id="page-registrations">
+        <div class="ph">
+          <span class="ptitle" data-i18n="page.registrations">Registrations</span>
+          <div class="pbtn-row">
+            <select id="regStatusFilter" class="mf-select" style="width:160px;padding:7px 10px;font-size:13px;">
+              <option value="" data-i18n="reg.filter.all">all statuses</option>
+              <option value="pending" data-i18n="reg.filter.pending">pending</option>
+              <option value="approved" data-i18n="reg.filter.approved">approved</option>
+              <option value="rejected" data-i18n="reg.filter.rejected">rejected</option>
+            </select>
+            <button class="btn" onclick="loadRegistrations()" data-i18n="reg.refresh">REFRESH</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th data-i18n="reg.col.login">Login</th>
+                <th data-i18n="reg.col.email">E-mail</th>
+                <th data-i18n="reg.col.date">Date</th>
+                <th data-i18n="reg.col.refcode">Referral Code</th>
+                <th data-i18n="reg.col.devices">Devices</th>
+                <th data-i18n="reg.col.status">Status</th>
+                <th data-i18n="reg.col.actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="regtb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- USERS -->
+      <div class="page" id="page-users">
+        <div class="ph">
+          <span class="ptitle">Users</span>
+          <div class="pbtn-row">
+            <select class="mf-select" id="userSubFilter" style="min-width:180px" onchange="renderUsers()">
+              <option value="">All subscriptions</option>
+            </select>
+            <button class="btn pri" id="btnAddUser">+ ADD USER</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Username</th><th>E-mail</th><th>Status</th><th>Goal</th><th>Devices</th><th>Actions</th></tr></thead>
+            <tbody id="usertb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- REFERRAL CODES -->
+      <div class="page" id="page-referral-codes">
+        <div class="ph">
+          <span class="ptitle">Referral Pools</span>
+          <div class="pbtn-row">
+            <button class="btn pri" id="btnCreateReferralPool">+ CREATE POOL</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Pool Name</th><th>Subscription</th><th>Live</th><th>Used</th><th>Expires</th><th>Actions</th></tr></thead>
+            <tbody id="reftb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- MANAGEMENT -->
+      <div class="page" id="page-management">
+        <div class="ph">
+          <span class="ptitle">Subscriptions</span>
+          <div class="pbtn-row">
+            <button class="btn pri" id="btnAddPlan">+ ADD SUBSCRIPTION</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Name</th><th>Mode</th><th>Transport Package</th><th>Devices</th><th>Access Window</th><th>Enabled</th><th>Actions</th></tr></thead>
+            <tbody id="plantb"></tbody>
+          </table>
+        </div>
+
+        <div class="ph">
+          <span class="ptitle">Transport Packages</span>
+          <div class="pbtn-row">
+            <button class="btn pri" id="btnAddTransportPackage">+ ADD</button>
+            <button class="btn" onclick="loadTransportPackages()">REFRESH</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Name</th><th>Enabled</th><th>Priority</th><th>Actions</th></tr></thead>
+            <tbody id="tptb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- DEVICES -->
+      <div class="page" id="page-devices">
+        <div class="ph">
+          <span class="ptitle">Devices</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="loadDevices()">REFRESH</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>User</th><th>Label</th><th>Platform / OS</th><th>GMT</th><th>Status</th><th>Verified</th><th>Actions</th></tr></thead>
+            <tbody id="devtb"></tbody>
+          </table>
+        </div>
+      </div>
+
+
+      <!-- PEERS -->
+      <div class="page" id="page-peers">
+        <div class="ph">
+          <span class="ptitle">Peers</span>
+          <div class="pbtn-row">
+            <input class="mf-input" id="peerSearch" placeholder="search peers..." style="width:200px;padding:7px 10px;font-size:13px;">
+            <select class="mf-select" id="peerNodeFilter" style="width:160px;padding:7px 10px;font-size:13px;">
+              <option value="">all nodes</option>
+            </select>
+            <button class="btn" onclick="loadPeers()">REFRESH</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Login</th>
+                <th>E-mail</th>
+                <th>Node</th>
+                <th>Registered</th>
+                <th>Config Expires</th>
+                <th>Last IP</th>
+                <th>Traffic 24h</th>
+                <th>Traffic Month</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="peerstb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- XRAY SERVICES -->
+      <div class="page" id="page-xray">
+        <div class="ph">
+          <span class="ptitle">Xray Services</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="refreshXrayServices()">REFRESH</button>
+            <button class="btn pri" id="btnAddXrayService">+ ADD XRAY SERVICE</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Node</th>
+                <th>Public Endpoint</th>
+                <th>Path</th>
+                <th>TLS</th>
+                <th>Peers</th>
+                <th>State</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="xraytb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TRANSIT POLICIES -->
+      <!-- ROUTING SUMMARY -->
+      <div class="page" id="page-routing-summary">
+        <div class="ph">
+          <span class="ptitle">Routing Summary</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="refreshRoutingSummary()">REFRESH</button>
+          </div>
+        </div>
+        <div class="card" style="margin:0 20px">
+          <div id="routingSummaryContent" style="padding:10px"></div>
+        </div>
+      </div>
+
+      <div class="page" id="page-transit">
+        <div class="ph">
+          <span class="ptitle">Transit Policies</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="refreshTransitPolicies()">REFRESH</button>
+            <button class="btn pri" id="btnAddTransitPolicy">+ ADD TRANSIT POLICY</button>
+          </div>
+        </div>
+        <div class="card" style="margin:0 20px 14px">
+          <div class="stitle">Transit Routing</div>
+          <div class="pbtn-row" style="margin-top:10px">
+            <select class="mf-select" id="policyTransitXraySelect" style="min-width:260px">
+              <option value="">select XRAY service</option>
+            </select>
+            <button class="btn pri" id="btnPolicyAttachTransit">ATTACH NEXT HOP</button>
+            <button class="btn" id="btnPolicyOpenTransit">OPEN TRANSIT</button>
+          </div>
+          <div class="mf-help" style="margin-top:10px">Fast path for XRAY transparent routing. Choose an XRAY service, then create or inspect its transit policies.</div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Node</th>
+                <th>Ingress</th>
+                <th>Capture</th>
+                <th>TPROXY</th>
+                <th>XRAY</th>
+                <th>Next Hop</th>
+                <th>State</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="transittb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- AWG SERVICES -->
+      <div class="page" id="page-awg">
+        <div class="ph">
+          <span class="ptitle">AWG Services</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="refreshAwgServices()">REFRESH</button>
+            <button class="btn pri" id="btnAddAwgService">+ ADD AWG SERVICE</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Node</th>
+                <th>Interface</th>
+                <th>Public Endpoint</th>
+                <th>Address</th>
+                <th>Peers</th>
+                <th>State</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="awgtb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- WG SERVICES -->
+      <div class="page" id="page-wg">
+        <div class="ph">
+          <span class="ptitle">WG Services</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="refreshWgServices()">REFRESH</button>
+            <button class="btn pri" id="btnAddWgService">+ ADD WG SERVICE</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Node</th>
+                <th>Interface</th>
+                <th>Public Endpoint</th>
+                <th>Address</th>
+                <th>Peers</th>
+                <th>State</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="wgtb"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- OPENVPN+CLOAK SERVICES -->
+      <div class="page" id="page-ovpn">
+        <div class="ph">
+          <span class="ptitle">OpenVPN+Cloak Services</span>
+          <div class="pbtn-row">
+            <button class="btn" onclick="refreshOpenvpnCloakServices()">REFRESH</button>
+            <button class="btn pri" id="btnAddOpenvpnCloakService">+ ADD OPENVPN+CLOAK SERVICE</button>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Node</th>
+                <th>OpenVPN</th>
+                <th>Cloak</th>
+                <th>Public Endpoint</th>
+                <th>Network</th>
+                <th>Peers</th>
+                <th>State</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ovpntb"></tbody>
+          </table>
+        </div>
+      </div>
+
+
+      <!-- FAILBAN -->
+      <div class="page" id="page-failban">
+        <div class="ph">
+          <span class="ptitle">Fail2Ban <span class="tag">LIVE</span></span>
+          <div class="pbtn-row">
+            <button class="btn red" onclick="failbanPauseToggle()"><span id="failbanPauseLabel">PAUSE</span></button>
+            <button class="btn" onclick="document.getElementById('failban-log').innerHTML=''">CLEAR</button>
+          </div>
+        </div>
+        <div class="failban-sources" id="failban-sources"></div>
+        <div class="failban-summary-line" id="failban-scope-line">CONTROL PLANE</div>
+        <div class="failban-log" id="failban-log">
+          <div class="fline info"><span class="ftime">--:--:--</span><span>Waiting for fail2ban log stream...</span></div>
+        </div>
+      </div>
+
+      <!-- EMAIL SERVICE -->
+      <div class="page" id="page-email">
+        <div class="ph">
+          <span class="ptitle">E-Mail Service <span class="tag">stub</span></span>
+          <button class="btn" onclick="">REFRESH</button>
+        </div>
+        <div style="color:var(--t2);font-size:14px;padding:24px 0;">
+          E-Mail service configuration panel — backend integration pending.
+        </div>
+      </div>
+
+      <!-- SUPPORT CHAT -->
+      <div class="page" id="page-tickets">
+        <div class="ph">
+          <span class="ptitle">Support Chat</span>
+          <button class="btn" onclick="loadSupportTickets()" style="margin-left:auto;">&#8635; REFRESH</button>
+        </div>
+        <div class="tickets-layout">
+          <div class="tickets-sidebar" id="ticketsSidebar">
+            <div style="padding:12px;color:var(--t2);font-size:13px;">Loading…</div>
+          </div>
+          <div class="tickets-chat" id="ticketsChat">
+            <div class="tickets-chat-header" id="ticketsChatHeader">
+              <span style="color:var(--t2);">Select a ticket</span>
+            </div>
+            <div class="tickets-messages" id="ticketsMessages">
+              <div class="tickets-empty">Select a ticket from the list</div>
+            </div>
+            <div id="ticketTypingIndicator" style="display:none;padding:4px 16px;font-size:12px;color:var(--t2);font-style:italic;">Client is typing…</div>
+            <div class="tickets-input-row">
+              <input class="tickets-input" id="ticketReply" placeholder="Type reply…" onkeydown="_onSupportReplyKey(event)">
+              <button class="btn pri" onclick="sendSupportReply()">SEND</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /layout -->
+</div><!-- /appWrap -->
+
+<!-- DETAIL PANEL -->
+<div class="dp" id="dp">
+  <button class="dp-close" onclick="closeDP()">&#10005;</button>
+  <div class="dp-title" id="dpt"></div>
+  <div id="dpb"></div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title" id="modalTitle"></div>
+      <button class="modal-close" id="modalClose">×</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="mf-actions" id="modalActions"></div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
