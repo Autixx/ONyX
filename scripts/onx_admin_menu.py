@@ -822,8 +822,7 @@ def _set_web_ui_path_screen(env_file: Path, service_name: str) -> None:
             f"Current path: {current}",
             "",
             "Set a secret URL path for the admin panel (e.g. /admin-xK9mN3).",
-            "After changing, rebuild the frontend with the same path as ONX_WEB_UI_BASE",
-            "and restart the daemon.",
+            "Use '/' to serve the panel at the server root.",
             "",
         ]
     )
@@ -843,13 +842,15 @@ def _set_web_ui_path_screen(env_file: Path, service_name: str) -> None:
             "",
             f"ONX_WEB_UI_PATH set to: {new_path}",
             "",
-            "Next steps:",
-            f"  1. Rebuild frontend with ONX_WEB_UI_BASE={new_path}/",
-            f"  2. Restart daemon: systemctl restart {service_name}",
+            "Restart the daemon to apply (System → Restart daemon).",
+            "No frontend rebuild required.",
             "",
         ]
     )
-    _pause()
+    if _prompt_bool("Restart daemon now?", False):
+        _restart_daemon(service_name)
+    else:
+        _pause()
 
 
 def _retention_policy_screen(base_url: str, admin_token: str | None) -> None:

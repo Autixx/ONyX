@@ -206,6 +206,12 @@ def _mount_static_ui(app: FastAPI, settings) -> None:
     if not index_path.exists():
         return
     mount_path = "/" + settings.web_ui_path.strip("/")
+    # Always mount assets at /assets so the HTML (built with base "/") can load
+    # them regardless of which secret path the panel itself is mounted at.
+    assets_dir = web_ui_dir / "assets"
+    if assets_dir.is_dir() and mount_path != "/":
+        from starlette.staticfiles import StaticFiles as _SF
+        app.mount("/assets", _SF(directory=str(assets_dir)), name="web-ui-assets")
     app.mount(mount_path, SPAStaticFiles(directory=str(web_ui_dir), html=True), name="web-ui")
 
 

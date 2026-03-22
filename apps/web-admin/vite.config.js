@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   root: 'src',
-  base: process.env.ONX_WEB_UI_BASE || '/',
+  base: '/',
   build: {
     outDir: '../dist',
     emptyOutDir: true,
