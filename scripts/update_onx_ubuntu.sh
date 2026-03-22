@@ -146,14 +146,18 @@ ADMIN_WEB_AUTH_INFO_PATH="${CONFIG_DIR}/admin-web-auth.txt"
 [[ -f "${ENV_FILE_PATH}" ]] || fail "ONX env file not found: ${ENV_FILE_PATH}"
 [[ -x "${VENV_DIR}/bin/python3" ]] || fail "ONX venv python not found: ${VENV_DIR}/bin/python3"
 
-echo "[1/5] Pulling source..."
-git -C "${INSTALL_DIR}" fetch --all --tags --prune
-if git -C "${INSTALL_DIR}" rev-parse --verify --quiet "origin/${GIT_REF}" >/dev/null; then
+echo "[1/5] Pulling source (ref: ${GIT_REF})..."
+git -C "${INSTALL_DIR}" fetch --all --tags --prune \
+  || fail "git fetch failed — check network and remote credentials."
+
+if git -C "${INSTALL_DIR}" rev-parse --verify --quiet "origin/${GIT_REF}" >/dev/null 2>&1; then
   git -C "${INSTALL_DIR}" checkout -B "${GIT_REF}" "origin/${GIT_REF}"
+  git -C "${INSTALL_DIR}" reset --hard "origin/${GIT_REF}"
 else
   git -C "${INSTALL_DIR}" checkout "${GIT_REF}"
+  git -C "${INSTALL_DIR}" reset --hard "${GIT_REF}"
 fi
-git -C "${INSTALL_DIR}" pull --ff-only origin "${GIT_REF}" || true
+echo "  → $(git -C "${INSTALL_DIR}" log --oneline -1)"
 
 echo "[2/5] Updating Python dependencies..."
 "${VENV_DIR}/bin/python3" -m pip install --upgrade pip wheel setuptools

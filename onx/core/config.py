@@ -130,6 +130,9 @@ class Settings(BaseSettings):
     onx_cloak_version: str = "2.12.0"
     onx_cloak_release_base_url: str = "https://github.com/cbeuw/Cloak/releases/download"
     onx_xray_install_script_url: str = "https://github.com/XTLS/Xray-install/raw/main/install-release.sh"
+    client_latest_version: str = ""          # e.g. "0.3.0"; empty = no update available
+    client_download_url: str = ""            # direct download link to the new client ZIP
+    client_update_notes: str = ""            # short release notes shown to user
 
     model_config = SettingsConfigDict(
         env_prefix="ONX_",
