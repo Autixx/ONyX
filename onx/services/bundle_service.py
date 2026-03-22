@@ -12,10 +12,12 @@ from sqlalchemy.orm import Session
 from onx.db.models.awg_service import AwgService, AwgServiceState
 from onx.core.config import get_settings
 from onx.db.models.device import Device
+from onx.db.models.dns_policy import DNSPolicy
 from onx.db.models.issued_bundle import IssuedBundle
 from onx.db.models.node import Node, NodeRole, NodeStatus
 from onx.db.models.openvpn_cloak_service import OpenVpnCloakService, OpenVpnCloakServiceState
 from onx.db.models.peer import Peer
+from onx.db.models.route_policy import RoutePolicy
 from onx.db.models.transport_package import TransportPackage
 from onx.db.models.plan import Plan
 from onx.db.models.subscription import SubscriptionStatus
@@ -24,6 +26,7 @@ from onx.db.models.wg_service import WgService, WgServiceState
 from onx.db.models.xray_service import XrayService, XrayServiceState
 from onx.schemas.transport_packages import DEFAULT_TRANSPORT_PRIORITY
 from onx.services.client_device_service import client_device_service
+from onx.services.dns_policy_service import DNSPolicyService
 from onx.services.subscription_service import subscription_service
 
 
@@ -135,6 +138,25 @@ class BundleService:
         ]
         transport_package = db.scalar(select(TransportPackage).where(TransportPackage.user_id == user.id))
         runtime_profiles = self._build_runtime_profiles(db, user=user, transport_package=transport_package)
+
+        # Prefer DNS resolver from the first candidate node's enabled DNSPolicy;
+        # fall back to the global config setting.
+        dns_resolver = self._settings.client_bundle_dns_resolver
+        if candidates:
+            node_ids = [n.id for n in candidates]
+            node_dns_policy = db.scalar(
+                select(DNSPolicy)
+                .join(RoutePolicy, DNSPolicy.route_policy_id == RoutePolicy.id)
+                .where(
+                    RoutePolicy.node_id.in_(node_ids),
+                    DNSPolicy.enabled.is_(True),
+                )
+                .order_by(RoutePolicy.node_id)
+            )
+            if node_dns_policy:
+                host, _ = DNSPolicyService.parse_dns_address(node_dns_policy.dns_address)
+                dns_resolver = host
+
         return {
             "bundle_id": f"bundle-{user.id[:8]}-{device.id[:8]}-{int(issued_at.timestamp())}",
             "bundle_format_version": "1",
@@ -157,7 +179,7 @@ class BundleService:
                 "speed_limit_kbps": db.get(Plan, subscription.plan_id).speed_limit_kbps if subscription.plan_id else None,
             },
             "dns": {
-                "resolver": self._settings.client_bundle_dns_resolver,
+                "resolver": dns_resolver,
                 "force_all": self._settings.client_bundle_dns_force_all,
                 "force_doh": self._settings.client_bundle_dns_force_doh,
             },

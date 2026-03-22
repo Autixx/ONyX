@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from dataclasses import replace
 from typing import Any
 
 from .adapters import ActiveProcessGroup, BaseRuntimeAdapter, build_runtime_adapters
@@ -14,6 +16,37 @@ from .models import (
     RuntimeProfile,
 )
 from .rate_limit import network_rate_limiter
+
+
+def _inject_wg_dns(config_text: str, resolver: str) -> str:
+    """Replace or insert DNS= in the [Interface] section of a WireGuard/AWG config."""
+    lines = (config_text or "").replace("\r\n", "\n").split("\n")
+    in_interface = False
+    dns_injected = False
+    result: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if in_interface and not dns_injected:
+                result.append(f"DNS = {resolver}")
+                dns_injected = True
+            in_interface = stripped.lower() == "[interface]"
+        if in_interface and re.match(r"(?i)^dns\s*=", stripped):
+            result.append(f"DNS = {resolver}")
+            dns_injected = True
+            continue
+        result.append(line)
+    if in_interface and not dns_injected:
+        result.append(f"DNS = {resolver}")
+    return "\n".join(result)
+
+
+def _patch_profile_dns(profile: RuntimeProfile, dns: dict) -> RuntimeProfile:
+    """Return a copy of *profile* with DNS= injected if dns.resolver is set and transport is WG/AWG."""
+    resolver = ((dns or {}).get("resolver") or "").strip()
+    if not resolver or profile.transport not in ("wg", "awg"):
+        return profile
+    return replace(profile, config_text=_inject_wg_dns(profile.config_text or "", resolver))
 
 
 class OnyxRuntimeDaemon:
@@ -129,6 +162,7 @@ class OnyxRuntimeDaemon:
         adapter = self._adapters.get(request.transport)
         if adapter is None:
             raise RuntimeError(f"No runtime adapter registered for transport: {request.transport}")
+        profile = _patch_profile_dns(profile, request.dns)
         session = await adapter.connect(profile)
         self._log.info(
             "connect_ok transport=%s profile_id=%s tunnel_name=%s config_path=%s",
