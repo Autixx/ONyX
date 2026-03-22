@@ -2301,7 +2301,11 @@ class DashboardScreen(QWidget):
         tg_lbl = QLabel("TRAFFIC")
         tg_lbl.setStyleSheet(f"color:{C_T3};font-size:9px;letter-spacing:2px;")
         tg_rl.addWidget(tg_lbl); tg_rl.addStretch()
-        _ref_btn = GhostButton("↻"); _ref_btn.setFixedWidth(32); _ref_btn.clicked.connect(self._refresh_me)
+        _ref_btn = QPushButton("↻"); _ref_btn.setFixedSize(28,28)
+        _ref_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _ref_btn.setStyleSheet(f"QPushButton{{background:transparent;color:{C_T3};border:none;font-size:16px;padding:0;}}"
+                               f"QPushButton:hover{{color:{C_ACC};}}")
+        _ref_btn.clicked.connect(self._refresh_me)
         tg_rl.addWidget(_ref_btn)
         lay.addWidget(tg_row); lay.addSpacing(4)
         self._traffic_graph = TrafficGraph()
