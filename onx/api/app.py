@@ -17,6 +17,9 @@ from onx.api.routers.client_bundles import router as client_bundles_router
 from onx.api.routers.client_devices import router as client_devices_router
 from onx.api.routers.client_registrations import router as client_registrations_router
 from onx.api.routers.client_routing import router as client_routing_router
+from onx.api.routers.client_support import router as client_support_router
+from onx.api.routers.support_chat import router as support_chat_router
+from onx.api.routers.client_updates import router as client_updates_router
 from onx.api.routers.devices import router as devices_router
 from onx.api.routers.dns_policies import router as dns_policies_router
 from onx.api.routers.fail2ban import router as fail2ban_router
@@ -151,6 +154,9 @@ def create_app() -> FastAPI:
     app.include_router(client_bundles_router, prefix=settings.api_prefix)
     app.include_router(client_registrations_router, prefix=settings.api_prefix)
     app.include_router(client_routing_router, prefix=settings.api_prefix)
+    app.include_router(client_support_router, prefix=settings.api_prefix)
+    app.include_router(support_chat_router, prefix=settings.api_prefix)
+    app.include_router(client_updates_router, prefix=settings.api_prefix)
     app.include_router(access_rules_router, prefix=settings.api_prefix)
     app.include_router(audit_logs_router, prefix=settings.api_prefix)
     app.include_router(jobs_router, prefix=settings.api_prefix)
