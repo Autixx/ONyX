@@ -34,14 +34,14 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from PyQt6.QtCore import (
-    QPointF, QRect, QSize, Qt, QThread, QTimer,
+    QPointF, QRect, QRectF, QSize, Qt, QThread, QTimer,
     pyqtSignal, QObject,
 )
 from PyQt6.QtGui import (
-    QAction, QColor, QFont, QIcon, QPainter, QPen, QRadialGradient, QBrush,
+    QAction, QColor, QFont, QIcon, QPainter, QPen, QPolygonF, QRadialGradient, QBrush,
     QPalette, QPixmap,
 )
-from onyx_splash import SplashScreen, build_bg_network
+from onyx_splash import SplashScreen, build_bg_network, NODE_POS, RING_EDGES, SPOKE_TIPS
 from runtime.ipc import DaemonPipeClient
 from runtime.models import CommandEnvelope, DaemonCommand
 from runtime.paths import expected_binary_layout
@@ -322,6 +322,12 @@ def fmt_speed(bps):
     if bps is None: return "—"
     return fmt_bytes(int(bps)) + "/s"
 
+def _fmt_rate_short(bps: float) -> str:
+    if bps < 1000:  return f"{int(bps)}B"
+    if bps < 1e6:   return f"{bps/1024:.0f}K"
+    if bps < 1e9:   return f"{bps/1e6:.1f}M"
+    return f"{bps/1e9:.1f}G"
+
 def fmt_expiry(iso):
     if not iso: return "—"
     try:
@@ -336,6 +342,26 @@ def fmt_expiry(iso):
         return f"{d.seconds//60}m"
     except Exception:
         return str(iso)[:10]
+
+
+def fmt_sub_expiry(iso):
+    """Return (date_str, detail_str, is_expired) for ExpiresCard."""
+    if not iso:
+        return "No expiry", "", False
+    try:
+        dt  = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        d   = dt - now
+        if d.total_seconds() < 0:
+            return dt.strftime("%d %b %Y"), "Expired", True
+        if d.days > 0:
+            return dt.strftime("%d %b %Y"), f"in {d.days}d {d.seconds//3600}h", False
+        h = d.seconds // 3600
+        if h > 0:
+            return dt.strftime("%d %b %Y"), f"in {h}h {(d.seconds%3600)//60}m", False
+        return dt.strftime("%d %b %Y"), f"in {d.seconds//60}m", False
+    except Exception:
+        return str(iso)[:10], "", False
 
 # ── State ──────────────────────────────────────────────────────────────────────
 
@@ -401,7 +427,10 @@ class ClientState:
     def username(self): return (self.user or {}).get("username","")
     @property
     def expires_at(self):
-        return (self.subscription or {}).get("expires_at") or (self.last_bundle or {}).get("expires_at")
+        # Prefer subscription expiry from decrypted bundle; fall back to cached subscription.
+        # Never use last_bundle["expires_at"] — that is the short-lived bundle TTL, not the user's subscription.
+        dec_sub = ((self.last_bundle or {}).get("decrypted") or {}).get("subscription") or {}
+        return dec_sub.get("expires_at") or (self.subscription or {}).get("expires_at")
     @property
     def has_session(self): return bool(self.user)
 
@@ -896,6 +925,13 @@ class LocalTunnelRuntime:
                             "profile_id": profile.get("id", ""),
                             "transport": profile.get("type", ""),
                             "dns": self.dns_policy(),
+                            "runtime": {
+                                "bw_limit_kbps": int(
+                                    (((self.st.last_bundle or {}).get("decrypted") or {})
+                                     .get("subscription") or {})
+                                    .get("speed_limit_kbps") or 0
+                                ),
+                            },
                         },
                     )
                 )
@@ -998,7 +1034,14 @@ def run_async(parent_widget, fn, on_done):
 # ── Connect button (animated) ──────────────────────────────────────────────────
 
 class ConnectButton(QWidget):
+    """ONyX-logo style connect button."""
     clicked = pyqtSignal()
+
+    _VBOX = 96
+    _OCT  = [(30,8),(66,8),(88,30),(88,66),(66,88),(30,88),(8,66),(8,30)]
+    # Scanner timing: 6 spokes × 500 ms = 3 s full rotation; fade over 2 s
+    _TICKS_PER_SPOKE = 18   # 18 × 28 ms ≈ 504 ms per spoke
+    _FADE_TICKS      = 71   # 71 × 28 ms ≈ 1988 ms fade duration
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1007,90 +1050,166 @@ class ConnectButton(QWidget):
         self._connected  = False
         self._connecting = False
         self._hovered    = False
-        self._pulse      = 0.0
-        self._pulse_dir  = 1
+        self._spoke_idx  = 0
+        self._tick       = 0
+        # When each of the 6 spokes was last lit; initialise far in the past so they start dim
+        self._spoke_lit_ticks = [-self._FADE_TICKS * 2] * 6
+        self._spoke_lit_ticks[0] = 0   # first spoke starts lit
+        self._glow       = 0.0
+        self._glow_dir   = 1
         self._spin       = 0
 
-        self._pulse_timer = QTimer(self)
-        self._pulse_timer.timeout.connect(self._tick_pulse)
-        self._spin_timer  = QTimer(self)
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._tick_anim)
+        self._spin_timer = QTimer(self)
         self._spin_timer.timeout.connect(self._tick_spin)
 
     def set_connected(self, v):
-        self._connected=v; self._connecting=False
+        self._connected = v; self._connecting = False
         self._spin_timer.stop()
-        if v: self._pulse_timer.start(28)
-        else: self._pulse_timer.stop(); self._pulse=0.0
+        if v:   self._anim_timer.start(28)
+        else:   self._anim_timer.stop(); self._glow = 0.0
         self.update()
 
     def set_connecting(self, v):
-        self._connecting=v
-        if v: self._spin_timer.start(16); self._pulse_timer.stop()
-        else: self._spin_timer.stop()
+        self._connecting = v
+        if v:   self._spin_timer.start(16); self._anim_timer.stop()
+        else:   self._spin_timer.stop()
         self.update()
 
-    def _tick_pulse(self):
-        self._pulse += 0.035*self._pulse_dir
-        if self._pulse>=1.0: self._pulse=1.0; self._pulse_dir=-1
-        elif self._pulse<=0.0: self._pulse=0.0; self._pulse_dir=1
+    def _tick_anim(self):
+        self._glow += 0.04 * self._glow_dir
+        if self._glow >= 1.0:   self._glow = 1.0;  self._glow_dir = -1
+        elif self._glow <= 0.0: self._glow = 0.0;  self._glow_dir =  1
+        self._tick += 1
+        if self._tick % self._TICKS_PER_SPOKE == 0:
+            self._spoke_idx = (self._spoke_idx + 1) % 6
+            self._spoke_lit_ticks[self._spoke_idx] = self._tick
         self.update()
 
     def _tick_spin(self):
-        self._spin=(self._spin+5)%360; self.update()
+        self._spin = (self._spin + 5) % 360
+        self.update()
 
-    def enterEvent(self,e): self._hovered=True; self.update()
-    def leaveEvent(self,e): self._hovered=False; self.update()
-    def mousePressEvent(self,e):
-        if e.button()==Qt.MouseButton.LeftButton: self.clicked.emit()
+    def enterEvent(self, e): self._hovered = True;  self.update()
+    def leaveEvent(self, e): self._hovered = False; self.update()
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton: self.clicked.emit()
 
-    def paintEvent(self,e):
+    def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        cx=cy=88; R=72; Ri=54
+        W = self.width(); H = self.height()
+        sc = min(W, H) / self._VBOX
+        ox = (W - self._VBOX * sc) / 2
+        oy = (H - self._VBOX * sc) / 2
 
-        # Glow when connected
-        if self._connected and self._pulse>0:
-            gr = R+16+self._pulse*10
-            g  = QRadialGradient(cx,cy,gr)
-            a  = int(self._pulse*45)
-            g.setColorAt(0,  QColor(0,200,180,a))
-            g.setColorAt(0.5,QColor(0,200,180,a//3))
-            g.setColorAt(1,  QColor(0,200,180,0))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(g))
-            p.drawEllipse(int(cx-gr),int(cy-gr),int(gr*2),int(gr*2))
+        def vp(x, y): return QPointF(ox + x*sc, oy + y*sc)
+        def vs(v):    return v * sc
 
-        # Outer ring
-        ring = QColor(C_GRN) if self._connected else (
-               QColor(C_AMB) if self._connecting else
-               (QColor(C_T2) if self._hovered else QColor(C_T3)))
-        p.setPen(QPen(ring,2)); p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(cx-R,cy-R,R*2,R*2)
+        # Colour scheme based on state
+        if self._connected:
+            base_a = 190; acc = (0, 229, 204); dim = (0, 120, 110)
+        elif self._connecting:
+            base_a = 110; acc = (0, 200, 180); dim = (0, 80, 72)
+        else:
+            base_a = 55 + (20 if self._hovered else 0)
+            acc = (0, 180, 160); dim = (0, 60, 54)
 
-        # Spinner
+        # Octagon
+        oct_pts = QPolygonF([vp(x, y) for x, y in self._OCT])
+        p.setPen(QPen(QColor(*acc, base_a), vs(1.2)))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPolygon(oct_pts)
+
+        # Ring edges — scanner fade: current spoke fully lit, previous spokes fade over _FADE_TICKS
+        for i, (na, nb) in enumerate(RING_EDGES):
+            ax, ay = NODE_POS[na]; bx, by = NODE_POS[nb]
+            if self._connected:
+                ticks_ago = self._tick - self._spoke_lit_ticks[i]
+                fade = max(0.0, 1.0 - ticks_ago / self._FADE_TICKS)
+                if i == self._spoke_idx:
+                    alpha = int(base_a * 0.95); c = acc
+                elif fade > 0.0:
+                    alpha = int(base_a * (0.15 + 0.65 * fade))
+                    c = (int(acc[0]*fade + dim[0]*(1-fade)),
+                         int(acc[1]*fade + dim[1]*(1-fade)),
+                         int(acc[2]*fade + dim[2]*(1-fade)))
+                else:
+                    alpha = int(base_a * 0.15); c = dim
+            else:
+                alpha = base_a; c = acc
+            pen = QPen(QColor(*c, alpha), vs(0.9), Qt.PenStyle.DashLine)
+            pen.setDashPattern([3.0, 2.5])
+            p.setPen(pen)
+            p.drawLine(vp(ax, ay), vp(bx, by))
+
+        # Spokes: outer node → spoke tip → center
+        cx, cy = 48, 48
+        for i, ((nx, ny), (tx, ty)) in enumerate(zip(NODE_POS, SPOKE_TIPS)):
+            if self._connected:
+                ticks_ago = self._tick - self._spoke_lit_ticks[i]
+                fade = max(0.0, 1.0 - ticks_ago / self._FADE_TICKS)
+                if i == self._spoke_idx:
+                    alpha = int(230 * (0.6 + 0.4 * self._glow)); c = acc; w = vs(1.1)
+                elif fade > 0.0:
+                    alpha = int(base_a * (0.2 + 0.5 * fade)); c = acc; w = vs(0.7)
+                else:
+                    alpha = int(base_a * 0.2); c = dim; w = vs(0.7)
+            else:
+                alpha = base_a; c = acc; w = vs(0.7)
+            p.setPen(QPen(QColor(*c, alpha), w))
+            p.drawLine(vp(nx, ny), vp(tx, ty))
+            p.setPen(QPen(QColor(*c, alpha // 2), vs(0.6), Qt.PenStyle.DashLine))
+            p.drawLine(vp(tx, ty), vp(cx, cy))
+
+        # Outer node dots
+        p.setPen(Qt.PenStyle.NoPen)
+        for i, (nx, ny) in enumerate(NODE_POS):
+            if self._connected:
+                ticks_ago = self._tick - self._spoke_lit_ticks[i]
+                fade = max(0.0, 1.0 - ticks_ago / self._FADE_TICKS)
+                if i == self._spoke_idx:
+                    rd = vs(2.5)
+                    ng = QRadialGradient(vp(nx, ny), rd * 3)
+                    ng.setColorAt(0, QColor(*acc, int(80 * self._glow)))
+                    ng.setColorAt(1, QColor(*acc, 0))
+                    p.setBrush(QBrush(ng)); p.drawEllipse(vp(nx, ny), rd*3, rd*3)
+                    p.setBrush(QColor(*acc, 230)); p.drawEllipse(vp(nx, ny), rd, rd)
+                elif fade > 0.0:
+                    rd = vs(2.0)
+                    a  = int(base_a * (0.3 + 0.4 * fade))
+                    c2 = (int(acc[0]*fade + dim[0]*(1-fade)),
+                          int(acc[1]*fade + dim[1]*(1-fade)),
+                          int(acc[2]*fade + dim[2]*(1-fade)))
+                    p.setBrush(QColor(*c2, a)); p.drawEllipse(vp(nx, ny), rd, rd)
+                else:
+                    rd  = vs(2.0)
+                    p.setBrush(QColor(*dim, int(base_a * 0.55))); p.drawEllipse(vp(nx, ny), rd, rd)
+            else:
+                rd  = vs(1.8)
+                p.setBrush(QColor(*acc, int(base_a * 0.8))); p.drawEllipse(vp(nx, ny), rd, rd)
+
+        # Center "O"
+        ow, oh = vs(12), vs(15)
+        o_rect = QRectF(ox + cx*sc - ow, oy + cy*sc - oh, ow*2, oh*2)
+        if self._connected and self._glow > 0:
+            gg = QRadialGradient(vp(cx, cy), ow * 2.5)
+            gg.setColorAt(0, QColor(*acc, int(70 * self._glow)))
+            gg.setColorAt(1, QColor(*acc, 0))
+            p.setBrush(QBrush(gg)); p.drawEllipse(vp(cx, cy), ow*2.5, oh*2.5)
+        p.setPen(QPen(QColor(*acc, base_a), vs(2.4 if self._connected else 2.0)))
+        p.setBrush(QBrush(QColor(2, 10, 7, 220)))
+        p.drawEllipse(o_rect)
+
+        # Connecting spinner
         if self._connecting:
-            sp=QPen(QColor(C_AMB),3)
+            R = vs(46)
+            sp = QPen(QColor(*acc, 180), vs(2.0))
             sp.setCapStyle(Qt.PenCapStyle.RoundCap)
             p.setPen(sp); p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawArc(QRect(cx-R,cy-R,R*2,R*2),
-                      (-self._spin)*16, 90*16)
-
-        # Inner fill
-        fill = QColor("#081f14") if self._connected else (
-               QColor("#0d1520") if self._hovered else QColor(C_BG2))
-        p.setPen(QPen(ring,1)); p.setBrush(QBrush(fill))
-        p.drawEllipse(cx-Ri,cy-Ri,Ri*2,Ri*2)
-
-        # Power icon
-        ic = QColor(C_GRN) if self._connected else (
-             QColor(C_AMB) if self._connecting else
-             (QColor(C_T0) if self._hovered else QColor(C_T1)))
-        ip = QPen(ic,3,Qt.PenStyle.SolidLine,
-                  Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin)
-        p.setPen(ip)
-        p.drawLine(cx,cy-Ri+14,cx,cy-6)
-        pad=20
-        p.drawArc(QRect(cx-Ri+pad,cy-Ri+pad,(Ri-pad)*2,(Ri-pad)*2),35*16,110*16)
+            p.drawArc(QRectF(ox + cx*sc - R, oy + cy*sc - R, R*2, R*2),
+                      -self._spin * 16, 90 * 16)
         p.end()
 
 # ── Reusable widgets ───────────────────────────────────────────────────────────
@@ -1124,7 +1243,7 @@ class GhostButton(QPushButton):
         cl=C_ACC2 if self._hl else C_ACC
         self.setStyleSheet(f"""
             QPushButton{{background:{bg};color:{cl};border:1px solid {C_BDR};
-            border-radius:3px;font-family:'Courier New';font-size:11px;padding:0 12px;}}""")
+            border-radius:3px;font-family:'Courier New';font-size:14px;padding:0 12px;}}""")
 
     def enterEvent(self,e): self._hl=True;  self._style()
     def leaveEvent(self,e): self._hl=False; self._style()
@@ -1182,6 +1301,64 @@ class InfoCard(QFrame):
         self._v.setText(text)
         c=color or C_T0
         self._v.setStyleSheet(f"color:{c};font-size:13px;font-weight:bold;")
+
+class ExpiresCard(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"QFrame{{background:{C_BG2};border:1px solid {C_BDR};border-radius:4px;}}")
+        lay = QVBoxLayout(self); lay.setContentsMargins(12,10,12,10); lay.setSpacing(2)
+        t = QLabel("EXPIRES")
+        t.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;")
+        lay.addWidget(t)
+        self._date = QLabel("—")
+        self._date.setStyleSheet(f"color:{C_T0};font-size:13px;font-weight:bold;")
+        lay.addWidget(self._date)
+        self._detail = QLabel("")
+        self._detail.setStyleSheet(f"color:{C_T3};font-size:10px;")
+        lay.addWidget(self._detail)
+
+    def set_expiry(self, iso):
+        date_str, detail_str, is_expired = fmt_sub_expiry(iso)
+        if is_expired:
+            self._date.setText(date_str)
+            self._date.setStyleSheet(f"color:{C_RED};font-size:13px;font-weight:bold;")
+            self._detail.setText("Expired")
+            self._detail.setStyleSheet(f"color:{C_RED};font-size:10px;")
+        else:
+            self._date.setText(date_str)
+            self._date.setStyleSheet(f"color:{C_T0};font-size:13px;font-weight:bold;")
+            self._detail.setText(detail_str)
+            self._detail.setStyleSheet(f"color:{C_T3};font-size:10px;")
+
+
+class DeviceCard(QFrame):
+    register_requested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"QFrame{{background:{C_BG2};border:1px solid {C_BDR};border-radius:4px;}}")
+        lay = QVBoxLayout(self); lay.setContentsMargins(12,10,12,10); lay.setSpacing(3)
+        t = QLabel("DEVICE")
+        t.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;")
+        lay.addWidget(t)
+        self._val = QLabel("—")
+        self._val.setStyleSheet(f"color:{C_T0};font-size:13px;font-weight:bold;")
+        lay.addWidget(self._val)
+
+    def set_registered(self, registered: bool):
+        if registered:
+            self._val.setText("Registered")
+            self._val.setStyleSheet(f"color:{C_GRN};font-size:13px;font-weight:bold;")
+            self._val.setCursor(Qt.CursorShape.ArrowCursor)
+            self._val.mousePressEvent = lambda e: None
+        else:
+            self._val.setText("Register device")
+            self._val.setStyleSheet(
+                f"color:{C_T0};font-size:13px;font-weight:bold;text-decoration:underline;"
+            )
+            self._val.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._val.mousePressEvent = lambda e: self.register_requested.emit()
+
 
 class Divider(QFrame):
     def __init__(self,parent=None):
@@ -1939,6 +2116,107 @@ class RegisterScreen(QWidget):
 
     def _show_err(self,m): self._err.setText(m); self._err.show()
 
+# ── Traffic graph ──────────────────────────────────────────────────────────────
+
+class TrafficGraph(QWidget):
+    """Live traffic rate graph. Mouse-wheel changes time window."""
+    _RANGES = [("1m",60),("15m",900),("1h",3600),("6h",21600),("12h",43200),("24h",86400)]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(80)
+        self._range_idx = 0
+        self._samples: list[tuple[float, float]] = []
+
+    def add_sample(self, rate: float):
+        now = time.monotonic()
+        self._samples.append((now, max(0.0, rate)))
+        cutoff = now - 86400
+        while self._samples and self._samples[0][0] < cutoff:
+            self._samples.pop(0)
+        self.update()
+
+    def wheelEvent(self, e):
+        d = e.angleDelta().y()
+        self._range_idx = max(0, min(len(self._RANGES)-1,
+                                     self._range_idx + (-1 if d > 0 else 1)))
+        self.update()
+        e.accept()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        W, H = self.width(), self.height()
+        PL, PR, PT, PB = 36, 8, 20, 14
+        gw = W - PL - PR
+        gh = H - PT - PB
+
+        p.fillRect(self.rect(), QColor(C_BG2))
+
+        lbl, dur = self._RANGES[self._range_idx]
+        now = time.monotonic()
+
+        # Range selector chips (top)
+        p.setFont(QFont("Courier New", 8))
+        cx2 = W - PR
+        for i in range(len(self._RANGES) - 1, -1, -1):
+            rl, _ = self._RANGES[i]
+            active = (i == self._range_idx)
+            p.setPen(QColor(C_ACC2) if active else QColor(C_T3))
+            fw = p.fontMetrics().horizontalAdvance(rl) + 5
+            cx2 -= fw
+            p.drawText(cx2 + 2, PT - 5, rl)
+
+        # Horizontal grid lines
+        p.setPen(QPen(QColor(C_BDR), 1, Qt.PenStyle.DotLine))
+        for i in range(1, 4):
+            y = PT + i * gh // 4
+            p.drawLine(PL, y, PL + gw, y)
+
+        visible = [(t, v) for t, v in self._samples if t >= now - dur]
+
+        if not visible:
+            p.setFont(QFont("Courier New", 9))
+            p.setPen(QColor(C_T3))
+            p.drawText(QRectF(PL, PT, gw, gh), Qt.AlignmentFlag.AlignCenter, "No data")
+        else:
+            max_v = max(v for _, v in visible) * 1.15 or 1.0
+
+            def gx(t): return PL + (t - (now - dur)) / dur * gw
+            def gy(v): return PT + gh - v / max_v * gh
+
+            pts = [QPointF(gx(t), gy(v)) for t, v in visible]
+
+            # Filled area
+            poly = [QPointF(pts[0].x(), PT + gh)] + pts + [QPointF(pts[-1].x(), PT + gh)]
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(0, 200, 180, 22))
+            p.drawPolygon(QPolygonF(poly))
+
+            # Line
+            pen = QPen(QColor(0, 229, 204, 200), 1.4)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+            for i in range(len(pts) - 1):
+                p.drawLine(pts[i], pts[i + 1])
+
+            # Y-axis labels
+            p.setFont(QFont("Courier New", 7))
+            p.setPen(QColor(C_T3))
+            for i in range(1, 4):
+                y  = PT + i * gh // 4
+                val = max_v * (4 - i) / 4
+                p.drawText(1, int(y + 4), _fmt_rate_short(val))
+
+        # Border
+        p.setPen(QPen(QColor(C_BDR), 1))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(QRectF(PL, PT, gw, gh))
+
+        p.end()
+
+
 # ── Dashboard screen ───────────────────────────────────────────────────────────
 
 class DashboardScreen(QWidget):
@@ -1956,86 +2234,228 @@ class DashboardScreen(QWidget):
         self._stats_timer.start(2000)
 
     def _build(self):
-        outer=QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
+        outer = QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
 
-        # Topbar
-        tb=QFrame(); tb.setStyleSheet(f"background:{C_BG1};border-bottom:1px solid {C_BDR};")
-        tl=QHBoxLayout(tb); tl.setContentsMargins(18,10,18,10)
-        QLabel("ONyX",styleSheet=f"color:{C_ACC2};font-size:15px;font-weight:bold;letter-spacing:3px;") \
-            .__init__ if False else None
-        tl.addStretch()
-        self._ulbl=QLabel(""); self._ulbl.setStyleSheet(f"color:{C_T2};font-size:11px;margin-right:8px;")
-        tl.addWidget(self._ulbl)
-        lout=QLabel(f'<a href="#" style="color:{C_T2};text-decoration:none;font-size:11px;">Log out</a>')
+        # Topbar — username + logout only (ONyX is in the window titlebar)
+        tb = QFrame(); tb.setFixedHeight(38)
+        tb.setStyleSheet(f"background:{C_BG1};border-bottom:1px solid {C_BDR};")
+        tl = QHBoxLayout(tb); tl.setContentsMargins(18,0,10,0); tl.setSpacing(0)
+        self._ulbl = QLabel(""); self._ulbl.setStyleSheet(f"color:{C_T2};font-size:11px;margin-right:10px;")
+        tl.addWidget(self._ulbl); tl.addStretch()
+        lout = QLabel(f'<a href="#" style="color:{C_T2};text-decoration:none;font-size:11px;">Log out</a>')
         lout.linkActivated.connect(lambda _: self.logout_requested.emit()); tl.addWidget(lout)
         outer.addWidget(tb)
 
         # Offline banner
-        self._ob=QFrame(); self._ob.setStyleSheet(f"background:#1a1208;border-bottom:1px solid {C_AMB}40;")
-        ol=QHBoxLayout(self._ob); ol.setContentsMargins(18,7,18,7)
-        obl=QLabel("● Offline — showing cached state"); obl.setStyleSheet(f"color:{C_AMB};font-size:11px;")
+        self._ob = QFrame(); self._ob.setStyleSheet(f"background:#1a1208;border-bottom:1px solid {C_AMB}40;")
+        ol = QHBoxLayout(self._ob); ol.setContentsMargins(18,6,18,6)
+        obl = QLabel("● Offline — showing cached state"); obl.setStyleSheet(f"color:{C_AMB};font-size:11px;")
         ol.addWidget(obl); self._ob.hide(); outer.addWidget(self._ob)
 
-        # Scroll
-        scroll=QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("background:transparent;border:none;")
-        outer.addWidget(scroll)
-        content=QWidget(); scroll.setWidget(content)
-        content.setStyleSheet("background:transparent;")
-        lay=QVBoxLayout(content); lay.setContentsMargins(26,26,26,26); lay.setSpacing(0)
+        # View stack: 0 = main, 1 = settings
+        self._view_stack = QStackedWidget()
+        self._view_stack.setStyleSheet("background:transparent;")
+        outer.addWidget(self._view_stack)
 
-        # Connection
-        cs=QWidget(); cl=QVBoxLayout(cs); cl.setAlignment(Qt.AlignmentFlag.AlignHCenter); cl.setSpacing(8)
-        self._stlbl=QLabel("DISCONNECTED"); self._stlbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # ── Main view ──────────────────────────────────────────────────
+        main_w = QWidget(); main_w.setStyleSheet("background:transparent;")
+        lay = QVBoxLayout(main_w); lay.setContentsMargins(20,14,20,14); lay.setSpacing(0)
+
+        cs = QWidget(); cl = QVBoxLayout(cs)
+        cl.setAlignment(Qt.AlignmentFlag.AlignHCenter); cl.setSpacing(6)
+        self._stlbl = QLabel("DISCONNECTED"); self._stlbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._stlbl.setStyleSheet(f"color:{C_T2};font-size:12px;font-weight:bold;letter-spacing:4px;")
         cl.addWidget(self._stlbl)
-        self._cbtn=ConnectButton(); self._cbtn.clicked.connect(self._toggle)
-        cw=QHBoxLayout(); cw.addStretch(); cw.addWidget(self._cbtn); cw.addStretch(); cl.addLayout(cw)
-        self._hlbl=QLabel("Tap to connect"); self._hlbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._cbtn = ConnectButton(); self._cbtn.clicked.connect(self._toggle)
+        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self._cbtn); cw.addStretch()
+        cl.addLayout(cw)
+        self._hlbl = QLabel("Tap to connect"); self._hlbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._hlbl.setStyleSheet(f"color:{C_T2};font-size:11px;"); cl.addWidget(self._hlbl)
-        lay.addWidget(cs); lay.addSpacing(22)
+        lay.addWidget(cs); lay.addSpacing(14)
 
-        # Stats
-        sr=QWidget(); sl=QHBoxLayout(sr); sl.setContentsMargins(0,0,0,0); sl.setSpacing(7)
-        self._su=StatCard("Used"); self._srx=StatCard("↓ Down"); self._stx=StatCard("↑ Up")
-        for w in (self._su,self._srx,self._stx): sl.addWidget(w)
-        lay.addWidget(sr); lay.addSpacing(7)
+        sr = QWidget(); sl = QHBoxLayout(sr); sl.setContentsMargins(0,0,0,0); sl.setSpacing(6)
+        self._su = StatCard("Used"); self._srx = StatCard("↓ Down"); self._stx = StatCard("↑ Up")
+        for w in (self._su, self._srx, self._stx): sl.addWidget(w)
+        lay.addWidget(sr); lay.addSpacing(6)
 
-        # Info cards
-        ir=QWidget(); il=QHBoxLayout(ir); il.setContentsMargins(0,0,0,0); il.setSpacing(7)
-        self._ce=InfoCard("Expires"); self._cd=InfoCard("Device")
-        for w in (self._ce,self._cd): il.addWidget(w)
-        lay.addWidget(ir); lay.addSpacing(7)
+        ir = QWidget(); il = QHBoxLayout(ir); il.setContentsMargins(0,0,0,0); il.setSpacing(6)
+        self._ce = ExpiresCard(); self._cd = DeviceCard()
+        self._cd.register_requested.connect(self._reg_device)
+        il.addWidget(self._ce, 3); il.addWidget(self._cd, 2)
+        lay.addWidget(ir); lay.addSpacing(6)
 
-        # DNS badge
-        self._dns=QFrame()
+        self._dns = QFrame()
         self._dns.setStyleSheet(f"QFrame{{background:{C_BG2};border:1px solid {C_BDR};border-radius:4px;}}")
-        dl=QHBoxLayout(self._dns); dl.setContentsMargins(14,9,14,9)
-        self._dnslbl=QLabel("● Protected DNS: Off")
+        dl = QHBoxLayout(self._dns); dl.setContentsMargins(14,8,14,8)
+        self._dnslbl = QLabel("● Protected DNS: Off")
         self._dnslbl.setStyleSheet(f"color:{C_T3};font-size:12px;"); dl.addWidget(self._dnslbl); dl.addStretch()
-        lay.addWidget(self._dns); lay.addSpacing(18)
+        lay.addWidget(self._dns); lay.addSpacing(6)
 
-        lay.addWidget(Divider()); lay.addSpacing(10)
+        self._get_cfg_btn = AccentButton("GET CONFIGURATION")
+        self._get_cfg_btn.clicked.connect(self._issue_bundle)
+        lay.addWidget(self._get_cfg_btn); lay.addSpacing(12)
 
-        # Secondary actions
-        ar=QWidget(); al=QHBoxLayout(ar); al.setContentsMargins(0,0,0,0); al.setSpacing(7)
-        def _gb(t,f): b=GhostButton(t); b.clicked.connect(f); al.addWidget(b)
-        _gb("↻ Refresh",self._refresh_me)
-        _gb("Register Device",self._reg_device)
-        _gb("Verify Device",self._verify_device)
-        _gb("Issue Bundle",self._issue_bundle)
-        al.addStretch(); lay.addWidget(ar); lay.addSpacing(18)
+        lay.addWidget(Divider()); lay.addSpacing(8)
 
-        lay.addWidget(Divider()); lay.addSpacing(10)
+        tg_row = QWidget(); tg_rl = QHBoxLayout(tg_row); tg_rl.setContentsMargins(0,0,0,0); tg_rl.setSpacing(0)
+        tg_lbl = QLabel("TRAFFIC")
+        tg_lbl.setStyleSheet(f"color:{C_T3};font-size:9px;letter-spacing:2px;")
+        tg_rl.addWidget(tg_lbl); tg_rl.addStretch()
+        _ref_btn = GhostButton("↻"); _ref_btn.setFixedWidth(32); _ref_btn.clicked.connect(self._refresh_me)
+        tg_rl.addWidget(_ref_btn)
+        lay.addWidget(tg_row); lay.addSpacing(4)
+        self._traffic_graph = TrafficGraph()
+        lay.addWidget(self._traffic_graph, 1)
 
-        # Bottom row
-        br=QWidget(); bl=QHBoxLayout(br); bl.setContentsMargins(0,0,0,0)
-        sup=QLabel(f'<a href="#" style="color:{C_T2};text-decoration:none;">⚑ Support</a>')
+        self._view_stack.addWidget(main_w)
+
+        # ── Settings view ───────────────────────────────────────────────
+        self._view_stack.addWidget(self._build_settings_panel())
+
+        # ── Bottom bar (always pinned) ───────────────────────────────────
+        bb = QFrame(); bb.setFixedHeight(36)
+        bb.setStyleSheet(f"background:{C_BG1};border-top:1px solid {C_BDR};")
+        bl = QHBoxLayout(bb); bl.setContentsMargins(20,0,20,0)
+        sup = QLabel(f'<a href="#" style="color:{C_T2};text-decoration:none;font-size:11px;">⚑ Support</a>')
         sup.linkActivated.connect(lambda _: self._support()); bl.addWidget(sup); bl.addStretch()
-        sett=QLabel(f'<a href="#" style="color:{C_T2};text-decoration:none;">⚙ Settings</a>')
-        sett.linkActivated.connect(lambda _: self._settings()); bl.addWidget(sett)
-        lay.addWidget(br); lay.addStretch()
+        sett = QLabel(f'<a href="#" style="color:{C_T2};text-decoration:none;font-size:11px;">⚙ Settings</a>')
+        sett.linkActivated.connect(lambda _: self._show_settings()); bl.addWidget(sett)
+        outer.addWidget(bb)
+
+    def _build_settings_panel(self):
+        sw = QWidget(); sw.setStyleSheet("background:transparent;")
+        sl = QVBoxLayout(sw); sl.setContentsMargins(20,14,20,20); sl.setSpacing(10)
+
+        back = QLabel(f'<a href="#" style="color:{C_ACC};text-decoration:none;">← Back</a>')
+        back.linkActivated.connect(lambda _: self._hide_settings()); sl.addWidget(back)
+        title = QLabel("Settings")
+        title.setStyleSheet(f"color:{C_T0};font-size:14px;font-weight:bold;letter-spacing:1px;")
+        sl.addWidget(title); sl.addSpacing(4)
+
+        api_lbl = QLabel("API HOST")
+        api_lbl.setStyleSheet(f"color:{C_T2};font-size:9px;letter-spacing:2px;"); sl.addWidget(api_lbl)
+        self._s_api_url = QLineEdit()
+        self._s_api_url.setPlaceholderText("api.example.com or https://.../api/v1")
+        self._s_api_url.editingFinished.connect(self._s_save_api); sl.addWidget(self._s_api_url)
+
+        ar1 = QWidget(); a1l = QHBoxLayout(ar1); a1l.setContentsMargins(0,0,0,0); a1l.setSpacing(6)
+        self._s_test_btn = GhostButton("Test API"); self._s_test_btn.clicked.connect(self._s_test_api)
+        self._s_runtime_btn = GhostButton("Check Runtime"); self._s_runtime_btn.clicked.connect(self._s_refresh_runtime)
+        self._s_tools_btn = GhostButton("Open Tools"); self._s_tools_btn.clicked.connect(open_tools_directory)
+        a1l.addWidget(self._s_test_btn); a1l.addWidget(self._s_runtime_btn); a1l.addWidget(self._s_tools_btn)
+        sl.addWidget(ar1)
+
+        self._s_startup_lbl = QLabel()
+        self._s_startup_lbl.setStyleSheet(f"color:{C_T2};font-size:11px;"); sl.addWidget(self._s_startup_lbl)
+        ar2 = QWidget(); a2l = QHBoxLayout(ar2); a2l.setContentsMargins(0,0,0,0); a2l.setSpacing(6)
+        self._s_install_btn = GhostButton("Install Startup"); self._s_install_btn.clicked.connect(self._s_install_autostart)
+        self._s_remove_btn  = GhostButton("Remove Startup");  self._s_remove_btn.clicked.connect(self._s_remove_autostart)
+        a2l.addWidget(self._s_install_btn); a2l.addWidget(self._s_remove_btn); a2l.addStretch()
+        sl.addWidget(ar2)
+
+        sl.addWidget(Divider())
+        self._s_runtime_lbl = QLabel("")
+        self._s_runtime_lbl.setStyleSheet(f"color:{C_T2};font-size:11px;")
+        self._s_runtime_lbl.setWordWrap(True); sl.addWidget(self._s_runtime_lbl)
+
+        diag_lbl = QLabel("RUNTIME DIAGNOSTICS")
+        diag_lbl.setStyleSheet(f"color:{C_T2};font-size:9px;letter-spacing:2px;"); sl.addWidget(diag_lbl)
+        self._s_diag = QTextEdit(); self._s_diag.setReadOnly(True); self._s_diag.setFixedHeight(180)
+        sl.addWidget(self._s_diag)
+
+        dns_lbl = QLabel("DNS RUNTIME")
+        dns_lbl.setStyleSheet(f"color:{C_T2};font-size:9px;letter-spacing:2px;"); sl.addWidget(dns_lbl)
+        self._s_dns = QTextEdit(); self._s_dns.setReadOnly(True); self._s_dns.setFixedHeight(72)
+        sl.addWidget(self._s_dns)
+        sl.addStretch()
+
+        scroll = QScrollArea(); scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("background:transparent;border:none;")
+        scroll.setWidget(sw)
+        return scroll
+
+    def _show_settings(self):
+        self._s_api_url.setText(self.st.base_url)
+        self._s_startup_lbl.setText(
+            "Background startup: installed" if is_autostart_installed() else "Background startup: not installed")
+        self._view_stack.setCurrentIndex(1)
+
+    def _hide_settings(self):
+        self._s_save_api()
+        self._view_stack.setCurrentIndex(0)
+
+    def _s_save_api(self):
+        self.st.base_url = normalize_api_base_url(self._s_api_url.text())
+        self._s_api_url.setText(self.st.base_url); self.st.save()
+
+    def _s_test_api(self):
+        self._s_save_api()
+        self._s_test_btn.setEnabled(False); self._s_test_btn.setText("TESTING...")
+        def _c(): return test_api_health(self.st.base_url)
+        def _d(data, err):
+            self._s_test_btn.setEnabled(True); self._s_test_btn.setText("Test API")
+            if err: QMessageBox.critical(self, "API Test Failed", str(err)); return
+            self._s_api_url.setText(data["base_url"])
+            QMessageBox.information(self, "API Test",
+                f"API is reachable.\n\nBase URL: {data['base_url']}\nStatus: {data['status']}")
+        run_async(self, _c, _d)
+
+    def _s_refresh_runtime(self):
+        self._s_runtime_btn.setEnabled(False); self._s_runtime_btn.setText("...")
+        def _c(): return self._runtime.diagnostics()
+        def _d(info, err):
+            self._s_runtime_btn.setEnabled(True); self._s_runtime_btn.setText("Check Runtime")
+            if err: self._s_runtime_lbl.setText(f"Error: {err}"); return
+            td = info["tool_details"]; di = info.get("daemon") or {}
+            flags = {
+                "AWG":           bool((td["awg"]["manager"] and td["awg"]["cli"] and td["awg"]["dll"]) or (td["awg"]["tool"] and td["awg"]["quick"])),
+                "WG":            bool((td["wg"]["manager"]  and td["wg"]["cli"]  and td["wg"]["dll"])  or (td["wg"]["tool"]  and td["wg"]["quick"])),
+                "OPENVPN+CLOAK": bool(td["openvpn_cloak"]["openvpn"] and td["openvpn_cloak"]["cloak"]),
+                "XRAY":          bool(td["xray"]["binary"]),
+            }
+            ready = [k for k, v in flags.items() if v]
+            if ready:
+                self._s_runtime_lbl.setText("Runtime: " + " / ".join(f"{r} READY" for r in ready))
+                self._s_runtime_lbl.setStyleSheet(f"color:{C_GRN};font-size:11px;")
+            else:
+                self._s_runtime_lbl.setText("Runtime: NO RUNTIME")
+                self._s_runtime_lbl.setStyleSheet(f"color:{C_AMB};font-size:11px;")
+            lines = [
+                f"Daemon: {'available' if di.get('available') else 'unavailable'} — {di.get('service') or di.get('error') or 'n/a'}",
+                f"Tools:  {info['tools_dir']}",
+                f"AWG mgr: {td['awg']['manager'] or 'missing'}   cli: {td['awg']['cli'] or td['awg']['tool'] or 'missing'}",
+                f"WG  mgr: {td['wg']['manager']  or 'missing'}   cli: {td['wg']['cli']  or td['wg']['tool']  or 'missing'}",
+                f"Wintun:  {td['awg']['dll'] or 'missing'}",
+                f"OpenVPN: {td['openvpn_cloak']['openvpn'] or 'missing'}",
+                f"Cloak:   {td['openvpn_cloak']['cloak']   or 'missing'}",
+                f"Xray:    {td['xray']['binary'] or 'missing'}",
+                f"Profiles: {len(info['profiles'])}  active: {info['active_transport'] or 'none'} / {info['active_interface'] or 'none'}",
+            ]
+            self._s_diag.setPlainText("\n".join(lines))
+            db = ((self.st.last_bundle or {}).get("decrypted") or {}).get("dns") or {}
+            self._s_dns.setPlainText(
+                f"Resolver: {db.get('resolver','not issued')}\n"
+                f"Force all DNS: {'yes' if db.get('force_all') else 'no'}\n"
+                f"Force DoH: {'yes' if db.get('force_doh') else 'no'}"
+            )
+        run_async(self, _c, _d)
+
+    def _s_install_autostart(self):
+        try:
+            install_autostart()
+            self._s_startup_lbl.setText("Background startup: installed")
+            QMessageBox.information(self, "Startup", "Background startup task installed.")
+        except Exception as exc:
+            QMessageBox.critical(self, "Startup", str(exc))
+
+    def _s_remove_autostart(self):
+        try:
+            uninstall_autostart()
+            self._s_startup_lbl.setText("Background startup: not installed")
+            QMessageBox.information(self, "Startup", "Background startup task removed.")
+        except Exception as exc:
+            QMessageBox.critical(self, "Startup", str(exc))
 
     def refresh(self,offline=False):
         if offline: self._ob.show()
@@ -2057,10 +2477,8 @@ class DashboardScreen(QWidget):
         self._su.set_value(fmt_bytes(self.st.rx_bytes+self.st.tx_bytes))
         self._srx.set_value(fmt_speed(self.st.rx_rate) if on else "—", C_GRN if on else None)
         self._stx.set_value(fmt_speed(self.st.tx_rate) if on else "—", C_ACC2 if on else None)
-        ex=fmt_expiry(self.st.expires_at)
-        self._ce.set_value(ex, C_RED if ex=="Expired" else None)
-        if self.st.device_id: self._cd.set_value(self.st.device_id[:8]+"…")
-        else:                  self._cd.set_value("Not registered",C_AMB)
+        self._ce.set_expiry(self.st.expires_at)
+        self._cd.set_registered(bool(self.st.device_id))
 
     def disconnect_runtime(self, silent: bool = False):
         try:
@@ -2073,11 +2491,27 @@ class DashboardScreen(QWidget):
             self.connection_state_changed.emit(self.st.connected)
 
     def _connect_runtime(self):
+        if not self.st.device_id:
+            QMessageBox.warning(self, "Connect", "Device not registered.\nClick 'Register device' to register first.")
+            return
         self._cbtn.set_connecting(True)
         self._stlbl.setText("CONNECTING")
         self._hlbl.setText("Preparing secure tunnel...")
 
+        base = self.st.base_url; did = self.st.device_id; hdrs = self._hdrs()
+
         def _c():
+            # Auto-verify device silently before connecting
+            with httpx_client(timeout=20, base_url=base) as c:
+                ch = c.post(base + "/client/devices/challenge", json={"device_id": did}, headers=hdrs)
+                if ch.status_code >= 400:
+                    raise RuntimeError(response_detail(ch))
+                dec = self._dec_env(ch.json()["envelope"])
+                vr = c.post(base + "/client/devices/verify",
+                            json={"device_id": did, "challenge_response": dec["challenge"]},
+                            headers=hdrs)
+                if vr.status_code >= 400:
+                    raise RuntimeError(response_detail(vr))
             return self._runtime.connect()
 
         def _d(profile, err):
@@ -2109,6 +2543,7 @@ class DashboardScreen(QWidget):
         self.st.rx_bytes = rx_total
         self.st.tx_bytes = tx_total
         self.refresh()
+        self._traffic_graph.add_sample(self.st.rx_rate + self.st.tx_rate)
 
     def _hdrs(self):
         return {"Authorization":f"Bearer {self.st.session_token}"} if self.st.session_token else {}
@@ -2226,10 +2661,7 @@ class DashboardScreen(QWidget):
                 QMessageBox.information(
                     self,
                     "Bundle",
-                    f"Bundle loaded successfully.
-
-Source: {source}
-Profiles: {data.get('profile_count', 0)}",
+                    f"Bundle loaded successfully.\n\nSource: {source}\nProfiles: {data.get('profile_count', 0)}",
                 )
             if resume_connect:
                 self._connect_runtime()
@@ -2267,196 +2699,7 @@ Profiles: {data.get('profile_count', 0)}",
         dlg.exec()
 
     def _settings(self):
-        dlg=QDialog(self); dlg.setWindowTitle("Settings"); dlg.setFixedSize(420,470)
-        dlg.setStyleSheet(f"background:{C_BG0};")
-        lay=QVBoxLayout(dlg); lay.setContentsMargins(26,26,26,26); lay.setSpacing(12)
-        lay.addWidget(QLabel("Settings",styleSheet=f"color:{C_T0};font-size:16px;font-weight:bold;"))
-        ui=FormInput("API HOST", "api.example.com, 203.0.113.10:8081 or full https://.../api/v1"); ui.set_value(self.st.base_url); lay.addWidget(ui)
-        ui.edit.setToolTip("API host examples:\napi.example.com\n203.0.113.10:8081\nhttps://api.example.com/api/v1")
-
-        startup_status = QLabel("Background startup installed" if is_autostart_installed() else "Background startup not installed")
-        startup_status.setStyleSheet(f"color:{C_T2};font-size:11px;")
-        lay.addWidget(startup_status)
-
-        runtime_ready_status = QLabel("")
-        runtime_ready_status.setStyleSheet(f"color:{C_T2};font-size:11px;")
-        lay.addWidget(runtime_ready_status)
-
-        action_row=QWidget(); action_lay=QHBoxLayout(action_row); action_lay.setContentsMargins(0,0,0,0); action_lay.setSpacing(8)
-        test_btn=GhostButton("Test API")
-        runtime_btn=GhostButton("Check Runtime")
-        open_tools_btn=GhostButton("Open Tools Folder")
-        install_btn=GhostButton("Install Startup")
-        remove_btn=GhostButton("Remove Startup")
-        action_lay.addWidget(test_btn)
-        action_lay.addWidget(runtime_btn)
-        action_lay.addWidget(open_tools_btn)
-        action_lay.addWidget(install_btn); action_lay.addWidget(remove_btn); action_lay.addStretch()
-        lay.addWidget(action_row)
-
-        runtime_title = QLabel("RUNTIME DIAGNOSTICS")
-        runtime_title.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;")
-        lay.addWidget(runtime_title)
-
-        runtime_info = QTextEdit()
-        runtime_info.setReadOnly(True)
-        runtime_info.setFixedHeight(150)
-        lay.addWidget(runtime_info)
-
-        dns_title = QLabel("DNS RUNTIME")
-        dns_title.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;")
-        lay.addWidget(dns_title)
-
-        dns_info = QTextEdit()
-        dns_info.setReadOnly(True)
-        dns_info.setFixedHeight(72)
-        lay.addWidget(dns_info)
-
-        def _refresh_startup():
-            startup_status.setText("Background startup installed" if is_autostart_installed() else "Background startup not installed")
-
-        def _refresh_runtime_info():
-            info = self._runtime.diagnostics()
-            tool_details = info["tool_details"]
-            daemon_info = info.get("daemon") or {}
-            profiles = info["profiles"]
-            awg_ready = bool((tool_details["awg"]["manager"] and tool_details["awg"]["cli"] and tool_details["awg"]["dll"]) or (tool_details["awg"]["tool"] and tool_details["awg"]["quick"]))
-            wg_ready = bool((tool_details["wg"]["manager"] and tool_details["wg"]["cli"] and tool_details["wg"]["dll"]) or (tool_details["wg"]["tool"] and tool_details["wg"]["quick"]))
-            openvpn_cloak_ready = bool(tool_details["openvpn_cloak"]["openvpn"] and tool_details["openvpn_cloak"]["cloak"])
-            xray_ready = bool(tool_details["xray"]["binary"])
-            ready_labels = []
-            if awg_ready:
-                ready_labels.append("AWG READY")
-            if wg_ready:
-                ready_labels.append("WG READY")
-            if openvpn_cloak_ready:
-                ready_labels.append("OPENVPN+CLOAK READY")
-            if xray_ready:
-                ready_labels.append("XRAY READY")
-            if ready_labels:
-                runtime_ready_status.setText("Runtime status: " + " / ".join(ready_labels))
-                runtime_ready_status.setStyleSheet(f"color:{C_GRN};font-size:11px;")
-            else:
-                runtime_ready_status.setText("Runtime status: NO RUNTIME")
-                runtime_ready_status.setStyleSheet(f"color:{C_AMB};font-size:11px;")
-            lines = [
-                f"Daemon pipe: {'available' if daemon_info.get('available') else 'unavailable'}",
-                f"Daemon detail: {daemon_info.get('service') or daemon_info.get('error') or 'n/a'}",
-                "",
-                f"Tools directory: {info['tools_dir']}",
-                f"Legacy fallback dir: {info['legacy_tools_dir']}",
-                "",
-                f"AWG manager: {tool_details['awg']['manager'] or 'missing'}",
-                f"AWG cli: {tool_details['awg']['cli'] or tool_details['awg']['tool'] or 'missing'}",
-                f"AWG wintun: {tool_details['awg']['dll'] or 'missing'}",
-                f"WG manager: {tool_details['wg']['manager'] or 'missing'}",
-                f"WG cli: {tool_details['wg']['cli'] or tool_details['wg']['tool'] or 'missing'}",
-                f"WG wintun: {tool_details['wg']['dll'] or 'missing'}",
-                f"OpenVPN binary: {tool_details['openvpn_cloak']['openvpn'] or 'missing'}",
-                f"Cloak binary: {tool_details['openvpn_cloak']['cloak'] or 'missing'}",
-                f"Xray binary: {tool_details['xray']['binary'] or 'missing'}",
-                "",
-                f"Bundle runtime profiles: {len(profiles)}",
-                f"Profile types: {', '.join(sorted({p.get('type', '?') for p in profiles})) if profiles else 'none'}",
-                "",
-                f"Runtime mode: {info['active_runtime_mode'] or 'none'}",
-                f"Active transport: {info['active_transport'] or 'none'}",
-                f"Active interface: {info['active_interface'] or 'none'}",
-                f"Active profile id: {info['active_profile_id'] or 'none'}",
-            ]
-            runtime_info.setPlainText("\n".join(lines))
-            dns_bundle = ((self.st.last_bundle or {}).get("decrypted") or {}).get("dns") or {}
-            dns_lines = [
-                f"Resolver: {dns_bundle.get('resolver', 'not issued')}",
-                f"Force all DNS: {'yes' if dns_bundle.get('force_all') else 'no'}",
-                f"Force DoH: {'yes' if dns_bundle.get('force_doh') else 'no'}",
-                (
-                    "Windows tunnel DNS is applied on connect; DoT is blocked and common public DoH resolvers over :443 are blocked while connected."
-                    if platform.system() == "Windows" and (dns_bundle.get("force_all") or dns_bundle.get("force_doh"))
-                    else "Host-level DNS enforcement is not active on this platform/state."
-                ),
-            ]
-            dns_info.setPlainText("\n".join(dns_lines))
-
-        def _install_startup():
-            try:
-                install_autostart()
-                _refresh_startup()
-                QMessageBox.information(dlg, "Startup", "Background startup task installed for the current user.")
-            except Exception as exc:
-                QMessageBox.critical(dlg, "Startup", str(exc))
-
-        def _remove_startup():
-            try:
-                uninstall_autostart()
-                _refresh_startup()
-                QMessageBox.information(dlg, "Startup", "Background startup task removed.")
-            except Exception as exc:
-                QMessageBox.critical(dlg, "Startup", str(exc))
-
-        def _test_api():
-            base_url = normalize_api_base_url(ui.value())
-            test_btn.setEnabled(False)
-            test_btn.setText("TESTING...")
-
-            def _c():
-                return test_api_health(base_url)
-
-            def _d(data, err):
-                test_btn.setEnabled(True)
-                test_btn.setText("Test API")
-                if err:
-                    QMessageBox.critical(dlg, "API Test Failed", str(err))
-                    return
-                ui.set_value(data["base_url"])
-                QMessageBox.information(
-                    dlg,
-                    "API Test",
-                    f"API is reachable.\n\nBase URL: {data['base_url']}\nStatus: {data['status']}",
-                )
-
-            run_async(dlg, _c, _d)
-
-        def _check_runtime():
-            _refresh_runtime_info()
-            details = self._runtime.diagnostics()["tool_details"]
-            awg_ready = bool((details["awg"]["manager"] and details["awg"]["cli"] and details["awg"]["dll"]) or (details["awg"]["tool"] and details["awg"]["quick"]))
-            wg_ready = bool((details["wg"]["manager"] and details["wg"]["cli"] and details["wg"]["dll"]) or (details["wg"]["tool"] and details["wg"]["quick"]))
-            openvpn_cloak_ready = bool(details["openvpn_cloak"]["openvpn"] and details["openvpn_cloak"]["cloak"])
-            xray_ready = bool(details["xray"]["binary"])
-            if awg_ready or wg_ready or openvpn_cloak_ready or xray_ready:
-                QMessageBox.information(dlg, "Runtime Check", "At least one transport runtime is available.")
-            else:
-                QMessageBox.warning(
-                    dlg,
-                    "Runtime Check",
-                    "No local AWG/WG/OpenVPN+Cloak/Xray runtime tools were found.\n\n"
-                    "Place the bundled runtime files in apps/client-desktop/bin for the new Windows runtime path,\n"
-                    "or keep using the older PATH-based fallback until migration is complete.",
-                )
-
-        def _open_tools():
-            try:
-                open_tools_directory()
-            except Exception as exc:
-                QMessageBox.critical(dlg, "Tools Folder", str(exc))
-
-        test_btn.clicked.connect(_test_api)
-        runtime_btn.clicked.connect(_check_runtime)
-        open_tools_btn.clicked.connect(_open_tools)
-        install_btn.clicked.connect(_install_startup)
-        remove_btn.clicked.connect(_remove_startup)
-        _refresh_runtime_info()
-
-        lay.addStretch()
-        def _sv():
-            self.st.base_url = normalize_api_base_url(ui.value())
-            self.st.save()
-            dlg.accept()
-        b=AccentButton("SAVE"); b.clicked.connect(_sv); lay.addWidget(b)
-        vl=QLabel(f"v{APP_VERSION}  ?  {platform.system()} {platform.release()}")
-        vl.setStyleSheet(f"color:{C_T3};font-size:10px;"); vl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(vl); dlg.exec()
+        self._show_settings()
 
 
 class TitleBar(QWidget):

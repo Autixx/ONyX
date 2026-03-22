@@ -13,6 +13,7 @@ from .models import (
     ResponseEnvelope,
     RuntimeProfile,
 )
+from .rate_limit import network_rate_limiter
 
 
 class OnyxRuntimeDaemon:
@@ -136,6 +137,8 @@ class OnyxRuntimeDaemon:
             session.tunnel_name,
             session.config_path,
         )
+        bw_limit_kbps = int(request.runtime.get("bw_limit_kbps") or 0)
+        await network_rate_limiter.apply(session.tunnel_name, bw_limit_kbps)
         self._active_session = session
         self._status.state = "connected"
         self._status.active_transport = session.transport
@@ -168,6 +171,7 @@ class OnyxRuntimeDaemon:
             )
             await adapter.disconnect(self._active_session)
         finally:
+            await network_rate_limiter.remove()
             self._active_session = None
             self._status = DaemonStatus()
         self._log.info("disconnect_ok")

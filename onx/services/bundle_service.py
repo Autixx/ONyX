@@ -17,6 +17,7 @@ from onx.db.models.node import Node, NodeRole, NodeStatus
 from onx.db.models.openvpn_cloak_service import OpenVpnCloakService, OpenVpnCloakServiceState
 from onx.db.models.peer import Peer
 from onx.db.models.transport_package import TransportPackage
+from onx.db.models.plan import Plan
 from onx.db.models.subscription import SubscriptionStatus
 from onx.db.models.user import User, UserStatus
 from onx.db.models.wg_service import WgService, WgServiceState
@@ -153,6 +154,7 @@ class BundleService:
                 "plan_id": subscription.plan_id,
                 "expires_at": subscription.expires_at.isoformat() if subscription.expires_at else None,
                 "device_limit": subscription.device_limit,
+                "speed_limit_kbps": db.get(Plan, subscription.plan_id).speed_limit_kbps if subscription.plan_id else None,
             },
             "dns": {
                 "resolver": self._settings.client_bundle_dns_resolver,

@@ -85,10 +85,10 @@ class SplashScreen(QWidget):
             Qt.WindowType.Window |
             Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setFixedSize(410, 670)
+        self.setFixedSize(410, 760)
         self.setStyleSheet(f"background:{C_BG};")
 
-        W, H = 410, 670
+        W, H = 410, 760
 
         self._ICON_W  = 220
         self._off_x   = (W - self._ICON_W) / 2
