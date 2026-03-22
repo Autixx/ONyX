@@ -22,7 +22,9 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+import zipfile
 from urllib.parse import urlparse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -65,6 +67,14 @@ PROJECT_BIN_DIR = APP_ROOT / "bin"
 ICON_DIR    = APP_ROOT / "assets" / "icons"
 AUTOSTART_TASK_NAME = "ONyX Desktop Client"
 APP_VERSION = "0.2.0"
+
+
+def _semver_tuple(v: str) -> tuple:
+    """Parse 'X.Y.Z' into (X, Y, Z) for simple numeric comparison."""
+    try:
+        return tuple(int(p) for p in v.strip().lstrip("v").split(".")[:3])
+    except Exception:
+        return (0, 0, 0)
 DNS_GUARD_RULE_DOT_TCP = "ONyX DNS Guard - Block DoT TCP"
 DNS_GUARD_RULE_DOT_UDP = "ONyX DNS Guard - Block DoT UDP"
 DNS_GUARD_RULE_DOH_TCP = "ONyX DNS Guard - Block Public DoH TCP"
@@ -2684,7 +2694,7 @@ class DashboardScreen(QWidget):
         self._connect_runtime()
 
     def _support(self):
-        dlg=QDialog(self); dlg.setWindowTitle("Support"); dlg.setFixedSize(400,420)
+        dlg=QDialog(self); dlg.setWindowTitle("Support"); dlg.setFixedSize(400,440)
         dlg.setStyleSheet(f"background:{C_BG0};")
         lay=QVBoxLayout(dlg); lay.setContentsMargins(26,26,26,26); lay.setSpacing(12)
         lay.addWidget(QLabel("Contact Support",styleSheet=f"color:{C_T0};font-size:16px;font-weight:bold;"))
@@ -2692,14 +2702,56 @@ class DashboardScreen(QWidget):
         ic=QComboBox(); ic.addItems(["Connection","Speed","Billing","Other"]); lay.addWidget(ic)
         ml=QLabel("DESCRIPTION"); ml.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:2px;"); lay.addWidget(ml)
         mb=QTextEdit(); mb.setFixedHeight(110); lay.addWidget(mb)
-        lay.addWidget(QLabel("Diagnostics will be attached automatically.",
-                             styleSheet=f"color:{C_T2};font-size:11px;"))
+        status_lbl=QLabel("Diagnostics will be attached automatically.")
+        status_lbl.setStyleSheet(f"color:{C_T2};font-size:11px;")
+        lay.addWidget(status_lbl)
         lay.addStretch()
+        send_btn=AccentButton("SEND REQUEST"); lay.addWidget(send_btn)
+
         def _s():
-            if not mb.toPlainText().strip(): return
-            QMessageBox.information(dlg,"Support","Request queued — will submit when endpoint is available.")
-            dlg.accept()
-        b=AccentButton("SEND REQUEST"); b.clicked.connect(_s); lay.addWidget(b)
+            msg=mb.toPlainText().strip()
+            if not msg:
+                status_lbl.setText("Please describe your issue before sending.")
+                status_lbl.setStyleSheet(f"color:{C_RED};font-size:11px;")
+                return
+            send_btn.setEnabled(False); send_btn.setText("SENDING...")
+            status_lbl.setText("Collecting diagnostics..."); status_lbl.setStyleSheet(f"color:{C_T2};font-size:11px;")
+            issue_type = ic.currentText().lower()
+            base = self.st.base_url; hdrs = self._hdrs()
+            did = self.st.device_id
+
+            def _c():
+                diag = {}
+                try: diag = self._runtime.diagnostics()
+                except Exception: pass
+                diag["os"] = platform.system()
+                diag["os_version"] = platform.version()
+                payload = {
+                    "device_id": did or None,
+                    "issue_type": issue_type,
+                    "message": msg,
+                    "diagnostics": diag,
+                    "app_version": APP_VERSION,
+                    "platform": "desktop",
+                }
+                with httpx_client(timeout=20, base_url=base) as c:
+                    r = c.post(base + "/client/support", json=payload, headers=hdrs)
+                    if r.status_code >= 400:
+                        raise RuntimeError(response_detail(r))
+                return r.json()
+
+            def _d(result, err):
+                send_btn.setEnabled(True); send_btn.setText("SEND REQUEST")
+                if err:
+                    status_lbl.setText(f"Failed: {err}")
+                    status_lbl.setStyleSheet(f"color:{C_RED};font-size:11px;")
+                else:
+                    QMessageBox.information(dlg, "Support", "Your request has been submitted. Our team will review it shortly.")
+                    dlg.accept()
+
+            run_async(dlg, _c, _d)
+
+        send_btn.clicked.connect(_s)
         dlg.exec()
 
     def _settings(self):
@@ -2835,6 +2887,7 @@ class ONyXClient(QMainWindow):
             self._go(2)
             self._ds.refresh(offline=True)
             self._ds._refresh_me()
+            QTimer.singleShot(5000, self._check_for_updates)
         else:
             self._go(0)
 
@@ -2960,6 +3013,7 @@ class ONyXClient(QMainWindow):
 
     def _on_login(self):
         self._ds.refresh(); self._go(2); self._update_tray_state()
+        QTimer.singleShot(3000, self._check_for_updates)
 
     def _on_logout(self):
         self._ds.disconnect_runtime(silent=True)
@@ -2973,6 +3027,139 @@ class ONyXClient(QMainWindow):
                     pass
         def _d(_,__): self.st.clear_session(); self._go(0); self._update_tray_state()
         run_async(self,_c,_d)
+
+
+    # ── Auto-update ────────────────────────────────────────────────────────────
+
+    def _check_for_updates(self):
+        """Background check: call /client/updates/latest and notify if newer version is available."""
+        if not self.st.base_url:
+            return
+        base = self.st.base_url
+        tok = self.st.session_token
+
+        def _c():
+            hdrs = {"Authorization": f"Bearer {tok}"} if tok else {}
+            with httpx_client(timeout=15, base_url=base) as c:
+                r = c.get(base + "/client/updates/latest", headers=hdrs)
+                r.raise_for_status()
+                return r.json()
+
+        def _d(result, err):
+            if err or not result:
+                return
+            srv_ver = (result.get("version") or "").strip()
+            if not srv_ver:
+                return
+            try:
+                if _semver_tuple(srv_ver) <= _semver_tuple(APP_VERSION):
+                    return
+            except Exception:
+                return
+            self._pending_update = result
+            notes = result.get("notes") or ""
+            if self._tray is not None:
+                try:
+                    self._tray.messageClicked.disconnect(self._on_update_tray_click)
+                except Exception:
+                    pass
+                self._tray.messageClicked.connect(self._on_update_tray_click)
+                self._tray.showMessage(
+                    "ONyX Update Available",
+                    f"Version {srv_ver} is ready. Click here to install.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    10000,
+                )
+            else:
+                self._prompt_update(srv_ver, result.get("download_url") or "", notes)
+
+        run_async(self, _c, _d)
+
+    def _on_update_tray_click(self):
+        upd = getattr(self, "_pending_update", None)
+        if not upd:
+            return
+        self._prompt_update(
+            upd.get("version", ""),
+            upd.get("download_url", ""),
+            upd.get("notes", ""),
+        )
+
+    def _prompt_update(self, version: str, download_url: str, notes: str):
+        if not download_url:
+            QMessageBox.information(
+                self, "ONyX Update",
+                f"Version {version} is available, but no download URL is configured yet.",
+            )
+            return
+        detail = f"\n\n{notes}" if notes else ""
+        reply = QMessageBox.question(
+            self, "Update Available",
+            f"ONyX {version} is available.{detail}\n\nDownload and install now? The app will restart automatically.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._download_and_apply_update(version, download_url)
+
+    def _download_and_apply_update(self, version: str, download_url: str):
+        """Download the update ZIP, extract it, write a bat helper, run it, and quit."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Updating ONyX")
+        dlg.setFixedSize(360, 90)
+        dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowType.WindowCloseButtonHint)
+        lay = QVBoxLayout(dlg)
+        lbl = QLabel(f"Downloading ONyX {version}…")
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(lbl)
+        dlg.show()
+
+        exe_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else APP_ROOT
+
+        def _c():
+            tmp = Path(tempfile.mkdtemp(prefix="onyx_update_"))
+            zip_path = tmp / "update.zip"
+            with httpx.Client(timeout=180, follow_redirects=True, trust_env=False) as c:
+                with c.stream("GET", download_url) as resp:
+                    resp.raise_for_status()
+                    with open(zip_path, "wb") as f:
+                        for chunk in resp.iter_bytes(65536):
+                            f.write(chunk)
+            extract_dir = tmp / "extracted"
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(extract_dir)
+            return tmp
+
+        def _d(tmp_path, err):
+            dlg.accept()
+            if err:
+                QMessageBox.critical(self, "Update Failed", str(err))
+                return
+            extract_dir = tmp_path / "extracted"
+            top_items = list(extract_dir.iterdir())
+            src_dir = (
+                top_items[0]
+                if len(top_items) == 1 and top_items[0].is_dir()
+                else extract_dir
+            )
+            bat_path = tmp_path / "apply_update.bat"
+            bat_path.write_text(
+                "@echo off\r\n"
+                "timeout /t 2 /nobreak >nul\r\n"
+                f"xcopy /E /I /Y \"{src_dir}\\*\" \"{exe_dir}\\\"\r\n"
+                f"start \"\" \"{exe_dir / 'ONyXClient.exe'}\"\r\n",
+                encoding="utf-8",
+            )
+            subprocess.Popen(
+                ["cmd", "/c", str(bat_path)],
+                creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
+                close_fds=True,
+            )
+            self._quit_requested = True
+            if self._tray is not None:
+                self._tray.hide()
+            QApplication.instance().quit()
+
+        run_async(dlg, _c, _d)
 
 
 # ?? Entry point ????????????????????????????????????????????????????????????????
