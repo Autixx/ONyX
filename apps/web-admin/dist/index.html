@@ -7981,7 +7981,8 @@ function showPage(pageId){
   }
   syncTopologyAutoButton();
   if(pageId==='failban'){ refreshFailban().catch(function(){}); }
-  if(pageId==='tickets'){ loadSupportTickets(); }
+  if(pageId==='tickets'){ loadSupportTickets(); startSupportTicketsRefresh(); }
+  else { stopSupportTicketsRefresh(); }
 }
 
 // Patch old nav click wiring — the flat navtabs is gone, use showPage directly
@@ -8124,11 +8125,14 @@ var _supportTicketId = null;
 var _supportTypingTimer = null;
 var _supportTypingThrottle = false;
 var _supportTickets = {};
+var _supportTicketsTimer = null;
 
-function loadSupportTickets() {
+function loadSupportTickets(silent) {
   var sidebar = document.getElementById('ticketsSidebar');
   if (!sidebar) return;
-  sidebar.innerHTML = '<div style="padding:12px;color:var(--t2);font-size:13px;">Loading…</div>';
+  if (!silent) {
+    sidebar.innerHTML = '<div style="padding:12px;color:var(--t2);font-size:13px;">Loading…</div>';
+  }
   apiFetch(API_PREFIX + '/admin/support-tickets?limit=200').then(function(data) {
     _supportTickets = {};
     if (!data || !data.length) {
@@ -8136,17 +8140,32 @@ function loadSupportTickets() {
       return;
     }
     data.forEach(function(t) { _supportTickets[t.id] = t; });
+    var prevActive = _supportTicketId;
     sidebar.innerHTML = data.map(function(t) {
       var dt = t.created_at ? new Date(t.created_at).toLocaleString() : '';
-      var uid = t.user_id ? t.user_id.slice(0, 12) : '?';
-      return '<div class="ticket-user-item" onclick="selectSupportTicket(this,\'' + esc(t.id) + '\')" data-tid="' + esc(t.id) + '">'
-        + '<div class="ticket-user-name">' + esc(uid) + '</div>'
+      var name = t.username || (t.user_id ? t.user_id.slice(0, 12) : '?');
+      var isActive = t.id === prevActive ? ' active' : '';
+      return '<div class="ticket-user-item' + isActive + '" onclick="selectSupportTicket(this,\'' + esc(t.id) + '\')" data-tid="' + esc(t.id) + '">'
+        + '<div class="ticket-user-name">' + esc(name) + '</div>'
         + '<div class="ticket-user-meta">' + esc(t.issue_type) + ' · ' + esc(dt) + '</div>'
         + '</div>';
     }).join('');
   }).catch(function() {
-    sidebar.innerHTML = '<div style="padding:12px;color:var(--t2);font-size:13px;">Failed to load</div>';
+    if (!silent) {
+      sidebar.innerHTML = '<div style="padding:12px;color:var(--t2);font-size:13px;">Failed to load</div>';
+    }
   });
+}
+
+function startSupportTicketsRefresh() {
+  stopSupportTicketsRefresh();
+  _supportTicketsTimer = setInterval(function() {
+    loadSupportTickets(true);
+  }, 10000);
+}
+
+function stopSupportTicketsRefresh() {
+  if (_supportTicketsTimer) { clearInterval(_supportTicketsTimer); _supportTicketsTimer = null; }
 }
 
 function selectSupportTicket(el, ticketId) {
@@ -8156,10 +8175,10 @@ function selectSupportTicket(el, ticketId) {
   el.classList.add('active');
   if (_supportWs) { _supportWs.close(); _supportWs = null; }
   _supportTicketId = ticket.id;
-  var uid = ticket.user_id ? ticket.user_id.slice(0, 12) : '?';
+  var displayName = ticket.username || (ticket.user_id ? ticket.user_id.slice(0, 12) : '?');
   document.getElementById('ticketsChatHeader').innerHTML =
     '<span>' + esc(ticket.issue_type.toUpperCase()) + '</span>'
-    + ' <span style="color:var(--t2);font-weight:400;font-size:12px;">' + esc(uid) + '</span>'
+    + ' <span style="color:var(--t2);font-weight:400;font-size:12px;">' + esc(displayName) + '</span>'
     + ' <span id="clientStatusDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--t2);vertical-align:middle;" title="Connecting…"></span>'
     + ' <button class="btn" style="margin-left:auto;padding:2px 10px;font-size:12px;color:var(--red);border-color:rgba(255,69,96,.35);" onclick="deleteSupportTicket(\'' + esc(ticket.id) + '\')">DELETE</button>';
   var box = document.getElementById('ticketsMessages');
@@ -8170,7 +8189,7 @@ function selectSupportTicket(el, ticketId) {
   _supportWs = ws;
   ws.onopen = function() {
     var dot = document.getElementById('clientStatusDot');
-    if (dot) { dot.style.background = 'var(--acc)'; dot.title = 'WS connected'; }
+    if (dot) { dot.style.background = 'var(--amb)'; dot.title = 'WS connected, waiting for client…'; }
   };
   ws.onmessage = function(ev) {
     var frame; try { frame = JSON.parse(ev.data); } catch(e) { return; }

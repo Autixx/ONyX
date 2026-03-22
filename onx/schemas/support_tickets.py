@@ -34,6 +34,7 @@ class SupportTicketCreate(BaseModel):
 class SupportTicketRead(BaseModel):
     id: str
     user_id: str
+    username: str | None = None
     device_id: str | None
     issue_type: str
     message: str

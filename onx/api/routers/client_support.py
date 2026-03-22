@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from onx.api.deps import get_database_session
 from onx.api.routers.client_auth import _extract_bearer_token
 from onx.db.models.support_ticket import SupportTicket
+from onx.db.models.user import User
 from onx.schemas.support_tickets import SupportTicketCreate, SupportTicketRead
 from onx.services.client_auth_service import client_auth_service
 
@@ -45,7 +46,9 @@ def create_support_ticket(
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
-    return SupportTicketRead.model_validate(ticket)
+    result = SupportTicketRead.model_validate(ticket)
+    result.username = user.username
+    return result
 
 
 @router.get("/admin/support-tickets", response_model=list[SupportTicketRead], status_code=status.HTTP_200_OK)
@@ -53,9 +56,15 @@ def list_support_tickets(
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_database_session),
 ) -> list[SupportTicketRead]:
-    tickets = list(
-        db.scalars(
-            select(SupportTicket).order_by(SupportTicket.created_at.desc()).limit(limit)
-        ).all()
-    )
-    return [SupportTicketRead.model_validate(t) for t in tickets]
+    rows = db.execute(
+        select(SupportTicket, User.username)
+        .join(User, User.id == SupportTicket.user_id, isouter=True)
+        .order_by(SupportTicket.created_at.desc())
+        .limit(limit)
+    ).all()
+    result = []
+    for ticket, username in rows:
+        item = SupportTicketRead.model_validate(ticket)
+        item.username = username
+        result.append(item)
+    return result

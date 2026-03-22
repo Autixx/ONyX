@@ -2907,7 +2907,7 @@ class SupportChatPanel(QWidget):
         self._send_btn.clicked.connect(self._send_msg)
 
     def _close_panel(self):
-        w = self.parent()
+        w = self.window()
         if hasattr(w, "toggle_support_panel"):
             w.toggle_support_panel()
         else:
