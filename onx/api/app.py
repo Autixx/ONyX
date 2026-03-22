@@ -58,6 +58,7 @@ from onx.services.realtime_service import realtime_service
 from onx.workers.job_worker import JobWorker
 from onx.workers.probe_scheduler import ProbeScheduler
 from onx.workers.retention_scheduler import RetentionScheduler
+from onx.workers.support_autoclose_scheduler import SupportAutoCloseScheduler
 
 
 @asynccontextmanager
@@ -75,6 +76,9 @@ async def lifespan(_: FastAPI):
     retention_scheduler = RetentionScheduler(
         interval_seconds=settings.retention_scheduler_interval_seconds,
     )
+    support_autoclose_scheduler = SupportAutoCloseScheduler(
+        interval_seconds=settings.support_autoclose_scheduler_interval_seconds,
+    )
     init_db()
     with SessionLocal() as db:
         admin_web_auth_service.ensure_bootstrap_user(db)
@@ -85,8 +89,11 @@ async def lifespan(_: FastAPI):
         probe_scheduler.start()
     if settings.retention_scheduler_enabled:
         retention_scheduler.start()
+    if settings.support_autoclose_enabled:
+        support_autoclose_scheduler.start()
     yield
     realtime_service.stop()
+    support_autoclose_scheduler.stop()
     retention_scheduler.stop()
     probe_scheduler.stop()
     worker.stop()

@@ -45,7 +45,7 @@ _RE_ANSI = re.compile(
 # Non-printable control characters except \n (newline), \r (CR), \t (tab)
 _RE_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
-from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import delete as sql_delete, select
 from sqlalchemy.orm import Session
 
@@ -54,7 +54,7 @@ from onx.api.routers.client_auth import _extract_bearer_token
 from onx.api.security.admin_access import admin_access_control
 from onx.db.models.subscription import Subscription, SubscriptionStatus
 from onx.db.models.support_chat_message import SupportChatMessage
-from onx.db.models.support_ticket import SupportTicket
+from onx.db.models.support_ticket import SupportTicket, TicketStatus
 from onx.db.session import SessionLocal
 from onx.services.client_auth_service import client_auth_service
 from onx.services.support_chat_service import support_chat_service
@@ -129,6 +129,15 @@ def _persist_message(ticket_id: str, sender: str, text: str) -> dict:
             text=text,
         )
         db.add(msg)
+        # Update ticket timestamps and reset autoclose flag on client message
+        ticket = db.scalars(select(SupportTicket).where(SupportTicket.id == ticket_id)).first()
+        if ticket:
+            now = datetime.now(timezone.utc)
+            if sender == "client":
+                ticket.last_client_message_at = now
+                ticket.autoclose_warning_sent = False
+            else:
+                ticket.last_operator_message_at = now
         db.commit()
         db.refresh(msg)
         return {
@@ -142,6 +151,20 @@ def _persist_message(ticket_id: str, sender: str, text: str) -> dict:
                 else datetime.now(timezone.utc).isoformat()
             ),
         }
+
+
+def _maybe_promote_to_in_progress(ticket_id: str) -> str | None:
+    """Promote ticket from pending → in_progress on first agent reply.
+
+    Returns the new status if changed, otherwise None.
+    """
+    with SessionLocal() as db:
+        ticket = db.scalars(select(SupportTicket).where(SupportTicket.id == ticket_id)).first()
+        if ticket and ticket.status == TicketStatus.PENDING:
+            ticket.status = TicketStatus.IN_PROGRESS
+            db.commit()
+            return TicketStatus.IN_PROGRESS
+    return None
 
 
 async def _ws_loop(
@@ -364,6 +387,12 @@ async def agent_support_ws(
         frame = {"type": "message", **saved}
         await websocket.send_json(frame)
         support_chat_service.deliver_to_client(ticket_id, frame)
+        new_status = await asyncio.to_thread(_maybe_promote_to_in_progress, ticket_id)
+        if new_status:
+            support_chat_service.broadcast(
+                ticket_id,
+                {"type": "system.status_changed", "ticket_id": ticket_id, "status": new_status},
+            )
 
     async def _on_typing() -> None:
         support_chat_service.deliver_to_client(
@@ -424,8 +453,13 @@ def delete_support_ticket(
     ticket_id: str,
     db: Session = Depends(get_database_session),
 ) -> None:
-    db.execute(sql_delete(SupportChatMessage).where(SupportChatMessage.ticket_id == ticket_id))
     ticket = db.scalars(select(SupportTicket).where(SupportTicket.id == ticket_id)).first()
+    if ticket and ticket.status not in (TicketStatus.RESOLVED, TicketStatus.REJECTED):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ticket can only be deleted when resolved or rejected.",
+        )
+    db.execute(sql_delete(SupportChatMessage).where(SupportChatMessage.ticket_id == ticket_id))
     if ticket:
         db.delete(ticket)
     db.commit()

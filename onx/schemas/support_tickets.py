@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -15,7 +15,7 @@ class SupportTicketCreate(BaseModel):
     @field_validator("issue_type")
     @classmethod
     def validate_issue_type(cls, v: str) -> str:
-        allowed = {"connection", "speed", "billing", "other"}
+        allowed = {"connection", "access", "account", "other"}
         if v.lower() not in allowed:
             raise ValueError(f"issue_type must be one of: {', '.join(sorted(allowed))}")
         return v.lower()
@@ -41,6 +41,11 @@ class SupportTicketRead(BaseModel):
     diagnostics: dict[str, Any] | None
     app_version: str | None
     platform: str | None
+    status: str = "pending"
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class SupportTicketStatusPatch(BaseModel):
+    status: Literal["resolved", "rejected"]

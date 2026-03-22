@@ -8127,6 +8127,46 @@ var _supportTypingThrottle = false;
 var _supportTickets = {};
 var _supportTicketsTimer = null;
 
+function _renderTicketChatHeader(ticket) {
+  var hdr = document.getElementById('ticketsChatHeader');
+  if (!hdr) return;
+  var displayName = ticket.username || (ticket.user_id ? ticket.user_id.slice(0, 12) : '?');
+  var st = ticket.status || 'pending';
+  var stColors = {pending:'var(--amb)',in_progress:'var(--acc)',resolved:'var(--grn)',rejected:'var(--red)'};
+  var stLabels = {pending:'PENDING',in_progress:'IN PROGRESS',resolved:'RESOLVED',rejected:'REJECTED'};
+  var stBadge = '<span id="ticketStatusBadge" style="font-size:11px;font-weight:400;color:' + (stColors[st]||'var(--t2)') + ';border:1px solid ' + (stColors[st]||'var(--t2)') + ';border-radius:2px;padding:0 5px;">' + (stLabels[st]||st.toUpperCase()) + '</span>';
+  var canClose = (st === 'pending' || st === 'in_progress');
+  var canDelete = (st === 'resolved' || st === 'rejected');
+  hdr.innerHTML =
+    '<span>' + esc(ticket.issue_type.toUpperCase()) + '</span>'
+    + ' <span style="color:var(--t2);font-weight:400;font-size:12px;">' + esc(displayName) + '</span>'
+    + ' ' + stBadge
+    + ' <span id="clientStatusDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--t2);vertical-align:middle;" title="Connecting…"></span>'
+    + ' <span style="margin-left:auto;display:flex;gap:6px;align-items:center;">'
+    + (canClose ? '<button class="btn" style="padding:2px 10px;font-size:12px;color:var(--grn);border-color:rgba(0,200,100,.35);" onclick="resolveTicket(\'' + esc(ticket.id) + '\')">RESOLVE</button>' : '')
+    + (canClose ? '<button class="btn" style="padding:2px 10px;font-size:12px;color:var(--red);border-color:rgba(255,69,96,.35);" onclick="rejectTicket(\'' + esc(ticket.id) + '\')">REJECT</button>' : '')
+    + (canDelete ? '<button class="btn" style="padding:2px 10px;font-size:12px;color:var(--red);border-color:rgba(255,69,96,.35);" onclick="deleteSupportTicket(\'' + esc(ticket.id) + '\')">DELETE</button>' : '')
+    + '</span>';
+}
+
+function resolveTicket(ticketId) {
+  if (!confirm('Mark this ticket as Resolved?')) return;
+  apiFetch(API_PREFIX + '/admin/support/' + ticketId + '/status', {method:'PATCH', body: JSON.stringify({status:'resolved'})}).then(function(data) {
+    if (_supportTickets[ticketId]) { _supportTickets[ticketId].status = 'resolved'; _renderTicketChatHeader(_supportTickets[ticketId]); }
+    loadSupportTickets(true);
+    showToast('Ticket resolved', 'ok');
+  }).catch(function(e) { showToast('Failed: ' + e, 'err'); });
+}
+
+function rejectTicket(ticketId) {
+  if (!confirm('Mark this ticket as Rejected?')) return;
+  apiFetch(API_PREFIX + '/admin/support/' + ticketId + '/status', {method:'PATCH', body: JSON.stringify({status:'rejected'})}).then(function(data) {
+    if (_supportTickets[ticketId]) { _supportTickets[ticketId].status = 'rejected'; _renderTicketChatHeader(_supportTickets[ticketId]); }
+    loadSupportTickets(true);
+    showToast('Ticket rejected', 'ok');
+  }).catch(function(e) { showToast('Failed: ' + e, 'err'); });
+}
+
 function loadSupportTickets(silent) {
   var sidebar = document.getElementById('ticketsSidebar');
   if (!sidebar) return;
@@ -8145,8 +8185,12 @@ function loadSupportTickets(silent) {
       var dt = t.created_at ? new Date(t.created_at).toLocaleString() : '';
       var name = t.username || (t.user_id ? t.user_id.slice(0, 12) : '?');
       var isActive = t.id === prevActive ? ' active' : '';
+      var stColors = {pending:'var(--amb)',in_progress:'var(--acc)',resolved:'var(--grn)',rejected:'var(--red)'};
+      var stLabels = {pending:'PENDING',in_progress:'IN PROGRESS',resolved:'RESOLVED',rejected:'REJECTED'};
+      var st = t.status || 'pending';
+      var badge = '<span style="font-size:10px;color:' + (stColors[st]||'var(--t2)') + ';border:1px solid ' + (stColors[st]||'var(--t2)') + ';border-radius:2px;padding:0 3px;margin-left:4px;">' + (stLabels[st]||st.toUpperCase()) + '</span>';
       return '<div class="ticket-user-item' + isActive + '" onclick="selectSupportTicket(this,\'' + esc(t.id) + '\')" data-tid="' + esc(t.id) + '">'
-        + '<div class="ticket-user-name">' + esc(name) + '</div>'
+        + '<div class="ticket-user-name">' + esc(name) + badge + '</div>'
         + '<div class="ticket-user-meta">' + esc(t.issue_type) + ' · ' + esc(dt) + '</div>'
         + '</div>';
     }).join('');
@@ -8176,11 +8220,8 @@ function selectSupportTicket(el, ticketId) {
   if (_supportWs) { _supportWs.close(); _supportWs = null; }
   _supportTicketId = ticket.id;
   var displayName = ticket.username || (ticket.user_id ? ticket.user_id.slice(0, 12) : '?');
-  document.getElementById('ticketsChatHeader').innerHTML =
-    '<span>' + esc(ticket.issue_type.toUpperCase()) + '</span>'
-    + ' <span style="color:var(--t2);font-weight:400;font-size:12px;">' + esc(displayName) + '</span>'
-    + ' <span id="clientStatusDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--t2);vertical-align:middle;" title="Connecting…"></span>'
-    + ' <button class="btn" style="margin-left:auto;padding:2px 10px;font-size:12px;color:var(--red);border-color:rgba(255,69,96,.35);" onclick="deleteSupportTicket(\'' + esc(ticket.id) + '\')">DELETE</button>';
+  _renderTicketChatHeader(ticket);
+  document.getElementById('ticketsChatHeader').querySelector && void(0);
   var box = document.getElementById('ticketsMessages');
   box.innerHTML = '<div style="color:var(--t2);font-size:13px;text-align:center;padding:20px;">Connecting…</div>';
   document.getElementById('ticketTypingIndicator').style.display = 'none';
@@ -8250,6 +8291,19 @@ function _handleSupportFrame(frame) {
   } else if (frame.type === 'system.client_offline') {
     var dot = document.getElementById('clientStatusDot');
     if (dot) { dot.style.background = 'var(--amb)'; dot.title = 'Client offline'; }
+  } else if (frame.type === 'system.status_changed') {
+    var tid = frame.ticket_id;
+    if (_supportTickets[tid]) {
+      _supportTickets[tid].status = frame.status;
+      if (tid === _supportTicketId) { _renderTicketChatHeader(_supportTickets[tid]); }
+    }
+    loadSupportTickets(true);
+  } else if (frame.type === 'system.autoclose_warning') {
+    var b2 = document.getElementById('ticketsMessages');
+    if (b2) {
+      b2.innerHTML += '<div style="color:var(--amb);font-size:12px;text-align:center;padding:6px;border:1px solid var(--amb);border-radius:4px;margin:4px 0;">⚠ This ticket will be auto-closed in ' + (frame.closes_in_hours||12) + ' hours due to inactivity.</div>';
+      b2.scrollTop = b2.scrollHeight;
+    }
   }
 }
 

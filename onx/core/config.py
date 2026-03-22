@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     probe_scheduler_only_active_links: bool = True
     retention_scheduler_enabled: bool = True
     retention_scheduler_interval_seconds: int = 3600
+    support_autoclose_enabled: bool = True
+    support_autoclose_scheduler_interval_seconds: int = 3600
     probe_result_retention_seconds: int = 604800
     event_log_retention_seconds: int = 2592000
     probe_ping_count: int = 3

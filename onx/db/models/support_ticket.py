@@ -1,10 +1,18 @@
 from datetime import datetime
+from enum import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from onx.db.base import Base
+
+
+class TicketStatus(StrEnum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    RESOLVED = "resolved"
+    REJECTED = "rejected"
 
 
 class SupportTicket(Base):
@@ -18,6 +26,10 @@ class SupportTicket(Base):
     diagnostics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     app_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     platform: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=TicketStatus.PENDING)
+    last_client_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_operator_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    autoclose_warning_sent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

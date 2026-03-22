@@ -2792,8 +2792,33 @@ class TitleBar(QWidget):
 
 # ── Support chat panel ─────────────────────────────────────────────────────────
 
+_ISSUE_TYPES = [
+    ("connection", "Соединение"),
+    ("access",     "Доступ"),
+    ("account",    "Аккаунт"),
+    ("other",      "Прочее"),
+]
+
+_STATUS_LABELS = {
+    "pending":     "На рассмотрении",
+    "in_progress": "В работе",
+    "resolved":    "Решён",
+    "rejected":    "Отказ",
+}
+_STATUS_COLORS = {
+    "pending":     "#e6a817",
+    "in_progress": "#00c8b4",
+    "resolved":    "#27ae60",
+    "rejected":    "#e74c3c",
+}
+
+
 class SupportChatPanel(QWidget):
-    """Embedded support chat panel — attached to the right side of the main window."""
+    """Embedded support chat panel — attached to the left of the main window.
+
+    Layer 0 — ticket list (QStackedWidget page 0)
+    Layer 1 — chat view  (QStackedWidget page 1)
+    """
 
     unread_changed = pyqtSignal(int)
 
@@ -2807,6 +2832,8 @@ class SupportChatPanel(QWidget):
         self._ws        = None
         self._unread    = 0
         self._ticket_id: str | None = None
+        self._ticket_status: str = "pending"
+        self._tickets: list[dict] = []
 
         self._agent_typing_timer = QTimer(self)
         self._agent_typing_timer.setSingleShot(True)
@@ -2829,35 +2856,232 @@ class SupportChatPanel(QWidget):
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(0)
 
-        # Titlebar
+        # ── Shared titlebar ────────────────────────────────────────────────────
         tb = QWidget()
         tb.setFixedHeight(38)
         tb.setStyleSheet(f"background:{C_BG1};border-bottom:1px solid {C_BDR};")
         tb_lay = QHBoxLayout(tb)
         tb_lay.setContentsMargins(14, 0, 10, 0)
         tb_lay.setSpacing(0)
+
+        self._tb_back = TitleBar._mk_btn("←", "Back to list", self._show_list, C_T2)
+        self._tb_back.hide()
+        tb_lay.addWidget(self._tb_back)
+
         logo = QLabel("ONyX")
         logo.setStyleSheet(
             f"color:{C_ACC2};font-family:'Courier New';"
             "font-size:13px;font-weight:bold;letter-spacing:3px;"
         )
         tb_lay.addWidget(logo)
-        sub = QLabel("  SUPPORT")
-        sub.setStyleSheet(f"color:{C_T2};font-size:12px;letter-spacing:2px;")
-        tb_lay.addWidget(sub)
+        self._tb_sub = QLabel("  SUPPORT")
+        self._tb_sub.setStyleSheet(f"color:{C_T2};font-size:12px;letter-spacing:2px;")
+        tb_lay.addWidget(self._tb_sub)
         tb_lay.addStretch()
         tb_lay.addWidget(TitleBar._mk_btn("✕", "Close", self._close_panel, C_RED))
         rl.addWidget(tb)
 
+        # ── Stacked widget — list / chat ───────────────────────────────────────
+        self._stack = QStackedWidget()
+        rl.addWidget(self._stack, 1)
+
+        self._stack.addWidget(self._build_list_page())
+        self._stack.addWidget(self._build_chat_page())
+        self._stack.setCurrentIndex(0)
+
+    # ── Page 0: ticket list ─────────────────────────────────────────────────────
+
+    def _build_list_page(self) -> QWidget:
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+        # Loading label
+        self._list_status = QLabel("Загрузка…")
+        self._list_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._list_status.setStyleSheet(f"color:{C_T2};font-size:12px;padding:20px;")
+        lay.addWidget(self._list_status)
+
+        # Scroll area for ticket cards
+        self._list_scroll = QScrollArea()
+        self._list_scroll.setWidgetResizable(True)
+        self._list_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._list_scroll.setStyleSheet(
+            f"QScrollArea{{border:none;background:{C_BG0};}}"
+            f"QScrollBar:vertical{{background:{C_BG1};width:6px;}}"
+            f"QScrollBar::handle:vertical{{background:{C_BDR};border-radius:3px;}}"
+        )
+        self._list_scroll.hide()
+        inner = QWidget()
+        inner.setStyleSheet(f"background:{C_BG0};")
+        self._list_lay = QVBoxLayout(inner)
+        self._list_lay.setContentsMargins(8, 8, 8, 8)
+        self._list_lay.setSpacing(6)
+        self._list_lay.addStretch()
+        self._list_scroll.setWidget(inner)
+        lay.addWidget(self._list_scroll, 1)
+
+        # New chat button
+        btn_row = QWidget()
+        btn_row.setStyleSheet(f"background:{C_BG1};border-top:1px solid {C_BDR};")
+        btn_lay = QHBoxLayout(btn_row)
+        btn_lay.setContentsMargins(12, 8, 12, 8)
+        new_btn = QPushButton("+ Новое обращение")
+        new_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        new_btn.setStyleSheet(
+            f"QPushButton{{background:{C_ACC};color:#000;border:none;"
+            f"border-radius:4px;padding:7px 0;font-size:12px;font-weight:bold;}}"
+            f"QPushButton:hover{{background:{C_ACC2};}}"
+        )
+        new_btn.clicked.connect(self._show_new_ticket_form)
+        btn_lay.addWidget(new_btn)
+        lay.addWidget(btn_row)
+
+        return page
+
+    def _render_ticket_list(self) -> None:
+        # Clear existing cards (keep stretch)
+        while self._list_lay.count() > 1:
+            item = self._list_lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not self._tickets:
+            self._list_status.setText("Обращений пока нет.\nНажмите «+ Новое обращение».")
+            self._list_status.show()
+            self._list_scroll.hide()
+            return
+
+        self._list_status.hide()
+        self._list_scroll.show()
+
+        for t in self._tickets:
+            card = self._make_ticket_card(t)
+            self._list_lay.insertWidget(self._list_lay.count() - 1, card)
+
+    def _make_ticket_card(self, t: dict) -> QWidget:
+        tid   = t.get("id", "")
+        issue = t.get("issue_type", "other")
+        st    = t.get("status", "pending")
+        dt_s  = t.get("created_at", "")
+        try:
+            dt = datetime.fromisoformat(str(dt_s).replace("Z", "+00:00"))
+            dt_label = dt.strftime("%d.%m.%Y %H:%M")
+        except Exception:
+            dt_label = str(dt_s)[:16]
+
+        st_label = _STATUS_LABELS.get(st, st)
+        st_color = _STATUS_COLORS.get(st, C_T2)
+
+        card = QWidget()
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
+        card.setStyleSheet(
+            f"QWidget{{background:{C_BG1};border:1px solid {C_BDR};"
+            f"border-radius:6px;}}"
+            f"QWidget:hover{{border-color:{C_ACC};background:{C_BG2};}}"
+        )
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(12, 8, 12, 8)
+        cl.setSpacing(3)
+
+        top = QHBoxLayout()
+        issue_lbl = QLabel(issue.upper())
+        issue_lbl.setStyleSheet(f"color:{C_T0};font-size:12px;font-weight:bold;border:none;")
+        top.addWidget(issue_lbl)
+        top.addStretch()
+        st_lbl = QLabel(st_label)
+        st_lbl.setStyleSheet(
+            f"color:{st_color};font-size:10px;border:1px solid {st_color};"
+            f"border-radius:2px;padding:0 4px;"
+        )
+        top.addWidget(st_lbl)
+        cl.addLayout(top)
+
+        dt_lbl = QLabel(dt_label)
+        dt_lbl.setStyleSheet(f"color:{C_T2};font-size:11px;border:none;")
+        cl.addWidget(dt_lbl)
+
+        # Click → open chat
+        card.mousePressEvent = lambda _ev, _t=t: self._open_ticket(_t)
+        return card
+
+    def _show_new_ticket_form(self) -> None:
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Новое обращение")
+        dlg.setFixedWidth(370)
+        dlg.setStyleSheet(APP_STYLE + f"QDialog{{background:{C_BG1};border:1px solid {C_BDR};}}")
+        lay = QVBoxLayout(dlg)
+        lay.setSpacing(10)
+        lay.setContentsMargins(20, 16, 20, 16)
+
+        lay.addWidget(QLabel("<b style='color:#fff'>Направление запроса</b>"))
+        combo = QComboBox()
+        combo.setStyleSheet(
+            f"background:{C_BG0};color:{C_T0};border:1px solid {C_BDR};"
+            f"border-radius:4px;padding:5px 8px;font-size:13px;"
+        )
+        for code, label in _ISSUE_TYPES:
+            combo.addItem(label, code)
+        lay.addWidget(combo)
+
+        lay.addWidget(QLabel("<b style='color:#fff'>Описание проблемы</b>"))
+        msg_edit = QTextEdit()
+        msg_edit.setFixedHeight(100)
+        msg_edit.setPlaceholderText("Опишите проблему…")
+        msg_edit.setStyleSheet(
+            f"background:{C_BG0};color:{C_T0};border:1px solid {C_BDR};"
+            f"border-radius:4px;padding:6px 10px;font-size:13px;"
+        )
+        lay.addWidget(msg_edit)
+
+        btn_row = QHBoxLayout()
+        cancel = QPushButton("Отмена")
+        cancel.setStyleSheet(
+            f"QPushButton{{background:{C_BG2};color:{C_T0};border:1px solid {C_BDR};"
+            f"border-radius:4px;padding:6px 16px;font-size:12px;}}"
+            f"QPushButton:hover{{border-color:{C_ACC};}}"
+        )
+        cancel.clicked.connect(dlg.reject)
+        send = QPushButton("Отправить")
+        send.setStyleSheet(
+            f"QPushButton{{background:{C_ACC};color:#000;border:none;"
+            f"border-radius:4px;padding:6px 16px;font-size:12px;font-weight:bold;}}"
+            f"QPushButton:hover{{background:{C_ACC2};}}"
+        )
+        send.clicked.connect(dlg.accept)
+        btn_row.addWidget(cancel)
+        btn_row.addStretch()
+        btn_row.addWidget(send)
+        lay.addLayout(btn_row)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        issue_code = combo.currentData()
+        message    = msg_edit.toPlainText().strip()
+        if not message:
+            return
+
+        self._create_ticket(issue_code, message)
+
+    # ── Page 1: chat ─────────────────────────────────────────────────────────────
+
+    def _build_chat_page(self) -> QWidget:
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
         # Status line
-        self._hdr = QLabel("Connecting…")
+        self._hdr = QLabel("Подключение…")
         self._hdr.setFixedHeight(24)
         self._hdr.setStyleSheet(
             f"background:{C_BG1};color:{C_T2};font-size:10px;"
             f"letter-spacing:1px;padding:0 16px;"
             f"border-bottom:1px solid {C_BDR};"
         )
-        rl.addWidget(self._hdr)
+        lay.addWidget(self._hdr)
 
         # Messages
         self._msgs = QTextBrowser()
@@ -2866,14 +3090,14 @@ class SupportChatPanel(QWidget):
             f"QTextBrowser{{background:{C_BG0};color:{C_T0};"
             f"border:none;font-size:13px;padding:8px;}}"
         )
-        rl.addWidget(self._msgs, 1)
+        lay.addWidget(self._msgs, 1)
 
         # Typing indicator
         self._typing_lbl = QLabel()
         self._typing_lbl.setFixedHeight(20)
         self._typing_lbl.setStyleSheet(f"color:{C_T2};font-size:11px;padding:2px 16px;")
         self._agent_typing_timer.timeout.connect(lambda: self._typing_lbl.setText(""))
-        rl.addWidget(self._typing_lbl)
+        lay.addWidget(self._typing_lbl)
 
         # Input row
         inp_row = QWidget()
@@ -2882,7 +3106,7 @@ class SupportChatPanel(QWidget):
         inp_lay.setContentsMargins(12, 8, 12, 8)
         inp_lay.setSpacing(8)
         self._inp = QLineEdit()
-        self._inp.setPlaceholderText("Type your message…")
+        self._inp.setPlaceholderText("Введите сообщение…")
         self._inp.setMaxLength(4000)
         self._inp.setEnabled(False)
         self._inp.setStyleSheet(
@@ -2901,11 +3125,37 @@ class SupportChatPanel(QWidget):
             f"QPushButton:disabled{{background:{C_BDR};color:{C_T3};}}"
         )
         inp_lay.addWidget(self._send_btn)
-        rl.addWidget(inp_row)
+        lay.addWidget(inp_row)
 
         self._inp.textChanged.connect(self._on_inp_changed)
         self._inp.returnPressed.connect(self._send_msg)
         self._send_btn.clicked.connect(self._send_msg)
+
+        return page
+
+    # ── Navigation ──────────────────────────────────────────────────────────────
+
+    def _show_list(self) -> None:
+        """Go back to ticket list, disconnect WS but keep ticket_id."""
+        if self._ws is not None:
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+            self._ws = None
+        self._ticket_id = None
+        self._ticket_status = "pending"
+        self._stack.setCurrentIndex(0)
+        self._tb_back.hide()
+        self._tb_sub.setText("  SUPPORT")
+        # Refresh list
+        QTimer.singleShot(0, self._load_ticket_list)
+
+    def _show_chat(self, issue: str, status: str) -> None:
+        st_label = _STATUS_LABELS.get(status, status)
+        self._tb_sub.setText(f"  {issue.upper()}  ·  {st_label.upper()}")
+        self._tb_back.show()
+        self._stack.setCurrentIndex(1)
 
     def _close_panel(self):
         w = self.window()
@@ -2916,15 +3166,13 @@ class SupportChatPanel(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Clear unread badge when panel becomes visible
         self._unread = 0
         self.unread_changed.emit(0)
 
-    # ── Open / reconnect ───────────────────────────────────────────────────────
+    # ── Open / connect ──────────────────────────────────────────────────────────
 
     def open(self, base: str, tok: str, did: str, hdrs_fn, runtime) -> None:
-        """Reset state and open (or resume) a chat session."""
-        # If the session token changed, discard the cached ticket
+        """Called when the support panel is toggled open."""
         if tok != self._tok:
             self._ticket_id = None
 
@@ -2935,7 +3183,7 @@ class SupportChatPanel(QWidget):
         self._runtime = runtime
         self._unread  = 0
 
-        # Close previous WS (keep _ticket_id to reuse it)
+        # Go to list view; disconnect any existing WS
         if self._ws is not None:
             try:
                 self._ws.close()
@@ -2943,24 +3191,49 @@ class SupportChatPanel(QWidget):
                 pass
             self._ws = None
 
+        self._stack.setCurrentIndex(0)
+        self._tb_back.hide()
+        self._tb_sub.setText("  SUPPORT")
+        QTimer.singleShot(0, self._load_ticket_list)
+
+    # ── Ticket list loading ─────────────────────────────────────────────────────
+
+    def _load_ticket_list(self) -> None:
+        self._list_status.setText("Загрузка…")
+        self._list_status.show()
+        self._list_scroll.hide()
+
+        def _worker():
+            with httpx_client(timeout=15, base_url=self._base) as c:
+                r = c.get(self._base + "/client/support/tickets", headers=self._hdrs_fn())
+                if r.status_code >= 400:
+                    raise RuntimeError(response_detail(r))
+            return r.json()
+
+        def _done(result, err):
+            if err:
+                self._list_status.setText(f"Ошибка: {err}")
+                return
+            self._tickets = result or []
+            self._render_ticket_list()
+
+        run_async(self, _worker, _done)
+
+    def _open_ticket(self, t: dict) -> None:
+        """Open an existing ticket in chat view."""
+        self._ticket_id = t.get("id", "")
+        self._ticket_status = t.get("status", "pending")
         self._msgs.clear()
-        self._hdr.setText("Connecting…")
         self._typing_lbl.setText("")
         self._inp.setEnabled(False)
         self._send_btn.setEnabled(False)
-        self._typing_throttle_active[0] = False
+        self._hdr.setText(f"TICKET  #{self._ticket_id[:8].upper()}")
+        self._show_chat(t.get("issue_type", ""), self._ticket_status)
+        self._open_ws(self._ticket_id)
 
-        QTimer.singleShot(0, self._auto_connect)
+    # ── New ticket creation ─────────────────────────────────────────────────────
 
-    # ── Ticket + WebSocket ──────────────────────────────────────────────────────
-
-    def _auto_connect(self):
-        # Reuse existing ticket if we have one (panel was just closed and reopened)
-        if self._ticket_id:
-            self._hdr.setText(f"TICKET  #{self._ticket_id[:8].upper()}")
-            self._open_ws(self._ticket_id)
-            return
-
+    def _create_ticket(self, issue_type: str, message: str) -> None:
         def _worker():
             diag = {}
             try:
@@ -2974,8 +3247,8 @@ class SupportChatPanel(QWidget):
                     self._base + "/client/support",
                     json={
                         "device_id": self._did or None,
-                        "issue_type": "other",
-                        "message": "[Chat session]",
+                        "issue_type": issue_type,
+                        "message": message,
                         "diagnostics": diag,
                         "app_version": APP_VERSION,
                         "platform": "desktop",
@@ -2988,18 +3261,28 @@ class SupportChatPanel(QWidget):
 
         def _done(result, err):
             if err:
-                self._hdr.setText(f"Error: {err}")
+                self._list_status.setText(f"Ошибка создания: {err}")
+                self._list_status.show()
                 return
-            tid = result.get("id", "")
-            self._ticket_id = tid
-            self._hdr.setText(f"TICKET  #{tid[:8].upper()}")
-            self._open_ws(tid)
+            t = result
+            self._ticket_id = t.get("id", "")
+            self._ticket_status = "pending"
+            self._msgs.clear()
+            self._typing_lbl.setText("")
+            self._inp.setEnabled(False)
+            self._send_btn.setEnabled(False)
+            self._hdr.setText(f"TICKET  #{self._ticket_id[:8].upper()}")
+            self._show_chat(t.get("issue_type", ""), "pending")
+            # Show the initial message in the chat
+            self._append_msg("client", message)
+            self._open_ws(self._ticket_id)
 
         run_async(self, _worker, _done)
 
+    # ── WebSocket ───────────────────────────────────────────────────────────────
+
     def _open_ws(self, ticket_id: str) -> None:
         import re as _re
-        # self._base already ends with /api/v1 — don't add it again
         ws_base = _re.sub(r"^http", "ws", self._base)
         ws_url  = (
             f"{ws_base}/ws/client/support/{ticket_id}"
@@ -3008,17 +3291,18 @@ class SupportChatPanel(QWidget):
         try:
             from PyQt6.QtWebSockets import QWebSocket as _QWS
         except ImportError:
-            self._typing_lbl.setText("WebSocket support not available.")
+            self._typing_lbl.setText("WebSocket not available.")
             return
         ws = _QWS()
         self._ws = ws
-        ws.sslErrors.connect(lambda errors: ws.ignoreSslErrors())  # Fix 3: accept self-signed certs
+        ws.sslErrors.connect(lambda errors: ws.ignoreSslErrors())
         ws.textMessageReceived.connect(self._on_ws_text)
-        ws.disconnected.connect(
-            lambda: self._typing_lbl.setText("Disconnected.")
-            if self.isVisible() else None
-        )
+        ws.disconnected.connect(self._on_ws_disconnected)
         ws.open(QUrl(ws_url))
+
+    def _on_ws_disconnected(self) -> None:
+        if self.isVisible() and self._stack.currentIndex() == 1:
+            self._typing_lbl.setText("Соединение закрыто.")
 
     # ── WebSocket frames ───────────────────────────────────────────────────────
 
@@ -3030,13 +3314,18 @@ class SupportChatPanel(QWidget):
         ftype = str(frame.get("type") or "")
 
         if ftype == "system.connected":
-            self._inp.setEnabled(True)
-            self._send_btn.setEnabled(True)
+            closed = self._ticket_status in ("resolved", "rejected")
+            self._inp.setEnabled(not closed)
+            self._send_btn.setEnabled(not closed)
             for m in frame.get("history") or []:
                 self._append_msg(
                     str(m.get("sender", "")),
                     str(m.get("text", "")),
                     str(m.get("sent_at", "")),
+                )
+            if closed:
+                self._typing_lbl.setText(
+                    f"Чат закрыт ({_STATUS_LABELS.get(self._ticket_status, '')})"
                 )
         elif ftype == "message":
             sender = str(frame.get("sender", ""))
@@ -3045,17 +3334,37 @@ class SupportChatPanel(QWidget):
                 self._unread += 1
                 self.unread_changed.emit(self._unread)
         elif ftype == "typing" and str(frame.get("sender", "")) == "agent":
-            self._typing_lbl.setText("Support is typing…")
+            self._typing_lbl.setText("Поддержка печатает…")
             self._agent_typing_timer.start()
+        elif ftype == "system.status_changed":
+            new_status = str(frame.get("status") or "")
+            self._ticket_status = new_status
+            closed = new_status in ("resolved", "rejected")
+            self._inp.setEnabled(not closed)
+            self._send_btn.setEnabled(not closed)
+            st_label = _STATUS_LABELS.get(new_status, new_status)
+            self._hdr.setText(
+                f"TICKET  #{(self._ticket_id or '')[:8].upper()}  ·  {st_label.upper()}"
+            )
+            if closed:
+                reason = frame.get("reason", "")
+                msg = "Автоматически закрыт по истечении времени." if reason == "autoclose" else f"Статус изменён: {st_label}."
+                self._append_system_msg(msg)
+                self._typing_lbl.setText(f"Чат закрыт ({st_label})")
+        elif ftype == "system.autoclose_warning":
+            hours = frame.get("closes_in_hours", 12)
+            self._append_system_msg(
+                f"⚠ Тикет будет автоматически закрыт через {hours} ч. при отсутствии активности."
+            )
         elif ftype == "system.rate_limited":
             wait = float(frame.get("retry_after") or 0)
-            self._typing_lbl.setText(f"Slow down — wait {wait:.0f}s.")
+            self._typing_lbl.setText(f"Подождите {wait:.0f}с.")
             QTimer.singleShot(int(wait * 1000) + 300, lambda: self._typing_lbl.setText(""))
         elif ftype == "system.error":
-            self._typing_lbl.setText(str(frame.get("reason") or "Error"))
+            self._typing_lbl.setText(str(frame.get("reason") or "Ошибка"))
             QTimer.singleShot(3000, lambda: self._typing_lbl.setText(""))
         elif ftype == "system.timeout":
-            self._typing_lbl.setText("Session closed — re-open Support to continue.")
+            self._typing_lbl.setText("Сессия истекла. Откройте тикет снова.")
             self._inp.setEnabled(False)
             self._send_btn.setEnabled(False)
 
@@ -3071,6 +3380,16 @@ class SupportChatPanel(QWidget):
             .replace("\n", "<br>")
         )
 
+    def _append_system_msg(self, text: str) -> None:
+        html = (
+            f'<table width="100%" cellspacing="0" cellpadding="4">'
+            f'<tr><td align="center">'
+            f'<span style="color:{C_T2};font-size:11px;font-style:italic;">'
+            f'{self._safe_text(text)}</span>'
+            f'</td></tr></table>'
+        )
+        self._msgs.append(html)
+
     def _append_msg(self, sender: str, text: str, sent_at: str = "") -> None:
         ts = ""
         if sent_at:
@@ -3082,14 +3401,13 @@ class SupportChatPanel(QWidget):
         is_me = sender == "client"
         bg    = C_ACC  if is_me else C_BG2
         fg    = "#000" if is_me else C_T0
-        label = "You"  if is_me else "Support"
+        label = "Вы"       if is_me else "Поддержка"
         ts_str = f' <span style="color:{C_T3};font-size:10px;">{ts}</span>' if ts else ""
         bubble = (
             f'<span style="font-size:10px;color:{C_T2};">{label}{ts_str}</span><br>'
             f'<span style="background:{bg};color:{fg};padding:4px 10px;'
             f'border-radius:8px;display:inline-block;">{self._safe_text(text)}</span>'
         )
-        # Use table layout for reliable left/right alignment in QTextBrowser
         if is_me:
             html = (
                 f'<table width="100%" cellspacing="0" cellpadding="2">'
@@ -3324,11 +3642,14 @@ class ONyXClient(QMainWindow):
     def toggle_support_panel(self):
         """Show or hide the embedded support chat panel (to the left of main content)."""
         if self._chat_panel.isVisible():
+            pos = self.pos()
             self._chat_panel.hide()
             self._chat_panel.setFixedWidth(0)   # exclude from layout so window can shrink
             self._panel_sep.hide()
             self.setFixedSize(410, 760)
+            self.move(pos.x() + 411, pos.y())   # restore main content to original position
         else:
+            pos = self.pos()
             ds = self._ds
             self._chat_panel.setFixedWidth(410)
             self._chat_panel.open(
@@ -3341,6 +3662,7 @@ class ONyXClient(QMainWindow):
             self._chat_panel.show()
             self._panel_sep.show()
             self.setFixedSize(821, 760)  # 410 + 1 (sep) + 410
+            self.move(max(0, pos.x() - 411), pos.y())  # expand left, keep main content in place
 
     def closeEvent(self, event):
         if self._tray is not None and not self._quit_requested:
