@@ -254,6 +254,23 @@ document.addEventListener('DOMContentLoaded', function() {
     obs.observe(app, { childList: true, subtree: true });
   }
 
+  // ── "Add" button wiring (lost in Vite migration) ──────────────────────────
+  var _btn = function(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+  _btn('btnAddNode',                 function(){ window.openNodeModal?.(); });
+  _btn('btnAddLink',                 function(){ window.openLinkModal?.(); });
+  _btn('btnAddRoutePolicy',          function(){ window.openRoutePolicyModal?.(); });
+  _btn('btnAddDNSPolicy',            function(){ window.openDNSPolicyModal?.(); });
+  _btn('btnAddGeoPolicy',            function(){ window.openGeoPolicyModal?.(); });
+  _btn('btnAddBalancer',             function(){ window.openBalancerModal?.(); });
+  _btn('btnAddUser',                 function(){ window.openUserModal?.(); });
+  _btn('btnAddPlan',                 function(){ window.openPlanModal?.(); });
+  _btn('btnAddTransportPackage',     function(){ window.openTransportPackageModal?.(); });
+  _btn('btnAddXrayService',          function(){ window.openXrayServiceModal?.(); });
+  _btn('btnAddTransitPolicy',        function(){ window.openTransitPolicyModal?.(); });
+  _btn('btnAddAwgService',           function(){ window.openAwgServiceModal?.(); });
+  _btn('btnAddWgService',            function(){ window.openWgServiceModal?.(); });
+  _btn('btnAddOpenvpnCloakService',  function(){ window.openOpenvpnCloakServiceModal?.(); });
+
   // Auto-login check
   (async function init() {
     if (window.DEMO_MODE) { window.authRedirect(''); return; }
