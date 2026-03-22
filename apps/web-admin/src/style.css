@@ -370,7 +370,7 @@ td.m{color:var(--t0);}
 .tickets-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:14px;}
 
 /* ── System page layout ────────────────────────────────────────────────── */
-#page-system{display:flex;flex-direction:column;height:100%;padding:10px 24px 0;box-sizing:border-box;gap:8px;overflow:hidden;}
+#page-system{flex-direction:column;height:100%;padding:10px 24px 0;box-sizing:border-box;gap:8px;overflow:hidden;}
 #page-system.active{display:flex;}
 .sys-status-row{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;flex-shrink:0;}
 .sys-stat-card{background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;padding:10px 12px;cursor:pointer;transition:background .15s,border-color .15s;user-select:none;}
