@@ -53,7 +53,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QPushButton, QRadioButton, QScrollArea,
     QStackedWidget, QSystemTrayIcon, QTextBrowser, QTextEdit, QVBoxLayout, QWidget,
-    QMessageBox, QMenu,
+    QMenu,
 )
 
 # ── Constants ──────────────────────────────────────────────────────────────────
@@ -1931,9 +1931,9 @@ class LoginScreen(QWidget):
             self._test_api_btn.setEnabled(True)
             self._test_api_btn.setText(_STRINGS[self._lang]["test_api"])
             if err:
-                QMessageBox.critical(self, "API Test Failed", str(err))
+                _error_dialog(self, "API Test Failed", str(err))
                 return
-            QMessageBox.information(
+            _info_dialog(
                 self,
                 "API Test",
                 f"API is reachable.\n\nBase URL: {data['base_url']}\nStatus: {data['status']}",
@@ -2120,7 +2120,7 @@ class RegisterScreen(QWidget):
             self._btn.setEnabled(True); self._btn.setText(_STRINGS[self._lang]["submit"])
             if err: self._show_err(str(err)); return
             sl = _STRINGS[self._lang]
-            QMessageBox.information(self, sl["submitted_title"], sl["submitted_msg"])
+            _info_dialog(self, sl["submitted_title"], sl["submitted_msg"])
             self.reg_done.emit()
         run_async(self,_call,_done)
 
@@ -2411,9 +2411,9 @@ class DashboardScreen(QWidget):
         def _c(): return test_api_health(self.st.base_url)
         def _d(data, err):
             self._s_test_btn.setEnabled(True); self._s_test_btn.setText("Test API")
-            if err: QMessageBox.critical(self, "API Test Failed", str(err)); return
+            if err: _error_dialog(self, "API Test Failed", str(err)); return
             self._s_api_url.setText(data["base_url"])
-            QMessageBox.information(self, "API Test",
+            _info_dialog(self, "API Test",
                 f"API is reachable.\n\nBase URL: {data['base_url']}\nStatus: {data['status']}")
         run_async(self, _c, _d)
 
@@ -2461,17 +2461,17 @@ class DashboardScreen(QWidget):
         try:
             install_autostart()
             self._s_startup_lbl.setText("Background startup: installed")
-            QMessageBox.information(self, "Startup", "Background startup task installed.")
+            _info_dialog(self, "Startup", "Background startup task installed.")
         except Exception as exc:
-            QMessageBox.critical(self, "Startup", str(exc))
+            _error_dialog(self, "Startup", str(exc))
 
     def _s_remove_autostart(self):
         try:
             uninstall_autostart()
             self._s_startup_lbl.setText("Background startup: not installed")
-            QMessageBox.information(self, "Startup", "Background startup task removed.")
+            _info_dialog(self, "Startup", "Background startup task removed.")
         except Exception as exc:
-            QMessageBox.critical(self, "Startup", str(exc))
+            _error_dialog(self, "Startup", str(exc))
 
     def refresh(self,offline=False):
         if offline: self._ob.show()
@@ -2501,14 +2501,14 @@ class DashboardScreen(QWidget):
             self._runtime.disconnect()
         except Exception as exc:
             if not silent:
-                QMessageBox.critical(self, "Disconnect", str(exc))
+                _error_dialog(self, "Disconnect", str(exc))
         finally:
             self.refresh()
             self.connection_state_changed.emit(self.st.connected)
 
     def _connect_runtime(self):
         if not self.st.device_id:
-            QMessageBox.warning(self, "Connect", "Device not registered.\nClick 'Register device' to register first.")
+            _error_dialog(self, "Connect", "Device not registered.\nClick 'Register device' to register first.")
             return
         self._cbtn.set_connecting(True)
         self._stlbl.setText("CONNECTING")
@@ -2535,7 +2535,7 @@ class DashboardScreen(QWidget):
             if err:
                 self.st.connected = False
                 self.refresh()
-                QMessageBox.critical(self, "Connect", str(err))
+                _error_dialog(self, "Connect", str(err))
                 self.connection_state_changed.emit(False)
                 return
             self.refresh()
@@ -2598,7 +2598,7 @@ class DashboardScreen(QWidget):
             if r.status_code>=400: raise RuntimeError(r.json().get("detail",r.text))
             return r.json()
         def _d(data,err):
-            if err: QMessageBox.critical(self,"Device",str(err)); return
+            if err: _error_dialog(self,"Device",str(err)); return
             self.st.device_id=data["device"]["id"]; self.st.save(); self.refresh()
         run_async(self,_c,_d)
 
@@ -2612,7 +2612,7 @@ class DashboardScreen(QWidget):
         return json.loads(ct.decode())
 
     def _verify_device(self):
-        if not self.st.device_id: QMessageBox.warning(self,"Verify","Register device first."); return
+        if not self.st.device_id: _error_dialog(self,"Verify","Register device first."); return
         base=self.st.base_url; did=self.st.device_id; hdrs=self._hdrs()
         def _c():
             with httpx_client(timeout=20, base_url=base) as c:
@@ -2623,12 +2623,12 @@ class DashboardScreen(QWidget):
                           json={"device_id":did,"challenge_response":dec["challenge"]},headers=hdrs)
                 if vr.status_code>=400: raise RuntimeError(vr.text)
         def _d(_,err):
-            if err: QMessageBox.critical(self,"Verify",str(err)); return
-            QMessageBox.information(self,"Verify","Device verified.")
+            if err: _error_dialog(self,"Verify",str(err)); return
+            _info_dialog(self,"Verify","Device verified.")
         run_async(self,_c,_d)
 
     def _issue_bundle(self, auto_connect: bool = False):
-        if not self.st.device_id: QMessageBox.warning(self,"Bundle","Register device first."); return
+        if not self.st.device_id: _error_dialog(self,"Bundle","Register device first."); return
         base=self.st.base_url; did=self.st.device_id; hdrs=self._hdrs()
         resume_connect = bool(auto_connect or self.st.connected)
         if self.st.connected:
@@ -2670,13 +2670,13 @@ class DashboardScreen(QWidget):
                 return {"source":"issued","bundle_id":issued["bundle_id"],"expires_at":issued["expires_at"],
                         "bundle_hash":issued["bundle_hash"],"profile_count":len(((dec or {}).get("runtime") or {}).get("profiles") or []),"decrypted":dec}
         def _d(data,err):
-            if err: QMessageBox.critical(self,"Bundle",str(err)); return
+            if err: _error_dialog(self,"Bundle",str(err)); return
             self.st.last_bundle=data; self.st.save(); self.refresh()
             if not auto_connect:
                 source = "current cache" if data.get("source") == "current" else "new issue"
-                QMessageBox.information(
+                _info_dialog(
                     self,
-                    "Bundle",
+                    "Get Configuration",
                     f"Bundle loaded successfully.\n\nSource: {source}\nProfiles: {data.get('profile_count', 0)}",
                 )
             if resume_connect:
@@ -2789,6 +2789,142 @@ class TitleBar(QWidget):
     def mouseDoubleClickEvent(self, e):
         # Double-click on titlebar does nothing (app has fixed size)
         pass
+
+# ── Styled client dialog ───────────────────────────────────────────────────────
+
+class ClientDialog(QDialog):
+    """Frameless modal dialog matching the client's visual style."""
+
+    def __init__(self, parent, title: str):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setModal(True)
+        self.setStyleSheet(
+            APP_STYLE
+            + f"QDialog{{background:{C_BG1};border:1px solid {C_BDR};}}"
+        )
+        self._drag_pos = None
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # Title bar
+        tb = QWidget()
+        tb.setFixedHeight(34)
+        tb.setStyleSheet(f"background:{C_BG2};border-bottom:1px solid {C_BDR};")
+        tb_lay = QHBoxLayout(tb)
+        tb_lay.setContentsMargins(14, 0, 8, 0)
+        tb_lay.setSpacing(0)
+        lbl = QLabel(title.upper())
+        lbl.setStyleSheet(f"color:{C_T2};font-size:10px;letter-spacing:1px;")
+        tb_lay.addWidget(lbl)
+        tb_lay.addStretch()
+        x_btn = QPushButton("✕")
+        x_btn.setFixedSize(26, 26)
+        x_btn.setStyleSheet(
+            f"QPushButton{{background:transparent;color:{C_T3};border:none;font-size:14px;}}"
+            f"QPushButton:hover{{color:{C_RED};}}"
+        )
+        x_btn.clicked.connect(self.reject)
+        tb_lay.addWidget(x_btn)
+        root.addWidget(tb)
+
+        # Content area (callers add widgets here)
+        self.body = QVBoxLayout()
+        self.body.setContentsMargins(20, 16, 20, 16)
+        self.body.setSpacing(10)
+        root.addLayout(self.body)
+
+        # Drag-to-move via title bar
+        tb.mousePressEvent   = self._tb_press
+        tb.mouseMoveEvent    = self._tb_move
+        tb.mouseReleaseEvent = self._tb_release
+
+    def _tb_press(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def _tb_move(self, e):
+        if self._drag_pos is not None and e.buttons() == Qt.MouseButton.LeftButton:
+            self.move(e.globalPosition().toPoint() - self._drag_pos)
+
+    def _tb_release(self, _e):
+        self._drag_pos = None
+
+
+def _mk_ok_btn(text="OK") -> QPushButton:
+    btn = QPushButton(text)
+    btn.setStyleSheet(
+        f"QPushButton{{background:{C_ACC};color:#000;border:none;border-radius:3px;"
+        f"padding:7px 24px;font-weight:bold;}}"
+        f"QPushButton:hover{{background:{C_ACC2};}}"
+    )
+    return btn
+
+
+def _mk_ghost_btn(text) -> QPushButton:
+    btn = QPushButton(text)
+    btn.setStyleSheet(
+        f"QPushButton{{background:{C_BG2};color:{C_T0};border:1px solid {C_BDR};"
+        f"border-radius:3px;padding:7px 16px;}}"
+        f"QPushButton:hover{{border-color:{C_ACC};}}"
+    )
+    return btn
+
+
+def _info_dialog(parent, title: str, text: str) -> None:
+    dlg = ClientDialog(parent, title)
+    dlg.setFixedWidth(360)
+    lbl = QLabel(text)
+    lbl.setWordWrap(True)
+    lbl.setStyleSheet(f"color:{C_T1};font-size:13px;")
+    dlg.body.addWidget(lbl)
+    row = QHBoxLayout()
+    row.addStretch()
+    ok = _mk_ok_btn()
+    ok.clicked.connect(dlg.accept)
+    row.addWidget(ok)
+    dlg.body.addLayout(row)
+    dlg.exec()
+
+
+def _error_dialog(parent, title: str, text: str) -> None:
+    dlg = ClientDialog(parent, title)
+    dlg.setFixedWidth(360)
+    lbl = QLabel(text)
+    lbl.setWordWrap(True)
+    lbl.setStyleSheet(f"color:{C_RED};font-size:13px;")
+    dlg.body.addWidget(lbl)
+    row = QHBoxLayout()
+    row.addStretch()
+    ok = _mk_ok_btn("OK")
+    ok.clicked.connect(dlg.accept)
+    row.addWidget(ok)
+    dlg.body.addLayout(row)
+    dlg.exec()
+
+
+def _question_dialog(parent, title: str, text: str) -> bool:
+    """Returns True if user clicked Yes."""
+    dlg = ClientDialog(parent, title)
+    dlg.setFixedWidth(360)
+    lbl = QLabel(text)
+    lbl.setWordWrap(True)
+    lbl.setStyleSheet(f"color:{C_T1};font-size:13px;")
+    dlg.body.addWidget(lbl)
+    row = QHBoxLayout()
+    row.addStretch()
+    no = _mk_ghost_btn("Нет")
+    no.clicked.connect(dlg.reject)
+    yes = _mk_ok_btn("Да")
+    yes.clicked.connect(dlg.accept)
+    row.addWidget(no)
+    row.addSpacing(8)
+    row.addWidget(yes)
+    dlg.body.addLayout(row)
+    return dlg.exec() == QDialog.DialogCode.Accepted
+
 
 # ── Support chat panel ─────────────────────────────────────────────────────────
 
@@ -3007,53 +3143,30 @@ class SupportChatPanel(QWidget):
         return card
 
     def _show_new_ticket_form(self) -> None:
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Новое обращение")
+        dlg = ClientDialog(self, "Новое обращение")
         dlg.setFixedWidth(370)
-        dlg.setStyleSheet(APP_STYLE + f"QDialog{{background:{C_BG1};border:1px solid {C_BDR};}}")
-        lay = QVBoxLayout(dlg)
-        lay.setSpacing(10)
-        lay.setContentsMargins(20, 16, 20, 16)
 
-        lay.addWidget(QLabel("<b style='color:#fff'>Направление запроса</b>"))
+        dlg.body.addWidget(QLabel("<b style='color:#fff'>Направление запроса</b>"))
         combo = QComboBox()
-        combo.setStyleSheet(
-            f"background:{C_BG0};color:{C_T0};border:1px solid {C_BDR};"
-            f"border-radius:4px;padding:5px 8px;font-size:13px;"
-        )
         for code, label in _ISSUE_TYPES:
             combo.addItem(label, code)
-        lay.addWidget(combo)
+        dlg.body.addWidget(combo)
 
-        lay.addWidget(QLabel("<b style='color:#fff'>Описание проблемы</b>"))
+        dlg.body.addWidget(QLabel("<b style='color:#fff'>Описание проблемы</b>"))
         msg_edit = QTextEdit()
         msg_edit.setFixedHeight(100)
         msg_edit.setPlaceholderText("Опишите проблему…")
-        msg_edit.setStyleSheet(
-            f"background:{C_BG0};color:{C_T0};border:1px solid {C_BDR};"
-            f"border-radius:4px;padding:6px 10px;font-size:13px;"
-        )
-        lay.addWidget(msg_edit)
+        dlg.body.addWidget(msg_edit)
 
         btn_row = QHBoxLayout()
-        cancel = QPushButton("Отмена")
-        cancel.setStyleSheet(
-            f"QPushButton{{background:{C_BG2};color:{C_T0};border:1px solid {C_BDR};"
-            f"border-radius:4px;padding:6px 16px;font-size:12px;}}"
-            f"QPushButton:hover{{border-color:{C_ACC};}}"
-        )
+        cancel = _mk_ghost_btn("Отмена")
         cancel.clicked.connect(dlg.reject)
-        send = QPushButton("Отправить")
-        send.setStyleSheet(
-            f"QPushButton{{background:{C_ACC};color:#000;border:none;"
-            f"border-radius:4px;padding:6px 16px;font-size:12px;font-weight:bold;}}"
-            f"QPushButton:hover{{background:{C_ACC2};}}"
-        )
+        send = _mk_ok_btn("Отправить")
         send.clicked.connect(dlg.accept)
         btn_row.addWidget(cancel)
         btn_row.addStretch()
         btn_row.addWidget(send)
-        lay.addLayout(btn_row)
+        dlg.body.addLayout(btn_row)
 
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -3273,8 +3386,6 @@ class SupportChatPanel(QWidget):
             self._send_btn.setEnabled(False)
             self._hdr.setText(f"TICKET  #{self._ticket_id[:8].upper()}")
             self._show_chat(t.get("issue_type", ""), "pending")
-            # Show the initial message in the chat
-            self._append_msg("client", message)
             self._open_ws(self._ticket_id)
 
         run_async(self, _worker, _done)
@@ -3762,30 +3873,25 @@ class ONyXClient(QMainWindow):
 
     def _prompt_update(self, version: str, download_url: str, notes: str):
         if not download_url:
-            QMessageBox.information(
+            _info_dialog(
                 self, "ONyX Update",
                 f"Version {version} is available, but no download URL is configured yet.",
             )
             return
         detail = f"\n\n{notes}" if notes else ""
-        reply = QMessageBox.question(
+        if _question_dialog(
             self, "Update Available",
             f"ONyX {version} is available.{detail}\n\nDownload and install now? The app will restart automatically.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
+        ):
             self._download_and_apply_update(version, download_url)
 
     def _download_and_apply_update(self, version: str, download_url: str):
         """Download the update ZIP, extract it, write a bat helper, run it, and quit."""
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Updating ONyX")
-        dlg.setFixedSize(360, 90)
-        dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowType.WindowCloseButtonHint)
-        lay = QVBoxLayout(dlg)
+        dlg = ClientDialog(self, "Updating ONyX")
+        dlg.setFixedWidth(360)
         lbl = QLabel(f"Downloading ONyX {version}…")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(lbl)
+        dlg.body.addWidget(lbl)
         dlg.show()
 
         exe_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else APP_ROOT
@@ -3807,7 +3913,7 @@ class ONyXClient(QMainWindow):
         def _d(tmp_path, err):
             dlg.accept()
             if err:
-                QMessageBox.critical(self, "Update Failed", str(err))
+                _error_dialog(self, "Update Failed", str(err))
                 return
             extract_dir = tmp_path / "extracted"
             top_items = list(extract_dir.iterdir())

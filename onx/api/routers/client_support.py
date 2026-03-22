@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
 from onx.api.routers.client_auth import _extract_bearer_token
+from onx.db.models.support_chat_message import SupportChatMessage
 from onx.db.models.support_ticket import SupportTicket, TicketStatus
 from onx.db.models.user import User
 from onx.schemas.support_tickets import SupportTicketCreate, SupportTicketRead, SupportTicketStatusPatch
@@ -46,6 +47,13 @@ def create_support_ticket(
         status=TicketStatus.PENDING,
     )
     db.add(ticket)
+    db.flush()
+    initial_msg = SupportChatMessage(
+        ticket_id=ticket.id,
+        sender="client",
+        text=payload.message,
+    )
+    db.add(initial_msg)
     db.commit()
     db.refresh(ticket)
     result = SupportTicketRead.model_validate(ticket)
