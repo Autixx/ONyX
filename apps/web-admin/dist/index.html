@@ -1018,50 +1018,27 @@ td.m{color:var(--t0);}
         </div>
       </div>
 
-      <!-- SUPPORT TICKETS -->
+      <!-- SUPPORT CHAT -->
       <div class="page" id="page-tickets">
         <div class="ph">
-          <span class="ptitle">Support Tickets <span class="tag">stub</span></span>
+          <span class="ptitle">Support Chat</span>
+          <button class="btn" onclick="loadSupportTickets()" style="margin-left:auto;">&#8635; REFRESH</button>
         </div>
         <div class="tickets-layout">
           <div class="tickets-sidebar" id="ticketsSidebar">
-            <!-- Demo users -->
-            <div class="ticket-user-item active" onclick="selectTicketUser(this,'alex_k')" data-user="alex_k">
-              <div class="ticket-user-name">alex_k</div>
-              <div class="ticket-user-meta">alex@example.com · 2 open</div>
-            </div>
-            <div class="ticket-user-item" onclick="selectTicketUser(this,'marina_v')" data-user="marina_v">
-              <div class="ticket-user-name">marina_v</div>
-              <div class="ticket-user-meta">marina@vpnuser.net · 1 open</div>
-            </div>
-            <div class="ticket-user-item" onclick="selectTicketUser(this,'ivan_p')" data-user="ivan_p">
-              <div class="ticket-user-name">ivan_p</div>
-              <div class="ticket-user-meta">ivan@corp.ru · 0 open</div>
-            </div>
-            <div class="ticket-user-item" onclick="selectTicketUser(this,'sarah_m')" data-user="sarah_m">
-              <div class="ticket-user-name">sarah_m</div>
-              <div class="ticket-user-meta">sarah@example.org · 1 open</div>
-            </div>
+            <div style="padding:12px;color:var(--t2);font-size:13px;">Loading…</div>
           </div>
           <div class="tickets-chat" id="ticketsChat">
-            <div class="tickets-chat-header" id="ticketsChatHeader">alex_k — Support</div>
-            <div class="tickets-messages" id="ticketsMessages">
-              <div class="ticket-msg user">
-                <div>My config stopped working after the node update. AWG shows handshake timeout.</div>
-                <div class="ticket-msg-meta">alex_k · 14:32</div>
-              </div>
-              <div class="ticket-msg admin">
-                <div>Hi, we are looking into this. Can you run <code>wg show</code> and send the output?</div>
-                <div class="ticket-msg-meta">admin · 14:45</div>
-              </div>
-              <div class="ticket-msg user">
-                <div>Sure, here it is: interface: awg0 — listening port: 51820. No handshake recorded.</div>
-                <div class="ticket-msg-meta">alex_k · 14:48</div>
-              </div>
+            <div class="tickets-chat-header" id="ticketsChatHeader">
+              <span style="color:var(--t2);">Select a ticket</span>
             </div>
+            <div class="tickets-messages" id="ticketsMessages">
+              <div class="tickets-empty">Select a ticket from the list</div>
+            </div>
+            <div id="ticketTypingIndicator" style="display:none;padding:4px 16px;font-size:12px;color:var(--t2);font-style:italic;">Client is typing…</div>
             <div class="tickets-input-row">
-              <input class="tickets-input" id="ticketReply" placeholder="Type reply… (stub — not connected to API)" onkeydown="if(event.key==='Enter')sendTicketReply()">
-              <button class="btn pri" onclick="sendTicketReply()">SEND</button>
+              <input class="tickets-input" id="ticketReply" placeholder="Type reply…" onkeydown="_onSupportReplyKey(event)">
+              <button class="btn pri" onclick="sendSupportReply()">SEND</button>
             </div>
           </div>
         </div>
@@ -6444,7 +6421,7 @@ var LITERAL_TEXT = {
     'Fail2Ban': 'Fail2ban',
     'Control Plane': 'Панель',
     'E-Mail': 'E-mail',
-    'Support Tickets': 'Тикеты поддержки',
+    'Support Chat': 'Чат поддержки',
     'XRAY Services': 'XRAY-сервисы',
     'AWG Services': 'AWG-сервисы',
     'WG Services': 'WG-сервисы',
@@ -7904,7 +7881,7 @@ var NAV_GROUPS = {
   debug:    { label:'Debug',          pages:['apidebug','tickets'],
               subs:[
                 {p:'apidebug', label:'API Debug'},
-                {p:'tickets',  label:'Support Tickets'},
+                {p:'tickets',  label:'Support Chat'},
               ]},
 };
 var PAGE_TO_GROUP = {};
@@ -8003,6 +7980,7 @@ function showPage(pageId){
   }
   syncTopologyAutoButton();
   if(pageId==='failban'){ refreshFailban().catch(function(){}); }
+  if(pageId==='tickets'){ loadSupportTickets(); }
 }
 
 // Patch old nav click wiring — the flat navtabs is gone, use showPage directly
@@ -8138,39 +8116,130 @@ function startJobsTicker(){
 }
 
 // ═══════════════════════════════════════
-// SUPPORT TICKETS STUB
+// SUPPORT CHAT
 // ═══════════════════════════════════════
-var TICKET_DEMO = {
-  alex_k:   [{from:'user',text:'My config stopped working after the node update. AWG shows handshake timeout.',time:'14:32'},{from:'admin',text:'Hi, we are looking into this. Can you run wg show and send the output?',time:'14:45'},{from:'user',text:'Sure, here it is: interface: awg0 — no handshake recorded.',time:'14:48'}],
-  marina_v: [{from:'user',text:'Hello! I need to add a second device.',time:'09:11'},{from:'admin',text:'Sure, please submit a new device registration request.',time:'09:30'}],
-  ivan_p:   [{from:'user',text:'All good, thanks for the fast support!',time:'Yesterday'}],
-  sarah_m:  [{from:'user',text:'Getting ERR_CONNECTION_REFUSED on the oVPN endpoint.',time:'10:05'}],
-};
-function selectTicketUser(el, username){
-  document.querySelectorAll('.ticket-user-item').forEach(function(i){ i.classList.remove('active'); });
-  el.classList.add('active');
-  document.getElementById('ticketsChatHeader').textContent = username + ' — Support';
-  var msgs = TICKET_DEMO[username] || [];
-  var box = document.getElementById('ticketsMessages');
-  box.innerHTML = msgs.map(function(m){
-    return '<div class="ticket-msg '+(m.from==='user'?'user':'admin')+'">'
-      +'<div>'+m.text+'</div>'
-      +'<div class="ticket-msg-meta">'+(m.from==='user'?username:'admin')+' · '+m.time+'</div>'
-      +'</div>';
-  }).join('');
-  box.scrollTop = box.scrollHeight;
+var _supportWs = null;
+var _supportTicketId = null;
+var _supportTypingTimer = null;
+var _supportTypingThrottle = false;
+var _supportTickets = {};
+
+function loadSupportTickets() {
+  var sidebar = document.getElementById('ticketsSidebar');
+  if (!sidebar) return;
+  sidebar.innerHTML = '<div style="padding:12px;color:var(--t2);font-size:13px;">Loading…</div>';
+  apiFetch(API_PREFIX + '/admin/support-tickets?limit=200').then(function(data) {
+    _supportTickets = {};
+    if (!data || !data.length) {
+      sidebar.innerHTML = '<div style="padding:12px;color:var(--t2);font-size:13px;">No tickets</div>';
+      return;
+    }
+    data.forEach(function(t) { _supportTickets[t.id] = t; });
+    sidebar.innerHTML = data.map(function(t) {
+      var dt = t.created_at ? new Date(t.created_at).toLocaleString() : '';
+      var uid = t.user_id ? t.user_id.slice(0, 12) : '?';
+      return '<div class="ticket-user-item" onclick="selectSupportTicket(this,\'' + esc(t.id) + '\')" data-tid="' + esc(t.id) + '">'
+        + '<div class="ticket-user-name">' + esc(uid) + '</div>'
+        + '<div class="ticket-user-meta">' + esc(t.issue_type) + ' · ' + esc(dt) + '</div>'
+        + '</div>';
+    }).join('');
+  }).catch(function() {
+    sidebar.innerHTML = '<div style="padding:12px;color:var(--t2);font-size:13px;">Failed to load</div>';
+  });
 }
-function sendTicketReply(){
+
+function selectSupportTicket(el, ticketId) {
+  var ticket = _supportTickets[ticketId];
+  if (!ticket) return;
+  document.querySelectorAll('.ticket-user-item').forEach(function(i) { i.classList.remove('active'); });
+  el.classList.add('active');
+  if (_supportWs) { _supportWs.close(); _supportWs = null; }
+  _supportTicketId = ticket.id;
+  var uid = ticket.user_id ? ticket.user_id.slice(0, 12) : '?';
+  document.getElementById('ticketsChatHeader').innerHTML =
+    '<span>' + esc(ticket.issue_type.toUpperCase()) + '</span>'
+    + ' <span style="color:var(--t2);font-weight:400;font-size:12px;">' + esc(uid) + '</span>'
+    + ' <span id="clientStatusDot" style="margin-left:8px;display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--t2);vertical-align:middle;" title="Client offline"></span>';
+  var box = document.getElementById('ticketsMessages');
+  box.innerHTML = '<div style="color:var(--t2);font-size:13px;text-align:center;padding:20px;">Connecting…</div>';
+  document.getElementById('ticketTypingIndicator').style.display = 'none';
+  var wsBase = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + API_PREFIX;
+  var ws = new WebSocket(wsBase + '/ws/admin/support/' + ticket.id);
+  _supportWs = ws;
+  ws.onmessage = function(ev) {
+    var frame; try { frame = JSON.parse(ev.data); } catch(e) { return; }
+    _handleSupportFrame(frame);
+  };
+  ws.onclose = function() { if (_supportWs === ws) _supportWs = null; };
+  ws.onerror = function() {
+    var b = document.getElementById('ticketsMessages');
+    if (b) b.innerHTML += '<div style="color:var(--t2);font-size:13px;text-align:center;padding:8px;">Connection error</div>';
+  };
+}
+
+function _handleSupportFrame(frame) {
+  var box = document.getElementById('ticketsMessages');
+  var typInd = document.getElementById('ticketTypingIndicator');
+  if (!box) return;
+  if (frame.type === 'system.connected') {
+    box.innerHTML = '';
+    var hist = frame.history || [];
+    if (!hist.length) {
+      box.innerHTML = '<div class="tickets-empty" style="flex:none;padding:20px 0;">No messages yet</div>';
+    }
+    hist.forEach(function(m) { _appendSupportMsg(box, m); });
+    box.scrollTop = box.scrollHeight;
+  } else if (frame.type === 'message') {
+    var empty = box.querySelector('.tickets-empty');
+    if (empty) empty.remove();
+    _appendSupportMsg(box, frame);
+    box.scrollTop = box.scrollHeight;
+  } else if (frame.type === 'typing' && frame.sender === 'client') {
+    if (typInd) {
+      typInd.style.display = '';
+      clearTimeout(_supportTypingTimer);
+      _supportTypingTimer = setTimeout(function() { typInd.style.display = 'none'; }, 3000);
+    }
+  } else if (frame.type === 'system.client_online') {
+    var dot = document.getElementById('clientStatusDot');
+    if (dot) { dot.style.background = 'var(--acc)'; dot.title = 'Client online'; }
+  } else if (frame.type === 'system.client_offline') {
+    var dot = document.getElementById('clientStatusDot');
+    if (dot) { dot.style.background = 'var(--t2)'; dot.title = 'Client offline'; }
+  }
+}
+
+function _appendSupportMsg(box, m) {
+  var isAgent = m.sender === 'agent';
+  var d = document.createElement('div');
+  d.className = 'ticket-msg ' + (isAgent ? 'admin' : 'user');
+  var timeStr = '';
+  if (m.sent_at) { try { timeStr = new Date(m.sent_at).toLocaleTimeString(); } catch(e) {} }
+  d.innerHTML = '<div>' + esc(m.text) + '</div>'
+    + '<div class="ticket-msg-meta">' + (isAgent ? 'agent' : 'client') + (timeStr ? ' · ' + timeStr : '') + '</div>';
+  box.appendChild(d);
+}
+
+function sendSupportReply() {
   var inp = document.getElementById('ticketReply');
   var txt = inp.value.trim();
-  if(!txt) return;
-  var box = document.getElementById('ticketsMessages');
-  var d = document.createElement('div');
-  d.className = 'ticket-msg admin';
-  d.innerHTML = '<div>'+txt+'</div><div class="ticket-msg-meta">admin · now (stub)</div>';
-  box.appendChild(d);
-  box.scrollTop = box.scrollHeight;
+  if (!txt) return;
+  if (!_supportWs || _supportWs.readyState !== WebSocket.OPEN) {
+    showToast('Not connected to ticket', 'warn');
+    return;
+  }
+  _supportWs.send(JSON.stringify({type: 'message', text: txt}));
   inp.value = '';
+}
+
+function _onSupportReplyKey(e) {
+  if (e.key === 'Enter') { sendSupportReply(); return; }
+  if (!_supportWs || _supportWs.readyState !== WebSocket.OPEN) return;
+  if (!_supportTypingThrottle) {
+    _supportWs.send(JSON.stringify({type: 'typing'}));
+    _supportTypingThrottle = true;
+    setTimeout(function() { _supportTypingThrottle = false; }, 1000);
+  }
 }
 
 // ═══════════════════════════════════════
