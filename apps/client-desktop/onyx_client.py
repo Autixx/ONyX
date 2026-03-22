@@ -2694,313 +2694,23 @@ class DashboardScreen(QWidget):
         self._connect_runtime()
 
     def _support(self):
-        import re as _re
-        import json as _json
-
-        base = self.st.base_url
-        tok  = self.st.session_token or ""
-        did  = self.st.device_id or ""
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Support")
-        dlg.setFixedSize(420, 520)
-        dlg.setStyleSheet(f"background:{C_BG0};")
-
-        root_lay = QVBoxLayout(dlg)
-        root_lay.setContentsMargins(0, 0, 0, 0)
-        root_lay.setSpacing(0)
-
-        stack = QStackedWidget()
-        root_lay.addWidget(stack)
-
-        # ── Page 0: Compose form ───────────────────────────────────────────────
-        compose_w = QWidget()
-        compose_w.setStyleSheet(f"background:{C_BG0};")
-        c_lay = QVBoxLayout(compose_w)
-        c_lay.setContentsMargins(24, 24, 24, 24)
-        c_lay.setSpacing(10)
-
-        c_lay.addWidget(QLabel("Contact Support",
-                               styleSheet=f"color:{C_T0};font-size:15px;font-weight:bold;"))
-        c_lay.addWidget(QLabel("ISSUE TYPE",
-                               styleSheet=f"color:{C_T2};font-size:10px;letter-spacing:2px;"))
-        ic = QComboBox()
-        ic.addItems(["Connection", "Speed", "Billing", "Other"])
-        c_lay.addWidget(ic)
-        c_lay.addWidget(QLabel("DESCRIPTION",
-                               styleSheet=f"color:{C_T2};font-size:10px;letter-spacing:2px;"))
-        mb = QTextEdit()
-        mb.setFixedHeight(110)
-        c_lay.addWidget(mb)
-        st_lbl = QLabel("Diagnostics will be attached automatically.")
-        st_lbl.setStyleSheet(f"color:{C_T2};font-size:11px;")
-        c_lay.addWidget(st_lbl)
-        c_lay.addStretch()
-        send_btn = AccentButton("SEND REQUEST")
-        c_lay.addWidget(send_btn)
-        stack.addWidget(compose_w)
-
-        # ── Page 1: Chat ───────────────────────────────────────────────────────
-        chat_w = QWidget()
-        chat_w.setStyleSheet(f"background:{C_BG0};")
-        ch_lay = QVBoxLayout(chat_w)
-        ch_lay.setContentsMargins(0, 0, 0, 0)
-        ch_lay.setSpacing(0)
-
-        ticket_hdr = QLabel()
-        ticket_hdr.setStyleSheet(
-            f"background:{C_BG1};color:{C_T2};font-size:10px;"
-            f"letter-spacing:1px;padding:8px 16px;"
-            f"border-bottom:1px solid {C_BDR};"
+        # If already open — bring to front
+        if hasattr(self, "_chat_win") and self._chat_win and self._chat_win.isVisible():
+            self._chat_win.raise_()
+            self._chat_win.activateWindow()
+            return
+        win = SupportChatWindow(
+            base=self.st.base_url,
+            tok=self.st.session_token or "",
+            did=self.st.device_id or "",
+            hdrs_fn=self._hdrs,
+            runtime=self._runtime,
         )
-        ch_lay.addWidget(ticket_hdr)
-
-        msg_area = QTextBrowser()
-        msg_area.setOpenLinks(False)
-        msg_area.setStyleSheet(
-            f"QTextBrowser{{background:{C_BG0};color:{C_T0};"
-            f"border:none;font-size:12px;padding:8px;}}"
-        )
-        ch_lay.addWidget(msg_area, 1)
-
-        typing_lbl = QLabel()
-        typing_lbl.setFixedHeight(20)
-        typing_lbl.setStyleSheet(f"color:{C_T2};font-size:11px;padding:2px 16px;")
-        ch_lay.addWidget(typing_lbl)
-
-        inp_row = QWidget()
-        inp_row.setStyleSheet(f"background:{C_BG1};border-top:1px solid {C_BDR};")
-        inp_lay = QHBoxLayout(inp_row)
-        inp_lay.setContentsMargins(12, 8, 12, 8)
-        inp_lay.setSpacing(8)
-        inp = QLineEdit()
-        inp.setPlaceholderText("Type your message…")
-        inp.setMaxLength(4000)
-        inp.setStyleSheet(
-            f"background:{C_BG0};color:{C_T0};border:1px solid {C_BDR};"
-            f"border-radius:4px;padding:6px 10px;font-size:12px;"
-        )
-        inp_lay.addWidget(inp, 1)
-        ch_send = QPushButton("SEND")
-        ch_send.setFixedWidth(60)
-        ch_send.setCursor(Qt.CursorShape.PointingHandCursor)
-        ch_send.setStyleSheet(
-            f"QPushButton{{background:{C_ACC};color:#000;border:none;"
-            f"border-radius:4px;padding:6px 0;font-size:11px;font-weight:bold;}}"
-            f"QPushButton:hover{{background:{C_ACC2};}}"
-            f"QPushButton:disabled{{background:{C_BDR};color:{C_T3};}}"
-        )
-        inp_lay.addWidget(ch_send)
-        ch_lay.addWidget(inp_row)
-        stack.addWidget(chat_w)
-
-        # ── State ──────────────────────────────────────────────────────────────
-        _ws = [None]  # holds QWebSocket when open
-
-        # Agent typing indicator — hide after 3 s of silence
-        _agent_typing_timer = QTimer(dlg)
-        _agent_typing_timer.setSingleShot(True)
-        _agent_typing_timer.setInterval(3000)
-        _agent_typing_timer.timeout.connect(lambda: typing_lbl.setText(""))
-
-        # Throttle: send typing event at most once per second
-        _typing_throttle_active = [False]
-        _typing_throttle_timer = QTimer(dlg)
-        _typing_throttle_timer.setSingleShot(True)
-        _typing_throttle_timer.setInterval(1000)
-        _typing_throttle_timer.timeout.connect(
-            lambda: _typing_throttle_active.__setitem__(0, False)
-        )
-
-        def _safe_text(raw) -> str:
-            """Sanitize for HTML display — accepts only plain str."""
-            if not isinstance(raw, str):
-                return ""
-            return (
-                str(raw)
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\n", "<br>")
-            )
-
-        def _append_msg(sender: str, text: str, sent_at: str = "") -> None:
-            ts = ""
-            if sent_at:
-                try:
-                    dt = datetime.fromisoformat(sent_at.replace("Z", "+00:00"))
-                    ts = dt.strftime("%H:%M")
-                except Exception:
-                    pass
-            is_me = sender == "client"
-            align  = "right" if is_me else "left"
-            bg     = C_ACC   if is_me else C_BG2
-            fg     = "#000"  if is_me else C_T0
-            label  = "You"   if is_me else "Support"
-            ts_span = (
-                f' <span style="color:{C_T3};font-size:10px;">{ts}</span>' if ts else ""
-            )
-            msg_area.append(
-                f'<div style="text-align:{align};margin:4px 0;">'
-                f'<span style="font-size:10px;color:{C_T2};">{label}{ts_span}</span><br>'
-                f'<span style="background:{bg};color:{fg};padding:4px 8px;'
-                f'border-radius:6px;display:inline-block;">{_safe_text(text)}</span>'
-                f'</div>'
-            )
-
-        def _on_ws_text(raw: str) -> None:
-            try:
-                frame = _json.loads(raw)
-            except Exception:
-                return
-            ftype = str(frame.get("type") or "")
-
-            if ftype == "system.connected":
-                for m in frame.get("history") or []:
-                    _append_msg(
-                        str(m.get("sender", "")),
-                        str(m.get("text", "")),
-                        str(m.get("sent_at", "")),
-                    )
-
-            elif ftype == "message":
-                _append_msg(
-                    str(frame.get("sender", "")),
-                    str(frame.get("text", "")),
-                    str(frame.get("sent_at", "")),
-                )
-
-            elif ftype == "typing" and str(frame.get("sender", "")) == "agent":
-                typing_lbl.setText("Support is typing…")
-                _agent_typing_timer.start()
-
-            elif ftype == "system.rate_limited":
-                wait = float(frame.get("retry_after") or 0)
-                typing_lbl.setText(f"Slow down — wait {wait:.0f}s.")
-                QTimer.singleShot(int(wait * 1000) + 300, lambda: typing_lbl.setText(""))
-
-            elif ftype in ("system.error",):
-                typing_lbl.setText(str(frame.get("reason") or "Error"))
-                QTimer.singleShot(3000, lambda: typing_lbl.setText(""))
-
-            elif ftype in ("system.timeout",):
-                typing_lbl.setText("Session closed — re-open Support to continue.")
-                inp.setEnabled(False)
-                ch_send.setEnabled(False)
-
-        def _send_frame(frame: dict) -> None:
-            ws = _ws[0]
-            if ws is None:
-                return
-            try:
-                ws.sendTextMessage(_json.dumps(frame))
-            except Exception:
-                pass
-
-        def _on_inp_changed(_: str) -> None:
-            if _typing_throttle_active[0]:
-                return
-            _send_frame({"type": "typing"})
-            _typing_throttle_active[0] = True
-            _typing_throttle_timer.start()
-
-        def _send_chat_msg() -> None:
-            text = inp.text().strip()
-            if not text:
-                return
-            _send_frame({"type": "message", "text": text})
-            inp.clear()
-
-        inp.textChanged.connect(_on_inp_changed)
-        inp.returnPressed.connect(_send_chat_msg)
-        ch_send.clicked.connect(_send_chat_msg)
-
-        def _open_chat(ticket_id: str) -> None:
-            ticket_hdr.setText(f"TICKET  #{ticket_id[:8].upper()}")
-            stack.setCurrentIndex(1)
-
-            # Build WebSocket URL: http→ws, https→wss
-            api_prefix = "/api/v1"
-            ws_base = _re.sub(r"^http", "ws", base)
-            ws_url_str = (
-                f"{ws_base}{api_prefix}/ws/client/support/{ticket_id}"
-                f"?token={tok}&device_id={did}"
-            )
-
-            try:
-                from PyQt6.QtWebSockets import QWebSocket as _QWS
-            except ImportError:
-                typing_lbl.setText("WebSocket support not available.")
-                return
-
-            ws = _QWS()
-            _ws[0] = ws
-            ws.textMessageReceived.connect(_on_ws_text)
-            ws.disconnected.connect(
-                lambda: typing_lbl.setText("Disconnected.")
-                if dlg.isVisible() else None
-            )
-            ws.open(QUrl(ws_url_str))
-
-        def _cleanup_ws() -> None:
-            ws = _ws[0]
-            if ws:
-                try:
-                    ws.close()
-                except Exception:
-                    pass
-                _ws[0] = None
-
-        dlg.finished.connect(lambda _: _cleanup_ws())
-
-        # ── Compose submit ─────────────────────────────────────────────────────
-        def _on_submit() -> None:
-            msg = mb.toPlainText().strip()
-            if not msg:
-                st_lbl.setText("Please describe your issue before sending.")
-                st_lbl.setStyleSheet(f"color:{C_RED};font-size:11px;")
-                return
-            send_btn.setEnabled(False)
-            send_btn.setText("SENDING…")
-            st_lbl.setText("Collecting diagnostics…")
-            st_lbl.setStyleSheet(f"color:{C_T2};font-size:11px;")
-            issue_type = ic.currentText().lower()
-
-            def _c():
-                diag = {}
-                try:
-                    diag = self._runtime.diagnostics()
-                except Exception:
-                    pass
-                diag["os"] = platform.system()
-                diag["os_version"] = platform.version()
-                payload = {
-                    "device_id": did or None,
-                    "issue_type": issue_type,
-                    "message": msg,
-                    "diagnostics": diag,
-                    "app_version": APP_VERSION,
-                    "platform": "desktop",
-                }
-                with httpx_client(timeout=20, base_url=base) as c:
-                    r = c.post(base + "/client/support", json=payload, headers=self._hdrs())
-                    if r.status_code >= 400:
-                        raise RuntimeError(response_detail(r))
-                return r.json()
-
-            def _d(result, err):
-                send_btn.setEnabled(True)
-                send_btn.setText("SEND REQUEST")
-                if err:
-                    st_lbl.setText(f"Failed: {err}")
-                    st_lbl.setStyleSheet(f"color:{C_RED};font-size:11px;")
-                    return
-                _open_chat(result.get("id", ""))
-
-            run_async(dlg, _c, _d)
-
-        send_btn.clicked.connect(_on_submit)
-        dlg.exec()
+        self._chat_win = win
+        # Position to the left of the main window
+        geo = self.window().geometry()
+        win.move(geo.x() - 410 - 8, geo.y())
+        win.show()
 
     def _settings(self):
         self._show_settings()
@@ -3078,6 +2788,315 @@ class TitleBar(QWidget):
     def mouseDoubleClickEvent(self, e):
         # Double-click on titlebar does nothing (app has fixed size)
         pass
+
+# ── Support chat window ────────────────────────────────────────────────────────
+
+class SupportChatWindow(QMainWindow):
+    """Standalone support chat window — opens to the left of the main client."""
+
+    def __init__(self, base: str, tok: str, did: str, hdrs_fn, runtime):
+        super().__init__()
+        self._base     = base
+        self._tok      = tok
+        self._did      = did
+        self._hdrs_fn  = hdrs_fn
+        self._runtime  = runtime
+        self._ws       = None
+        self._drag_pos = None
+
+        self._agent_typing_timer = QTimer(self)
+        self._agent_typing_timer.setSingleShot(True)
+        self._agent_typing_timer.setInterval(3000)
+
+        self._typing_throttle_active = [False]
+        self._typing_throttle_timer  = QTimer(self)
+        self._typing_throttle_timer.setSingleShot(True)
+        self._typing_throttle_timer.setInterval(1000)
+        self._typing_throttle_timer.timeout.connect(
+            lambda: self._typing_throttle_active.__setitem__(0, False)
+        )
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.Window
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        self.setFixedSize(410, 760)
+        self.setStyleSheet(APP_STYLE + f"QMainWindow{{border:1px solid {C_BDR};}}")
+        self._build_ui()
+        QTimer.singleShot(0, self._auto_connect)
+
+    # ── UI ─────────────────────────────────────────────────────────────────────
+
+    def _build_ui(self):
+        root = QWidget()
+        root.setStyleSheet(f"background:{C_BG0};")
+        rl = QVBoxLayout(root)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.setSpacing(0)
+        self.setCentralWidget(root)
+
+        # Titlebar
+        tb = QWidget()
+        tb.setFixedHeight(38)
+        tb.setStyleSheet(f"background:{C_BG1};border-bottom:1px solid {C_BDR};")
+        tb.installEventFilter(self)
+        self._tb = tb
+        tb_lay = QHBoxLayout(tb)
+        tb_lay.setContentsMargins(14, 0, 10, 0)
+        tb_lay.setSpacing(0)
+        logo = QLabel("ONyX")
+        logo.setStyleSheet(
+            f"color:{C_ACC2};font-family:'Courier New';"
+            "font-size:13px;font-weight:bold;letter-spacing:3px;"
+        )
+        tb_lay.addWidget(logo)
+        sub = QLabel("  SUPPORT")
+        sub.setStyleSheet(f"color:{C_T2};font-size:12px;letter-spacing:2px;")
+        tb_lay.addWidget(sub)
+        tb_lay.addStretch()
+        tb_lay.addWidget(TitleBar._mk_btn("✕", "Close", self.close, C_RED))
+        rl.addWidget(tb)
+
+        # Status line
+        self._hdr = QLabel("Connecting…")
+        self._hdr.setFixedHeight(24)
+        self._hdr.setStyleSheet(
+            f"background:{C_BG1};color:{C_T2};font-size:10px;"
+            f"letter-spacing:1px;padding:0 16px;"
+            f"border-bottom:1px solid {C_BDR};"
+        )
+        rl.addWidget(self._hdr)
+
+        # Messages
+        self._msgs = QTextBrowser()
+        self._msgs.setOpenLinks(False)
+        self._msgs.setStyleSheet(
+            f"QTextBrowser{{background:{C_BG0};color:{C_T0};"
+            f"border:none;font-size:13px;padding:8px;}}"
+        )
+        rl.addWidget(self._msgs, 1)
+
+        # Typing indicator
+        self._typing_lbl = QLabel()
+        self._typing_lbl.setFixedHeight(20)
+        self._typing_lbl.setStyleSheet(f"color:{C_T2};font-size:11px;padding:2px 16px;")
+        self._agent_typing_timer.timeout.connect(lambda: self._typing_lbl.setText(""))
+        rl.addWidget(self._typing_lbl)
+
+        # Input row
+        inp_row = QWidget()
+        inp_row.setStyleSheet(f"background:{C_BG1};border-top:1px solid {C_BDR};")
+        inp_lay = QHBoxLayout(inp_row)
+        inp_lay.setContentsMargins(12, 8, 12, 8)
+        inp_lay.setSpacing(8)
+        self._inp = QLineEdit()
+        self._inp.setPlaceholderText("Type your message…")
+        self._inp.setMaxLength(4000)
+        self._inp.setEnabled(False)
+        self._inp.setStyleSheet(
+            f"background:{C_BG0};color:{C_T0};border:1px solid {C_BDR};"
+            f"border-radius:4px;padding:6px 10px;font-size:13px;"
+        )
+        inp_lay.addWidget(self._inp, 1)
+        self._send_btn = QPushButton("SEND")
+        self._send_btn.setFixedWidth(60)
+        self._send_btn.setEnabled(False)
+        self._send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._send_btn.setStyleSheet(
+            f"QPushButton{{background:{C_ACC};color:#000;border:none;"
+            f"border-radius:4px;padding:6px 0;font-size:11px;font-weight:bold;}}"
+            f"QPushButton:hover{{background:{C_ACC2};}}"
+            f"QPushButton:disabled{{background:{C_BDR};color:{C_T3};}}"
+        )
+        inp_lay.addWidget(self._send_btn)
+        rl.addWidget(inp_row)
+
+        self._inp.textChanged.connect(self._on_inp_changed)
+        self._inp.returnPressed.connect(self._send_msg)
+        self._send_btn.clicked.connect(self._send_msg)
+
+    def eventFilter(self, obj, event):
+        """Titlebar drag."""
+        if obj is self._tb:
+            t = event.type()
+            if t == event.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            elif t == event.Type.MouseMove and self._drag_pos is not None:
+                if event.buttons() == Qt.MouseButton.LeftButton:
+                    self.move(event.globalPosition().toPoint() - self._drag_pos)
+            elif t == event.Type.MouseButtonRelease:
+                self._drag_pos = None
+        return super().eventFilter(obj, event)
+
+    # ── Ticket + WebSocket ──────────────────────────────────────────────────────
+
+    def _auto_connect(self):
+        def _worker():
+            diag = {}
+            try:
+                diag = self._runtime.diagnostics()
+            except Exception:
+                pass
+            diag["os"] = platform.system()
+            diag["os_version"] = platform.version()
+            with httpx_client(timeout=20, base_url=self._base) as c:
+                r = c.post(
+                    self._base + "/client/support",
+                    json={
+                        "device_id": self._did or None,
+                        "issue_type": "other",
+                        "message": "[Chat session]",
+                        "diagnostics": diag,
+                        "app_version": APP_VERSION,
+                        "platform": "desktop",
+                    },
+                    headers=self._hdrs_fn(),
+                )
+                if r.status_code >= 400:
+                    raise RuntimeError(response_detail(r))
+            return r.json()
+
+        def _done(result, err):
+            if err:
+                self._hdr.setText(f"Error: {err}")
+                return
+            tid = result.get("id", "")
+            self._hdr.setText(f"TICKET  #{tid[:8].upper()}")
+            self._open_ws(tid)
+
+        run_async(self, _worker, _done)
+
+    def _open_ws(self, ticket_id: str) -> None:
+        import re as _re
+        ws_base = _re.sub(r"^http", "ws", self._base)
+        ws_url  = (
+            f"{ws_base}/api/v1/ws/client/support/{ticket_id}"
+            f"?token={self._tok}&device_id={self._did}"
+        )
+        try:
+            from PyQt6.QtWebSockets import QWebSocket as _QWS
+        except ImportError:
+            self._typing_lbl.setText("WebSocket support not available.")
+            return
+        ws = _QWS()
+        self._ws = ws
+        ws.textMessageReceived.connect(self._on_ws_text)
+        ws.disconnected.connect(
+            lambda: self._typing_lbl.setText("Disconnected.")
+            if self.isVisible() else None
+        )
+        ws.open(QUrl(ws_url))
+
+    # ── WebSocket frames ───────────────────────────────────────────────────────
+
+    def _on_ws_text(self, raw: str) -> None:
+        try:
+            frame = json.loads(raw)
+        except Exception:
+            return
+        ftype = str(frame.get("type") or "")
+
+        if ftype == "system.connected":
+            self._inp.setEnabled(True)
+            self._send_btn.setEnabled(True)
+            for m in frame.get("history") or []:
+                self._append_msg(
+                    str(m.get("sender", "")),
+                    str(m.get("text", "")),
+                    str(m.get("sent_at", "")),
+                )
+        elif ftype == "message":
+            self._append_msg(
+                str(frame.get("sender", "")),
+                str(frame.get("text", "")),
+                str(frame.get("sent_at", "")),
+            )
+        elif ftype == "typing" and str(frame.get("sender", "")) == "agent":
+            self._typing_lbl.setText("Support is typing…")
+            self._agent_typing_timer.start()
+        elif ftype == "system.rate_limited":
+            wait = float(frame.get("retry_after") or 0)
+            self._typing_lbl.setText(f"Slow down — wait {wait:.0f}s.")
+            QTimer.singleShot(int(wait * 1000) + 300, lambda: self._typing_lbl.setText(""))
+        elif ftype == "system.error":
+            self._typing_lbl.setText(str(frame.get("reason") or "Error"))
+            QTimer.singleShot(3000, lambda: self._typing_lbl.setText(""))
+        elif ftype == "system.timeout":
+            self._typing_lbl.setText("Session closed — re-open Support to continue.")
+            self._inp.setEnabled(False)
+            self._send_btn.setEnabled(False)
+
+    @staticmethod
+    def _safe_text(raw) -> str:
+        if not isinstance(raw, str):
+            return ""
+        return (
+            str(raw)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\n", "<br>")
+        )
+
+    def _append_msg(self, sender: str, text: str, sent_at: str = "") -> None:
+        ts = ""
+        if sent_at:
+            try:
+                dt = datetime.fromisoformat(sent_at.replace("Z", "+00:00"))
+                ts = dt.strftime("%H:%M")
+            except Exception:
+                pass
+        is_me  = sender == "client"
+        align  = "right" if is_me else "left"
+        bg     = C_ACC   if is_me else C_BG2
+        fg     = "#000"  if is_me else C_T0
+        label  = "You"   if is_me else "Support"
+        ts_span = (
+            f' <span style="color:{C_T3};font-size:10px;">{ts}</span>' if ts else ""
+        )
+        self._msgs.append(
+            f'<div style="text-align:{align};margin:4px 0;">'
+            f'<span style="font-size:10px;color:{C_T2};">{label}{ts_span}</span><br>'
+            f'<span style="background:{bg};color:{fg};padding:4px 8px;'
+            f'border-radius:6px;display:inline-block;">{self._safe_text(text)}</span>'
+            f'</div>'
+        )
+
+    # ── Input handlers ─────────────────────────────────────────────────────────
+
+    def _on_inp_changed(self, _: str) -> None:
+        if self._typing_throttle_active[0]:
+            return
+        self._send_frame({"type": "typing"})
+        self._typing_throttle_active[0] = True
+        self._typing_throttle_timer.start()
+
+    def _send_frame(self, frame: dict) -> None:
+        if self._ws is None:
+            return
+        try:
+            self._ws.sendTextMessage(json.dumps(frame))
+        except Exception:
+            pass
+
+    def _send_msg(self) -> None:
+        text = self._inp.text().strip()
+        if not text:
+            return
+        self._send_frame({"type": "message", "text": text})
+        self._inp.clear()
+
+    def closeEvent(self, event):
+        if self._ws:
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+            self._ws = None
+        super().closeEvent(event)
+
 
 # ── Main window ────────────────────────────────────────────────────────────────
 
