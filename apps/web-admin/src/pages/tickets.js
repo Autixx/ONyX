@@ -109,9 +109,15 @@ window.loadSupportTickets = function loadSupportTickets(silent) {
     _supportTickets = {};
     if (!data || !data.length) {
       sidebar.innerHTML = '<div style="padding:12px;color:var(--t2);font-size:13px;">No tickets</div>';
+      var cel = document.getElementById('sOpenTickets');
+      if (cel) { cel.textContent = '0'; cel.style.color = 'var(--grn)'; }
       return;
     }
     data.forEach(function(t) { _supportTickets[t.id] = t; });
+    // Update System-Main counter using already-fetched data
+    var openCount = data.filter(function(t){ return t.status === 'pending' || t.status === 'in_progress'; }).length;
+    var cel = document.getElementById('sOpenTickets');
+    if (cel) { cel.textContent = String(openCount); cel.style.color = openCount > 0 ? 'var(--amb)' : 'var(--grn)'; }
     var prevActive = _supportTicketId;
     sidebar.innerHTML = data.map(function(t) {
       var dt = t.created_at ? new Date(t.created_at).toLocaleString() : '';

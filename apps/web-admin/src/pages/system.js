@@ -285,8 +285,8 @@ window.startHealthPolling = function startHealthPolling() {
   }, 15000);
 };
 
-// Legacy compat — no longer needed (data comes from summary) but keep stub
-window.updateOpenTicketCount = function updateOpenTicketCount() {};
+// Legacy compat stub — real implementation is in tickets.js
+window.updateOpenTicketCount = window.updateOpenTicketCount || function() {};
 
 // Init charts on DOM ready
 document.addEventListener('DOMContentLoaded', function() {

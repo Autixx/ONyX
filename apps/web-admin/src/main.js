@@ -82,6 +82,7 @@ window.loadData = async function() {
     window.loadPeers?.(),
     window.loadRegistrations?.(),
     window.refreshIdentityData?.(),
+    window.updateOpenTicketCount?.(),
   ]);
 };
 
