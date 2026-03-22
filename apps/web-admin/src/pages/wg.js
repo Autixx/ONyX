@@ -1,5 +1,9 @@
 // Page module - all functions exposed as window globals
 
+window.wgPeerCount = function wgPeerCount(serviceId){
+  return PEERS.filter(function(p){ return p.wg_service_id === serviceId && p.is_active !== false && !p.revoked_at; }).length;
+};
+
 window.refreshWgServices = async function refreshWgServices(){
   try{
     var data = await apiFetch(API_PREFIX + '/wg-services');

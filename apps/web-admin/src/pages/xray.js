@@ -1,5 +1,9 @@
 // Page module - all functions exposed as window globals
 
+window.xrayPeerCount = function xrayPeerCount(serviceId){
+  return PEERS.filter(function(p){ return p.xray_service_id === serviceId && p.is_active !== false && !p.revoked_at; }).length;
+};
+
 window.refreshXrayServices = async function refreshXrayServices(){
   try{
     var data = await apiFetch(API_PREFIX + '/xray-services');

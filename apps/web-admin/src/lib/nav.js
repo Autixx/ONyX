@@ -138,6 +138,10 @@ window.showPage = function showPage(pageId){
   }
   window.syncTopologyAutoButton?.();
   if(pageId==='failban'){ window.refreshFailban?.().catch(function(){}); }
+  if(pageId==='xray'){ window.refreshXrayServices?.().catch(function(){}); }
+  if(pageId==='awg'){ window.refreshAwgServices?.().catch(function(){}); }
+  if(pageId==='wg'){ window.refreshWgServices?.().catch(function(){}); }
+  if(pageId==='ovpn'){ window.refreshOpenvpnCloakServices?.().catch(function(){}); }
   if(pageId==='tickets'){ window.loadSupportTickets?.(); window.startSupportTicketsRefresh?.(); if(window._supportTicketId) window._clearSupportUnread?.(window._supportTicketId); }
   else { window.stopSupportTicketsRefresh?.(); }
 
