@@ -7,6 +7,7 @@ import './lib/utils.js';
 import './lib/modal.js';
 import './lib/i18n.js';
 import './lib/theme.js';
+import './lib/login-canvas.js';
 import './lib/nav.js';
 import './lib/ws.js';
 

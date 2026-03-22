@@ -205,7 +205,8 @@ def _mount_static_ui(app: FastAPI, settings) -> None:
     index_path = web_ui_dir / "index.html"
     if not index_path.exists():
         return
-    app.mount("/", SPAStaticFiles(directory=str(web_ui_dir), html=True), name="web-ui")
+    mount_path = "/" + settings.web_ui_path.strip("/")
+    app.mount(mount_path, SPAStaticFiles(directory=str(web_ui_dir), html=True), name="web-ui")
 
 
 app = create_app()

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     debug: bool = False
     web_ui_enabled: bool = True
     web_ui_dir: str = "/opt/onyx/apps/web-admin/dist"
+    web_ui_path: str = "/"
     database_url: str = Field(
         default=f"sqlite:///{(Path(__file__).resolve().parents[2] / 'onx_dev.db').as_posix()}",
     )
