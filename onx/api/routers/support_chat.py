@@ -415,6 +415,7 @@ def get_ticket_messages(
 @router.delete(
     "/admin/support/{ticket_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 def delete_support_ticket(
     ticket_id: str,
