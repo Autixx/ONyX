@@ -3067,21 +3067,30 @@ class SupportChatPanel(QWidget):
                 ts = dt.strftime("%H:%M")
             except Exception:
                 pass
-        is_me  = sender == "client"
-        align  = "right" if is_me else "left"
-        bg     = C_ACC   if is_me else C_BG2
-        fg     = "#000"  if is_me else C_T0
-        label  = "You"   if is_me else "Support"
-        ts_span = (
-            f' <span style="color:{C_T3};font-size:10px;">{ts}</span>' if ts else ""
+        is_me = sender == "client"
+        bg    = C_ACC  if is_me else C_BG2
+        fg    = "#000" if is_me else C_T0
+        label = "You"  if is_me else "Support"
+        ts_str = f' <span style="color:{C_T3};font-size:10px;">{ts}</span>' if ts else ""
+        bubble = (
+            f'<span style="font-size:10px;color:{C_T2};">{label}{ts_str}</span><br>'
+            f'<span style="background:{bg};color:{fg};padding:4px 10px;'
+            f'border-radius:8px;display:inline-block;">{self._safe_text(text)}</span>'
         )
-        self._msgs.append(
-            f'<div style="text-align:{align};margin:4px 0;">'
-            f'<span style="font-size:10px;color:{C_T2};">{label}{ts_span}</span><br>'
-            f'<span style="background:{bg};color:{fg};padding:4px 8px;'
-            f'border-radius:6px;display:inline-block;">{self._safe_text(text)}</span>'
-            f'</div>'
-        )
+        # Use table layout for reliable left/right alignment in QTextBrowser
+        if is_me:
+            html = (
+                f'<table width="100%" cellspacing="0" cellpadding="2">'
+                f'<tr><td width="20%"></td>'
+                f'<td width="80%" align="right">{bubble}</td></tr></table>'
+            )
+        else:
+            html = (
+                f'<table width="100%" cellspacing="0" cellpadding="2">'
+                f'<tr><td width="80%" align="left">{bubble}</td>'
+                f'<td width="20%"></td></tr></table>'
+            )
+        self._msgs.append(html)
 
     # ── Input handlers ─────────────────────────────────────────────────────────
 

@@ -46,7 +46,7 @@ _RE_ANSI = re.compile(
 _RE_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, status
-from sqlalchemy import select
+from sqlalchemy import delete as sql_delete, select
 from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
@@ -408,3 +408,20 @@ def get_ticket_messages(
         }
         for m in msgs
     ]
+
+
+# ── REST: delete ticket ────────────────────────────────────────────────────────
+
+@router.delete(
+    "/admin/support/{ticket_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_support_ticket(
+    ticket_id: str,
+    db: Session = Depends(get_database_session),
+) -> None:
+    db.execute(sql_delete(SupportChatMessage).where(SupportChatMessage.ticket_id == ticket_id))
+    ticket = db.scalars(select(SupportTicket).where(SupportTicket.id == ticket_id)).first()
+    if ticket:
+        db.delete(ticket)
+    db.commit()
