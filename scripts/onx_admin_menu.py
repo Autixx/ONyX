@@ -690,7 +690,9 @@ def _nodes_menu(base_url: str, admin_token: str | None) -> None:
             ]
         )
         choice = input("Choice: ").strip()
-        if choice == "1":
+        if choice == "0":
+            return
+        elif choice == "1":
             _create_node_screen(base_url, admin_token)
         elif choice == "2":
             _provision_node_screen(base_url, admin_token)
@@ -857,7 +859,9 @@ def _system_menu(
             ]
         )
         choice = input("Choice: ").strip()
-        if choice == "1":
+        if choice == "0":
+            return
+        elif choice == "1":
             _status_screen(base_url, service_name)
         elif choice == "2":
             _service_check_screen(base_url, admin_token, service_name)
@@ -1098,7 +1102,9 @@ def _jobs_menu(base_url: str, admin_token: str | None) -> None:
             ]
         )
         choice = input("Choice: ").strip()
-        if choice == "1":
+        if choice == "0":
+            return
+        elif choice == "1":
             _list_jobs_screen(base_url, admin_token)
         elif choice == "2":
             _view_last_job_result_screen(base_url, admin_token)
@@ -1260,7 +1266,9 @@ def _links_menu(base_url: str, admin_token: str | None) -> None:
             ]
         )
         choice = input("Choice: ").strip()
-        if choice == "1":
+        if choice == "0":
+            return
+        elif choice == "1":
             _list_links_screen(base_url, admin_token)
         elif choice == "2":
             _view_link_screen(base_url, admin_token)
@@ -1389,7 +1397,9 @@ def _route_policies_menu(base_url: str, admin_token: str | None) -> None:
             ]
         )
         choice = input("Choice: ").strip()
-        if choice == "1":
+        if choice == "0":
+            return
+        elif choice == "1":
             list_screen()
         elif choice == "2":
             create_screen()
@@ -1419,7 +1429,9 @@ def _dns_policies_menu(base_url: str, admin_token: str | None) -> None:
     while True:
         _render(["ONX / Policies / DNS", "", "1. List DNS policies", "2. Create DNS policy", "3. Update DNS policy", "4. Delete DNS policy", "5. Apply DNS policy", "6. Back", ""])
         choice = input("Choice: ").strip()
-        if choice == "1":
+        if choice == "0":
+            return
+        elif choice == "1":
             items = _fetch_dns_policies(base_url, admin_token)
             rows = [f"{i}. route={item.get('route_policy_id')} dns={item.get('dns_address')} enabled={item.get('enabled')}" for i, item in enumerate(items, start=1)]
             _show_simple_list("ONX / Policies / DNS", rows, "No DNS policies found.")
@@ -1450,7 +1462,9 @@ def _geo_policies_menu(base_url: str, admin_token: str | None) -> None:
     while True:
         _render(["ONX / Policies / Geo", "", "1. List geo policies", "2. Create geo policy", "3. Update geo policy", "4. Delete geo policy", "5. Apply geo policy", "6. Back", ""])
         choice = input("Choice: ").strip()
-        if choice == "1":
+        if choice == "0":
+            return
+        elif choice == "1":
             items = _fetch_geo_policies(base_url, admin_token)
             rows = [f"{i}. {item.get('country_code')} route={item.get('route_policy_id')} mode={item.get('mode')} enabled={item.get('enabled')}" for i, item in enumerate(items, start=1)]
             _show_simple_list("ONX / Policies / Geo", rows, "No geo policies found.")
@@ -1481,7 +1495,9 @@ def _balancers_menu(base_url: str, admin_token: str | None) -> None:
     while True:
         _render(["ONX / Policies / Balancers", "", "1. List balancers", "2. Create balancer", "3. Update balancer", "4. Delete balancer", "5. Pick balancer member", "6. Run balancer probes", "7. Back", ""])
         choice = input("Choice: ").strip()
-        if choice == "1":
+        if choice == "0":
+            return
+        elif choice == "1":
             items = _fetch_balancers(base_url, admin_token)
             rows = [f"{i}. {item.get('name')} [node={item.get('node_id')}, method={item.get('method')}, members={len(item.get('members') or [])}]" for i, item in enumerate(items, start=1)]
             _show_simple_list("ONX / Policies / Balancers", rows, "No balancers found.")
@@ -1516,7 +1532,9 @@ def _policies_menu(base_url: str, admin_token: str | None) -> None:
     while True:
         _render(["ONX / Policies", "", "1. Route policies", "2. DNS policies", "3. Geo policies", "4. Balancers", "5. Back", ""])
         choice = input("Choice: ").strip()
-        if choice == "1":
+        if choice == "0":
+            return
+        elif choice == "1":
             _route_policies_menu(base_url, admin_token)
         elif choice == "2":
             _dns_policies_menu(base_url, admin_token)
@@ -1588,7 +1606,9 @@ def _audit_access_menu(base_url: str, admin_token: str | None) -> None:
     while True:
         _render(["ONX / Audit & Access", "", "1. Audit logs", "2. List access rules", "3. View access rule matrix", "4. Upsert access rule", "5. Delete access rule", "6. Back", ""])
         choice = input("Choice: ").strip()
-        if choice == "1":
+        if choice == "0":
+            return
+        elif choice == "1":
             _audit_logs_screen(base_url, admin_token)
         elif choice == "2":
             _list_access_rules_screen(base_url, admin_token)
@@ -1649,7 +1669,9 @@ def _topology_menu(base_url: str, admin_token: str | None) -> None:
     while True:
         _render(["ONX / Topology", "", "1. Graph summary", "2. Plan path", "3. Back", ""])
         choice = input("Choice: ").strip()
-        if choice == "1":
+        if choice == "0":
+            return
+        elif choice == "1":
             _graph_summary_screen(base_url, admin_token)
         elif choice == "2":
             _plan_path_screen(base_url, admin_token)
@@ -1661,7 +1683,7 @@ def _api_debug_menu(base_url: str, admin_token: str | None, client_token: str | 
     while True:
         _render(["ONX / API Debug", "", "1. Raw GET", "2. Raw POST", "3. Raw PATCH", "4. Raw PUT", "5. Raw DELETE", "6. Back", ""])
         choice = input("Choice: ").strip()
-        if choice == "6":
+        if choice in ("0", "6"):
             return
         method_map = {"1": "GET", "2": "POST", "3": "PATCH", "4": "PUT", "5": "DELETE"}
         method = method_map.get(choice)
@@ -1731,7 +1753,9 @@ def main() -> int:
                 ]
             )
             choice = input("Choice: ").strip()
-            if choice == "1":
+            if choice in ("0", "9"):
+                return 0
+            elif choice == "1":
                 _system_menu(base_url, admin_token, args.service_name, install_dir, client_auth_file, admin_auth_file, admin_web_auth_file)
             elif choice == "2":
                 _nodes_menu(base_url, admin_token)
@@ -1747,8 +1771,6 @@ def main() -> int:
                 _topology_menu(base_url, admin_token)
             elif choice == "8":
                 _api_debug_menu(base_url, admin_token, client_token)
-            elif choice == "9":
-                return 0
     finally:
         _leave_alt_screen()
 
