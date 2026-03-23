@@ -398,6 +398,7 @@ class ClientState:
         self.saved_username = ""
         self.saved_password = ""
         self.split_tunnel_disabled = False
+        self.split_tunnel_bypass_domains: list[str] = []
 
     def load(self):
         if not STATE_PATH.exists(): return
@@ -405,7 +406,8 @@ class ClientState:
         for k in ("base_url","session_token","user","subscription",
                   "device_id","device_private_key","device_public_key","last_bundle",
                   "active_transport","active_interface","active_profile_id","active_config_path","active_runtime_mode",
-                  "lang","remember_me","saved_username","saved_password","split_tunnel_disabled"):
+                  "lang","remember_me","saved_username","saved_password","split_tunnel_disabled",
+                  "split_tunnel_bypass_domains"):
             setattr(self, k, d.get(k, getattr(self, k)))
         self.base_url = normalize_api_base_url(self.base_url)
 
@@ -421,6 +423,7 @@ class ClientState:
             "active_runtime_mode":self.active_runtime_mode,"lang":self.lang,
             "remember_me":self.remember_me,"saved_username":self.saved_username,"saved_password":self.saved_password,
             "split_tunnel_disabled":self.split_tunnel_disabled,
+            "split_tunnel_bypass_domains":self.split_tunnel_bypass_domains,
         },indent=2,ensure_ascii=False),encoding="utf-8")
 
     def clear_session(self):
@@ -648,12 +651,68 @@ class LocalTunnelRuntime:
             config_text,
         )
 
+    @staticmethod
+    def _subtract_ips(allowed: list[str], exclude: list[str]) -> list[str]:
+        """Return allowed CIDRs with exclude IPs removed using address_exclude."""
+        import ipaddress
+        nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+        for cidr in allowed:
+            try:
+                nets.append(ipaddress.ip_network(cidr.strip(), strict=False))
+            except ValueError:
+                pass
+        for raw in exclude:
+            try:
+                exc = ipaddress.ip_network(raw if "/" in raw else raw + "/32", strict=False)
+            except ValueError:
+                continue
+            new: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+            for net in nets:
+                if net.overlaps(exc):
+                    try:
+                        new.extend(net.address_exclude(exc))
+                    except ValueError:
+                        new.append(net)
+                else:
+                    new.append(net)
+            nets = new
+        return [str(n) for n in nets]
+
+    def _apply_domain_bypass(self, config_text: str) -> str:
+        """Resolve bypass domains to IPs and remove them from AllowedIPs."""
+        import re, socket
+        domains = [d.strip() for d in self.st.split_tunnel_bypass_domains if d.strip()]
+        if not domains:
+            return config_text
+        resolved: list[str] = []
+        for domain in domains:
+            try:
+                for info in socket.getaddrinfo(domain, None, socket.AF_INET):
+                    ip = info[4][0]
+                    if ip not in resolved:
+                        resolved.append(ip)
+            except Exception:
+                pass
+        if not resolved:
+            return config_text
+
+        def _replace(m: re.Match) -> str:
+            current = [x.strip() for x in m.group(1).split(",") if x.strip()]
+            updated = self._subtract_ips(current, resolved)
+            return "AllowedIPs = " + ", ".join(updated) if updated else m.group(0)
+
+        return re.sub(r'(?m)^AllowedIPs\s*=\s*(.+)$', _replace, config_text)
+
+    def _patch_config(self, config_text: str) -> str:
+        """Apply all client-side split-tunnel overrides to a WireGuard config."""
+        if self.st.split_tunnel_disabled:
+            return self._force_full_tunnel(config_text)
+        return self._apply_domain_bypass(config_text)
+
     def _write_config(self, interface_name: str, config_text: str) -> Path:
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         config_path = RUNTIME_DIR / f"{interface_name}.conf"
-        if self.st.split_tunnel_disabled:
-            config_text = self._force_full_tunnel(config_text)
-        normalized = config_text.replace("\r\n", "\n").strip() + "\n"
+        normalized = self._patch_config(config_text).replace("\r\n", "\n").strip() + "\n"
         config_path.write_text(normalized, encoding="utf-8")
         return config_path
 
@@ -913,10 +972,7 @@ class LocalTunnelRuntime:
 
     def _connect_via_daemon(self, profiles: list[dict]) -> dict:
         def _cfg(profile: dict) -> str:
-            cfg = profile.get("config", "")
-            if self.st.split_tunnel_disabled:
-                cfg = self._force_full_tunnel(cfg)
-            return cfg
+            return self._patch_config(profile.get("config", ""))
 
         apply_payload = {
             "bundle_id": ((self.st.last_bundle or {}).get("bundle_id") or ""),
@@ -2416,6 +2472,18 @@ class DashboardScreen(QWidget):
         st_note.setStyleSheet(f"color:{C_T2};font-size:10px;")
         st_note.setWordWrap(True); sl.addWidget(st_note)
 
+        bypass_lbl = QLabel("BYPASS DOMAINS")
+        bypass_lbl.setStyleSheet(f"color:{C_T2};font-size:9px;letter-spacing:2px;margin-top:6px;"); sl.addWidget(bypass_lbl)
+        self._s_bypass = QTextEdit()
+        self._s_bypass.setFixedHeight(80)
+        self._s_bypass.setPlaceholderText("One domain per line, e.g.:\npanel.example.com\napi.example.com")
+        self._s_bypass.setPlainText("\n".join(self.st.split_tunnel_bypass_domains))
+        self._s_bypass.focusOutEvent = lambda e: (self._s_save_bypass(), type(self._s_bypass).focusOutEvent(self._s_bypass, e))
+        sl.addWidget(self._s_bypass)
+        bypass_note = QLabel("These domains will bypass the tunnel (go direct). Effective on next connect. Tip: add your admin panel domain here to keep panel access while connected.")
+        bypass_note.setStyleSheet(f"color:{C_T2};font-size:10px;")
+        bypass_note.setWordWrap(True); sl.addWidget(bypass_note)
+
         sl.addStretch()
 
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
@@ -2431,15 +2499,22 @@ class DashboardScreen(QWidget):
         self._s_st_chk.blockSignals(True)
         self._s_st_chk.setChecked(self.st.split_tunnel_disabled)
         self._s_st_chk.blockSignals(False)
+        self._s_bypass.setPlainText("\n".join(self.st.split_tunnel_bypass_domains))
         self._view_stack.setCurrentIndex(1)
 
     def _hide_settings(self):
         self._s_save_api()
+        self._s_save_bypass()
         self._view_stack.setCurrentIndex(0)
 
     def _s_save_api(self):
         self.st.base_url = normalize_api_base_url(self._s_api_url.text())
         self._s_api_url.setText(self.st.base_url); self.st.save()
+
+    def _s_save_bypass(self):
+        domains = [d.strip() for d in self._s_bypass.toPlainText().splitlines() if d.strip()]
+        self.st.split_tunnel_bypass_domains = domains
+        self.st.save()
 
     def _s_test_api(self):
         self._s_save_api()
