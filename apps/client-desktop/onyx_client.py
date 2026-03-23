@@ -397,6 +397,7 @@ class ClientState:
         self.remember_me = False
         self.saved_username = ""
         self.saved_password = ""
+        self.split_tunnel_disabled = False
 
     def load(self):
         if not STATE_PATH.exists(): return
@@ -404,7 +405,7 @@ class ClientState:
         for k in ("base_url","session_token","user","subscription",
                   "device_id","device_private_key","device_public_key","last_bundle",
                   "active_transport","active_interface","active_profile_id","active_config_path","active_runtime_mode",
-                  "lang","remember_me","saved_username","saved_password"):
+                  "lang","remember_me","saved_username","saved_password","split_tunnel_disabled"):
             setattr(self, k, d.get(k, getattr(self, k)))
         self.base_url = normalize_api_base_url(self.base_url)
 
@@ -419,6 +420,7 @@ class ClientState:
             "active_profile_id":self.active_profile_id,"active_config_path":self.active_config_path,
             "active_runtime_mode":self.active_runtime_mode,"lang":self.lang,
             "remember_me":self.remember_me,"saved_username":self.saved_username,"saved_password":self.saved_password,
+            "split_tunnel_disabled":self.split_tunnel_disabled,
         },indent=2,ensure_ascii=False),encoding="utf-8")
 
     def clear_session(self):
@@ -636,9 +638,21 @@ class LocalTunnelRuntime:
             return "onyxovpn0"
         return "onyxwg0"
 
+    @staticmethod
+    def _force_full_tunnel(config_text: str) -> str:
+        """Replace AllowedIPs in all [Peer] sections with full-tunnel routes."""
+        import re
+        return re.sub(
+            r'(?m)^AllowedIPs\s*=.*$',
+            'AllowedIPs = 0.0.0.0/0, ::/0',
+            config_text,
+        )
+
     def _write_config(self, interface_name: str, config_text: str) -> Path:
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         config_path = RUNTIME_DIR / f"{interface_name}.conf"
+        if self.st.split_tunnel_disabled:
+            config_text = self._force_full_tunnel(config_text)
         normalized = config_text.replace("\r\n", "\n").strip() + "\n"
         config_path.write_text(normalized, encoding="utf-8")
         return config_path
@@ -898,6 +912,12 @@ class LocalTunnelRuntime:
         return int(result) > 32
 
     def _connect_via_daemon(self, profiles: list[dict]) -> dict:
+        def _cfg(profile: dict) -> str:
+            cfg = profile.get("config", "")
+            if self.st.split_tunnel_disabled:
+                cfg = self._force_full_tunnel(cfg)
+            return cfg
+
         apply_payload = {
             "bundle_id": ((self.st.last_bundle or {}).get("bundle_id") or ""),
             "dns": self.dns_policy(),
@@ -906,7 +926,7 @@ class LocalTunnelRuntime:
                     "id": profile.get("id", ""),
                     "transport": profile.get("type", ""),
                     "priority": int(profile.get("priority", 9999)),
-                    "config_text": profile.get("config", ""),
+                    "config_text": _cfg(profile),
                     "metadata": {"tunnel_name": self._interface_name_for(profile.get("type", ""))},
                 }
                 for profile in profiles
@@ -2383,6 +2403,19 @@ class DashboardScreen(QWidget):
         dns_lbl.setStyleSheet(f"color:{C_T2};font-size:9px;letter-spacing:2px;"); sl.addWidget(dns_lbl)
         self._s_dns = QTextEdit(); self._s_dns.setReadOnly(True); self._s_dns.setFixedHeight(72)
         sl.addWidget(self._s_dns)
+
+        sl.addWidget(Divider())
+        st_lbl = QLabel("SPLIT TUNNEL")
+        st_lbl.setStyleSheet(f"color:{C_T2};font-size:9px;letter-spacing:2px;"); sl.addWidget(st_lbl)
+        self._s_st_chk = QCheckBox("Disable split-tunneling (force full tunnel)")
+        self._s_st_chk.setStyleSheet(f"color:{C_T1};font-size:11px;")
+        self._s_st_chk.setChecked(self.st.split_tunnel_disabled)
+        self._s_st_chk.stateChanged.connect(self._s_toggle_split_tunnel)
+        sl.addWidget(self._s_st_chk)
+        st_note = QLabel("When enabled, all traffic is routed through the VPN regardless of server-side split-tunnel settings.")
+        st_note.setStyleSheet(f"color:{C_T2};font-size:10px;")
+        st_note.setWordWrap(True); sl.addWidget(st_note)
+
         sl.addStretch()
 
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
@@ -2395,6 +2428,9 @@ class DashboardScreen(QWidget):
         self._s_api_url.setText(self.st.base_url)
         self._s_startup_lbl.setText(
             "Background startup: installed" if is_autostart_installed() else "Background startup: not installed")
+        self._s_st_chk.blockSignals(True)
+        self._s_st_chk.setChecked(self.st.split_tunnel_disabled)
+        self._s_st_chk.blockSignals(False)
         self._view_stack.setCurrentIndex(1)
 
     def _hide_settings(self):
@@ -2472,6 +2508,21 @@ class DashboardScreen(QWidget):
             _info_dialog(self, "Startup", "Background startup task removed.")
         except Exception as exc:
             _error_dialog(self, "Startup", str(exc))
+
+    def _s_toggle_split_tunnel(self, state):
+        disabled = bool(state)
+        self.st.split_tunnel_disabled = disabled
+        self.st.save()
+        base = self.st.base_url; hdrs = self._hdrs()
+        did = self.st.device_id
+        def _c():
+            with httpx_client(timeout=10, base_url=base) as c:
+                c.post(
+                    base + "/client/split-tunnel/status",
+                    json={"enabled": not disabled, "device_id": did or None},
+                    headers=hdrs,
+                )
+        run_async(self, _c, lambda _d, _e: None)
 
     def refresh(self,offline=False):
         if offline: self._ob.show()

@@ -351,7 +351,8 @@ window.openUserPackageModal = function openUserPackageModal(userId){
     +formCheckbox('Enable XRAY', 'enable_xray', pkg ? !!pkg.enable_xray : true, {caption:'Include Xray profiles'})
     +formCheckbox('Enable OpenVPN+Cloak', 'enable_openvpn_cloak', pkg ? !!pkg.enable_openvpn_cloak : true, {caption:'Include OpenVPN+Cloak profiles'})
     +formCheckbox('Split Tunnel', 'split_tunnel_enabled', pkg ? !!pkg.split_tunnel_enabled : false, {caption:'Route only listed CIDRs through VPN tunnel'})
-    +formTextarea('Split Routes', 'split_tunnel_routes', pkg ? (pkg.split_tunnel_routes_json || []).join(', ') : '', {help:'Comma-separated CIDRs, e.g.: 10.8.0.0/24, 10.0.0.0/8'})
+    +formInput('GeoIP Country', 'split_tunnel_country_code', pkg ? (pkg.split_tunnel_country_code || '') : '', {help:'ISO 3166-1 alpha-2 code (e.g. ru, us). Auto-computes routes for that country when saved.'})
+    +formTextarea('Split Routes', 'split_tunnel_routes', pkg ? (pkg.split_tunnel_routes_json || []).join(', ') : '', {help:'Comma-separated CIDRs. Leave empty when using GeoIP Country.'})
     +formInput('Priority', 'priority_order', pkg ? (pkg.priority_order_json || []).join(', ') : 'xray, awg, wg, openvpn_cloak', {help:'Comma-separated transport priority'})
     +'</div></form>';
   openModal('User Transport Package', body, {
@@ -378,6 +379,7 @@ window.saveUserPackageForm = async function saveUserPackageForm(userId, fd, reco
     enable_wg: !!fd.get('enable_wg'),
     enable_openvpn_cloak: !!fd.get('enable_openvpn_cloak'),
     split_tunnel_enabled: !!fd.get('split_tunnel_enabled'),
+    split_tunnel_country_code: (fd.get('split_tunnel_country_code') || '').trim().toLowerCase() || null,
     split_tunnel_routes: routes,
     priority_order: priority.length ? priority : ['xray', 'awg', 'wg', 'openvpn_cloak'],
   };
