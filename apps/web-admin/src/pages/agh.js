@@ -316,12 +316,12 @@ window.aghOpenConfigModal = function aghOpenConfigModal() {
 
 async function _aghSaveConfig(fd) {
   var payload = {
-    agh_enabled: !!fd.agh_enabled,
-    agh_host: fd.agh_host || '127.0.0.1',
-    agh_port: parseInt(fd.agh_port, 10) || 3000,
-    agh_web_user: fd.agh_web_user || null,
+    agh_enabled: fd.get('agh_enabled') === 'on',
+    agh_host: fd.get('agh_host') || '127.0.0.1',
+    agh_port: parseInt(fd.get('agh_port'), 10) || 3000,
+    agh_web_user: fd.get('agh_web_user') || null,
   };
-  if (fd.agh_web_password) { payload.agh_web_password = fd.agh_web_password; }
+  if (fd.get('agh_web_password')) { payload.agh_web_password = fd.get('agh_web_password'); }
   try {
     await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(_aghNodeId) + '/agh/config', {
       method: 'PUT',
@@ -356,7 +356,7 @@ async function _aghSubmitAddList(fd) {
   try {
     await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(_aghNodeId) + '/agh/filtering/lists/add', {
       method: 'POST',
-      body: { name: fd.name, url: fd.url, whitelist: !!fd.whitelist },
+      body: { name: fd.get('name'), url: fd.get('url'), whitelist: fd.get('whitelist') === 'on' },
     });
     closeModal();
     aghRefresh();
@@ -403,7 +403,7 @@ window.aghOpenCustomRulesModal = function aghOpenCustomRulesModal(currentRules) 
 };
 
 async function _aghSaveCustomRules(fd) {
-  var rules = (fd.rules || '').split('\n').map(function(r) { return r.trim(); }).filter(Boolean);
+  var rules = (fd.get('rules') || '').split('\n').map(function(r) { return r.trim(); }).filter(Boolean);
   try {
     await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(_aghNodeId) + '/agh/filtering/rules', {
       method: 'POST',
