@@ -1,5 +1,23 @@
 // Page module - all functions exposed as window globals
 
+if(typeof window.JOB_DETAIL_SELECTED_ID === 'undefined'){
+  window.JOB_DETAIL_SELECTED_ID = null;
+}
+if(typeof window._jobsTicker === 'undefined'){
+  window._jobsTicker = null;
+}
+
+window.bindJobsTable = function bindJobsTable(){
+  var tbody = document.getElementById('jtb');
+  if(!tbody || tbody.dataset.bound === '1') return;
+  tbody.addEventListener('click', function(event){
+    var row = event.target && event.target.closest ? event.target.closest('tr[data-job-id]') : null;
+    if(!row) return;
+    window.showJob(row.getAttribute('data-job-id'));
+  });
+  tbody.dataset.bound = '1';
+};
+
 window.isJobForceCancelable = function isJobForceCancelable(job){
   if(!job || job.state !== 'running' || !job.lease_expires_at) return false;
   var leaseMs = new Date(job.lease_expires_at).getTime();
@@ -58,7 +76,7 @@ window.jobLeaseText = function jobLeaseText(job){
 };
 
 window.renderJobs = function renderJobs(){
-  document.getElementById('jtb').innerHTML = JOBS.map(function(j){
+  document.getElementById('jtb').innerHTML = window.JOBS.map(function(j){
     var actions = '';
     if(j.state === 'pending' || j.state === 'running'){
       actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobCancel(\''+esc(j.id)+'\')">CANCEL</button>';
@@ -75,7 +93,7 @@ window.renderJobs = function renderJobs(){
     if(j.state === 'failed' || j.state === 'dead' || j.state === 'cancelled'){
       actions += '<button class="btn sm red" onclick="event.stopPropagation();actionJobRetry(\''+esc(j.id)+'\')">RETRY</button>';
     }
-    return '<tr onclick="showJob(\''+esc(j.id)+'\')">'
+    return '<tr data-job-id="'+esc(j.id)+'">'
       +'<td style="color:var(--t2);font-size:13px;">'+esc(j.id)+'</td>'
       +'<td class="m">'+esc(j.kind)+'</td>'
       +'<td style="font-size:13px;color:var(--t1);">'+esc(j.tt+':'+j.ti)+'</td>'
@@ -89,15 +107,15 @@ window.renderJobs = function renderJobs(){
 };
 
 window.showJob = function showJob(id){
-  var j = jobById(id); if(!j) return;
-  JOB_DETAIL_SELECTED_ID = j.id;
+  var j = window.jobById(id); if(!j) return;
+  window.JOB_DETAIL_SELECTED_ID = j.id;
   var previousLog = null;
   var previousScrollTop = 0;
-  if(document.getElementById('dp').classList.contains('open') && detailContextIs('job', j.id)){
+  if(document.getElementById('dp').classList.contains('open') && window.detailContextIs('job', j.id)){
     previousLog = document.querySelector('#dpb .jlog');
     if(previousLog){ previousScrollTop = previousLog.scrollTop; }
   }
-  var events = (JOB_EVENTS[j.id] || []).slice().sort(function(a, b){
+  var events = (window.JOB_EVENTS[j.id] || []).slice().sort(function(a, b){
     var at = a && a.created_at ? new Date(a.created_at).getTime() : 0;
     var bt = b && b.created_at ? new Date(b.created_at).getTime() : 0;
     return bt - at;
@@ -106,31 +124,31 @@ window.showJob = function showJob(id){
     var level = String(ev.level || 'info').toUpperCase();
     var msg = ev.message || '';
     var c = ev.level === 'error' ? 'er' : ev.level === 'warning' ? 'inf' : 'ok';
-    var ts = ev.created_at ? fmtDateTime(ev.created_at) : '-';
+    var ts = ev.created_at ? window.fmtDateTime(ev.created_at) : '-';
     return '<div class="eline">'
-      +'<span class="et">'+esc(ts)+'</span>'
-      +'<span class="ety '+esc(c)+'">['+esc(level)+']</span>'
-      +'<span style="color:var(--t1);">'+esc(msg)+'</span>'
+      +'<span class="et">'+window.esc(ts)+'</span>'
+      +'<span class="ety '+window.esc(c)+'">['+window.esc(level)+']</span>'
+      +'<span style="color:var(--t1);">'+window.esc(msg)+'</span>'
       +'</div>';
   }).join('') : '<div class="inf">No job events loaded.</div>';
   var actions = '';
   if(j.state === 'pending' || j.state === 'running'){
-    actions += '<button class="btn red" onclick="actionJobCancel(\''+esc(j.id)+'\')">CANCEL</button>';
+    actions += '<button class="btn red" onclick="actionJobCancel(\''+window.esc(j.id)+'\')">CANCEL</button>';
   }
   if(isJobRemoteAbortable(j)){
-    actions += '<button class="btn red" onclick="actionJobAbortRemote(\''+esc(j.id)+'\')">ABORT REMOTE</button>';
+    actions += '<button class="btn red" onclick="actionJobAbortRemote(\''+window.esc(j.id)+'\')">ABORT REMOTE</button>';
   }
   if(isJobForceCancelable(j)){
-    actions += '<button class="btn red" onclick="actionJobForceCancel(\''+esc(j.id)+'\')">MARK AS CANCELLED</button>';
+    actions += '<button class="btn red" onclick="actionJobForceCancel(\''+window.esc(j.id)+'\')">MARK AS CANCELLED</button>';
   }
   if(isJobTargetReleasable(j)){
-    actions += '<button class="btn red" onclick="actionJobReleaseTarget(\''+esc(j.id)+'\')">RELEASE TARGET</button>';
+    actions += '<button class="btn red" onclick="actionJobReleaseTarget(\''+window.esc(j.id)+'\')">RELEASE TARGET</button>';
   }
   if(j.state === 'failed' || j.state === 'dead' || j.state === 'cancelled'){
-    actions += '<button class="btn" onclick="actionJobRetry(\''+esc(j.id)+'\')">RETRY NOW</button>';
+    actions += '<button class="btn" onclick="actionJobRetry(\''+window.esc(j.id)+'\')">RETRY NOW</button>';
   }
-  openDP(j.kind,
-    rows([['ID',j.id],['Target',j.tt+':'+j.ti],['State',j.state],['Created',j.ts],['Worker',j.worker_owner || '-'],['Heartbeat',j.heartbeat_at ? fmtDateTime(j.heartbeat_at) : '-'],['Lease Expires',j.lease_expires_at ? fmtDateTime(j.lease_expires_at) : '-'],['Cancel Requested',j.cancel_requested ? 'yes' : 'no'],['Step',j.step || '-'],['Error',j.errorText || '-']])
+  window.openDP(j.kind,
+    window.rows([['ID',j.id],['Target',j.tt+':'+j.ti],['State',j.state],['Created',j.ts],['Worker',j.worker_owner || '-'],['Heartbeat',j.heartbeat_at ? window.fmtDateTime(j.heartbeat_at) : '-'],['Lease Expires',j.lease_expires_at ? window.fmtDateTime(j.lease_expires_at) : '-'],['Cancel Requested',j.cancel_requested ? 'yes' : 'no'],['Step',j.step || '-'],['Error',j.errorText || '-']])
     +(actions ? '<div class="dp-actions">'+actions+'</div>' : '')
     +'<div class="stitle">Execution Log</div>'
     +'<div class="jlog">'+logHtml+'</div>',
@@ -146,7 +164,7 @@ window.showJob = function showJob(id){
 
 window.refreshJobs = async function refreshJobs(){
   var jobs = await apiFetch(API_PREFIX + '/jobs');
-  JOBS = (jobs || []).map(function(job){
+  window.JOBS = (jobs || []).map(function(job){
     return {
       id: job.id,
       kind: job.kind,
@@ -166,11 +184,11 @@ window.refreshJobs = async function refreshJobs(){
       worker_owner: job.worker_owner || ''
     };
   });
-  await Promise.all(JOBS.slice(0, 20).map(async function(job){
+  await Promise.all(window.JOBS.slice(0, 20).map(async function(job){
     try{
-      JOB_EVENTS[job.id] = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(job.id) + '/events');
+      window.JOB_EVENTS[job.id] = await apiFetch(API_PREFIX + '/jobs/' + encodeURIComponent(job.id) + '/events');
     }catch(_){
-      JOB_EVENTS[job.id] = [];
+      window.JOB_EVENTS[job.id] = [];
     }
   }));
   renderJobs();
@@ -178,20 +196,24 @@ window.refreshJobs = async function refreshJobs(){
 };
 
 window.refreshOpenJobDetail = function refreshOpenJobDetail(){
-  if(!JOB_DETAIL_SELECTED_ID) return;
+  if(!window.JOB_DETAIL_SELECTED_ID) return;
   if(!document.getElementById('dp').classList.contains('open')) return;
-  if(!detailContextIs('job', JOB_DETAIL_SELECTED_ID)) return;
-  if(!jobById(JOB_DETAIL_SELECTED_ID)) return;
-  showJob(JOB_DETAIL_SELECTED_ID);
+  if(!detailContextIs('job', window.JOB_DETAIL_SELECTED_ID)) return;
+  if(!jobById(window.JOB_DETAIL_SELECTED_ID)) return;
+  showJob(window.JOB_DETAIL_SELECTED_ID);
 };
 
 window.startJobsTicker = function startJobsTicker(){
-  if(_jobsTicker) clearInterval(_jobsTicker);
-  _jobsTicker = setInterval(function(){
+  if(window._jobsTicker) clearInterval(window._jobsTicker);
+  window._jobsTicker = setInterval(function(){
     if(_currentPage === 'jobs'){ renderJobs(); }
     refreshOpenJobDetail();
   }, 1000);
 };
+
+document.addEventListener('DOMContentLoaded', function(){
+  window.bindJobsTable();
+});
 
 window.actionJobCancel = async function actionJobCancel(jobId){
   try{
