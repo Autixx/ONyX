@@ -303,12 +303,54 @@ window.actionRoutePolicyTest = async function actionRoutePolicyTest(policyId){
   }
 };
 
+function dnsPolicySuggestedTarget(routePolicyId){
+  var routePolicy = policyById(routePolicyId);
+  if(!routePolicy){
+    return { value:'', hint:'Select a route policy first.' };
+  }
+  var detected = window.nodeDetectedAghDetails ? window.nodeDetectedAghDetails(routePolicy.nid) : null;
+  if(!detected){
+    return { value:'', hint:'Probe SSH has not detected AdGuard Home on this node yet. Enter the DNS listener IPv4 manually.' };
+  }
+  var host = String(detected.dns_host || '').trim();
+  var port = parseInt(detected.dns_port, 10);
+  if(!(port > 0)){ port = 53; }
+  if(!host){
+    return { value:'', hint:'AdGuard Home was detected, but its DNS bind host was not found in AdGuardHome.yaml. Enter the DNS listener IPv4 manually.' };
+  }
+  var raw = host + ':' + port;
+  if(host === '0.0.0.0' || host === '::' || host === '[::]'){
+    return { value:'', hint:'Detected AGH DNS listener ' + raw + '. This is a wildcard bind, so enter the concrete node-local IPv4 manually.' };
+  }
+  if(!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(host)){
+    return { value:'', hint:'Detected AGH DNS listener ' + raw + '. DNS Policy v1 accepts only IPv4, so enter a concrete IPv4 manually.' };
+  }
+  return { value: raw, hint:'Autofilled from the latest Probe SSH snapshot of AdGuard Home.' };
+}
+
+function syncDNSPolicyDetectedTarget(){
+  var routeEl = document.getElementById('route_policy_id');
+  var dnsEl = document.getElementById('dns_address');
+  var hintEl = document.getElementById('dnsPolicyDetectedHint');
+  if(!routeEl || !dnsEl){ return; }
+  var suggestion = dnsPolicySuggestedTarget(routeEl.value);
+  if(hintEl){ hintEl.textContent = suggestion.hint; }
+  if(dnsEl.getAttribute('data-autofill') !== '1'){ return; }
+  if(dnsEl.getAttribute('data-dirty') === '1'){ return; }
+  dnsEl.value = suggestion.value || '';
+  dnsEl.setAttribute('data-initial-value', dnsEl.value);
+}
+
 window.openDNSPolicyModal = function openDNSPolicyModal(policyId){
   var policy = policyId ? dnsPolicyById(policyId) : null;
   var routeOptions = POLICIES.map(function(p){ return {value:p.id, label:p.name}; });
+  var initialRoutePolicyId = policy ? policy.route_policy_id : (POLICIES[0] ? POLICIES[0].id : '');
+  var initialSuggestion = dnsPolicySuggestedTarget(initialRoutePolicyId);
+  var initialDnsAddress = policy ? policy.addr : (initialSuggestion.value || '');
   var body = '<form id="dnsPolicyForm"><div class="modal-grid">'
-    +formSelect('Route policy', 'route_policy_id', policy ? policy.route_policy_id : (POLICIES[0] ? POLICIES[0].id : ''), routeOptions)
-    +formInput('DNS address', 'dns_address', policy ? policy.addr : '', {required:true})
+    +formSelect('Route policy', 'route_policy_id', initialRoutePolicyId, routeOptions)
+    +formInput('DNS address', 'dns_address', initialDnsAddress, {required:true, help:'Target DNS listener on the selected node. Use the actual AGH DNS bind IPv4:port, not the web UI port.'})
+    +'<div class="mf-row full"><div class="mf-help" id="dnsPolicyDetectedHint">' + esc(initialSuggestion.hint) + '</div></div>'
     +formCheckbox('Enabled', 'enabled', policy ? policy.on : false, {caption:'DNS interception enabled'})
     +formTextarea('Capture protocols (CSV)', 'capture_protocols', policy ? (policy.capture_protocols || []).join(',') : 'udp', {full:false})
     +formTextarea('Capture ports (CSV)', 'capture_ports', policy ? (policy.capture_ports || []).join(',') : '53', {full:false})
@@ -320,6 +362,20 @@ window.openDNSPolicyModal = function openDNSPolicyModal(policyId){
       {label: policy ? 'Save' : 'Create', className:'btn pri', onClick:function(){ document.getElementById('dnsPolicyForm').requestSubmit(); }}
     ]
   });
+  var routeEl = document.getElementById('route_policy_id');
+  var dnsEl = document.getElementById('dns_address');
+  if(dnsEl){
+    dnsEl.setAttribute('data-initial-value', String(dnsEl.value || '').trim());
+    dnsEl.setAttribute('data-dirty', '0');
+    dnsEl.setAttribute('data-autofill', policy ? '0' : '1');
+    dnsEl.addEventListener('input', function(){
+      var current = String(dnsEl.value || '').trim();
+      var initial = String(dnsEl.getAttribute('data-initial-value') || '').trim();
+      dnsEl.setAttribute('data-dirty', current !== initial ? '1' : '0');
+    });
+  }
+  if(routeEl){ routeEl.addEventListener('change', syncDNSPolicyDetectedTarget); }
+  syncDNSPolicyDetectedTarget();
   bindModalForm('dnsPolicyForm', function(fd){ saveDNSPolicyForm(fd, policyId); });
 };
 

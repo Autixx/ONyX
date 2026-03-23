@@ -5,9 +5,16 @@ window.refreshNodes = async function refreshNodes() {
   var withCaps = await Promise.all((nodes || []).map(async function(node) {
     try {
       var caps = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(node.id) + '/capabilities');
-      node.caps = (caps || []).filter(function(c) { return c.supported; }).map(function(c) { return c.capability_name; });
+      node.capabilities = caps || [];
+      node.caps = node.capabilities.filter(function(c) { return c.supported; }).map(function(c) { return c.capability_name; });
+      node.capability_details = {};
+      node.capabilities.forEach(function(c) {
+        node.capability_details[c.capability_name] = c.details_json || {};
+      });
     } catch (_) {
+      node.capabilities = [];
       node.caps = [];
+      node.capability_details = {};
     }
     return node;
   }));
@@ -15,6 +22,37 @@ window.refreshNodes = async function refreshNodes() {
   window.renderNodes?.();
   window.renderFailbanSourceTabs?.();
   window.updateShellCounters?.();
+};
+
+window.nodeCapabilityRecord = function nodeCapabilityRecord(nodeId, capabilityName) {
+  var node = nById(nodeId);
+  if (!node || !Array.isArray(node.capabilities)) { return null; }
+  return node.capabilities.find(function(capability) {
+    return capability && capability.capability_name === capabilityName;
+  }) || null;
+};
+
+window.nodeCapabilityDetails = function nodeCapabilityDetails(nodeId, capabilityName) {
+  var record = window.nodeCapabilityRecord(nodeId, capabilityName);
+  return record ? (record.details_json || {}) : null;
+};
+
+window.nodeDetectedAghDetails = function nodeDetectedAghDetails(nodeId) {
+  var record = window.nodeCapabilityRecord(nodeId, 'adguard_home');
+  if (!record || !record.supported) { return null; }
+  return record.details_json || {};
+};
+
+window.nodeDetectedAghDnsAddress = function nodeDetectedAghDnsAddress(nodeId) {
+  var details = window.nodeDetectedAghDetails(nodeId);
+  if (!details) { return null; }
+  var host = String(details.dns_host || '').trim();
+  var port = parseInt(details.dns_port, 10);
+  if (!(port > 0)) { port = 53; }
+  if (!host) { return null; }
+  if (host === '0.0.0.0' || host === '::' || host === '[::]') { return null; }
+  if (!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(host)) { return null; }
+  return host + ':' + port;
 };
 
 window.nodeInterfaceList = function nodeInterfaceList(nodeId){

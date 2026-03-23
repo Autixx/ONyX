@@ -9,19 +9,33 @@ window.aghOnPageShow = function aghOnPageShow() {
   _aghBuildNodeSelect();
 };
 
+function _aghDetectedDetails(nodeId) {
+  return window.nodeDetectedAghDetails ? window.nodeDetectedAghDetails(nodeId) : null;
+}
+
+function _aghDetectedEndpoint(host, port) {
+  var hostText = String(host || '').trim();
+  var portNumber = parseInt(port, 10);
+  if (!hostText) { return '-'; }
+  return (portNumber > 0) ? (hostText + ':' + portNumber) : hostText;
+}
+
 function _aghBuildNodeSelect() {
   var sel = document.getElementById('aghNodeSelect');
   if (!sel) return;
-  var nodes = (window.NODES || []).filter(function(n) { return n.agh_enabled; });
+  var nodes = (window.NODES || []).filter(function(n) {
+    return n.agh_enabled || !!_aghDetectedDetails(n.id);
+  });
   if (!nodes.length) {
     sel.innerHTML = '<option value="">No AGH nodes</option>';
     _aghNodeId = null;
-    _aghRenderEmpty('No nodes have AGH enabled. Enable AGH in a node\'s config first.');
+    _aghRenderEmpty('No AGH nodes found. Install AGH and run Probe SSH, or enable AGH integration in a node config.');
     return;
   }
   var prev = _aghNodeId;
   sel.innerHTML = nodes.map(function(n) {
-    return '<option value="' + esc(n.id) + '"' + (n.id === prev ? ' selected' : '') + '>' + esc(n.name) + '</option>';
+    var suffix = n.agh_enabled ? ' [configured]' : ' [detected]';
+    return '<option value="' + esc(n.id) + '"' + (n.id === prev ? ' selected' : '') + '>' + esc(n.name + suffix) + '</option>';
   }).join('');
   var chosen = nodes.find(function(n) { return n.id === prev; }) || nodes[0];
   _aghNodeId = chosen.id;
@@ -39,18 +53,22 @@ window.aghRefresh = async function aghRefresh() {
   var content = document.getElementById('aghContent');
   if (content) { content.innerHTML = '<div style="color:var(--t2);padding:16px;">Loading…</div>'; }
   try {
-    var [configRes, statsRes, filterRes] = await Promise.allSettled([
-      apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(_aghNodeId) + '/agh/config'),
-      apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(_aghNodeId) + '/agh/stats'),
-      apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(_aghNodeId) + '/agh/filtering'),
-    ]);
-    _aghConfig = configRes.status === 'fulfilled' ? configRes.value : null;
-    var stats  = statsRes.status  === 'fulfilled' ? statsRes.value  : null;
-    var filter = filterRes.status === 'fulfilled' ? filterRes.value : null;
-    _aghRender(_aghConfig, stats, filter, {
-      statsErr:  statsRes.status  === 'rejected' ? statsRes.reason  : null,
-      filterErr: filterRes.status === 'rejected' ? filterRes.reason : null,
-    });
+    _aghConfig = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(_aghNodeId) + '/agh/config');
+    var detected = _aghDetectedDetails(_aghNodeId);
+    var stats = null;
+    var filter = null;
+    var errs = {};
+    if (_aghConfig && _aghConfig.agh_enabled) {
+      var [statsRes, filterRes] = await Promise.allSettled([
+        apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(_aghNodeId) + '/agh/stats'),
+        apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(_aghNodeId) + '/agh/filtering'),
+      ]);
+      stats = statsRes.status === 'fulfilled' ? statsRes.value : null;
+      filter = filterRes.status === 'fulfilled' ? filterRes.value : null;
+      errs.statsErr = statsRes.status === 'rejected' ? statsRes.reason : null;
+      errs.filterErr = filterRes.status === 'rejected' ? filterRes.reason : null;
+    }
+    _aghRender(_aghConfig, stats, filter, errs, detected);
   } catch (err) {
     if (content) { content.innerHTML = '<div style="color:var(--red);padding:16px;">Load failed: ' + esc(String(err && err.message ? err.message : err)) + '</div>'; }
   }
@@ -63,19 +81,35 @@ function _aghRenderEmpty(msg) {
   if (content) { content.innerHTML = '<div style="color:var(--t2);font-size:14px;padding:24px 0;">' + esc(msg) + '</div>'; }
 }
 
-function _aghRender(config, stats, filter, errs) {
+function _aghRender(config, stats, filter, errs, detected) {
   var content = document.getElementById('aghContent');
   if (!content) return;
 
   var html = '';
+  var integrationEnabled = !!(config && config.agh_enabled);
+  var probeState = detected ? (detected.active ? 'active' : 'installed') : 'not detected';
+  if (detected && detected.service_active_state && detected.service_active_state !== 'active') {
+    probeState += ' (' + detected.service_active_state + ')';
+  }
 
   // ── Config card ───────────────────────────────────────────────────────────
   html += '<div class="card" style="margin-bottom:16px;">';
   html += '<div class="stitle">Configuration</div>';
   html += rows([
-    ['Host', (config ? (config.agh_host || '127.0.0.1') : '-') + ':' + (config ? (config.agh_port || 3000) : '-')],
+    ['Integration', integrationEnabled ? 'enabled' : 'disabled'],
+    ['Configured API', (config ? (config.agh_host || '127.0.0.1') : '-') + ':' + (config ? (config.agh_port || 3000) : '-')],
+    ['Detected web', detected ? _aghDetectedEndpoint(detected.http_host, detected.http_port) : '-'],
+    ['Detected DNS', detected ? _aghDetectedEndpoint(detected.dns_host, detected.dns_port || 53) : '-'],
+    ['Probe status', probeState],
     ['Web user', config ? (config.agh_web_user || '—') : '-'],
   ]);
+  if (!integrationEnabled) {
+    html += '<div style="margin-top:10px;color:var(--t2);font-size:13px;">'
+      + esc(detected
+        ? 'AdGuard Home was detected by Probe SSH. Review the API endpoint, then enable AGH integration for this node to use dashboard actions.'
+        : 'AGH integration is disabled for this node. Install AGH and run Probe SSH, or fill the config manually.')
+      + '</div>';
+  }
   html += '<div class="dp-actions" style="margin-top:8px;"><button class="btn" onclick="aghOpenConfigModal()">EDIT CONFIG</button></div>';
   html += '</div>';
 
@@ -147,7 +181,9 @@ function _aghRender(config, stats, filter, errs) {
   html += '</div>';
 
   // ── Query Log card ────────────────────────────────────────────────────────
-  html += _aghQuerylogCard();
+  if (integrationEnabled) {
+    html += _aghQuerylogCard();
+  }
 
   content.innerHTML = html;
 }
@@ -255,9 +291,16 @@ function _aghResolvePeer(ip) {
 window.aghOpenConfigModal = function aghOpenConfigModal() {
   if (!_aghNodeId) return;
   var cfg = _aghConfig || {};
+  var detected = _aghDetectedDetails(_aghNodeId) || {};
+  var detectedHost = detected.http_host || '';
+  if (detectedHost === '0.0.0.0' || detectedHost === '::' || detectedHost === '[::]') {
+    detectedHost = '127.0.0.1';
+  }
+  var defaultHost = cfg.agh_host || detectedHost || '127.0.0.1';
+  var defaultPort = cfg.agh_port || detected.http_port || 3000;
   var body = '<form id="aghConfigForm"><div class="modal-grid">'
-    + formInput('AGH host', 'agh_host', cfg.agh_host || '127.0.0.1', {help: 'IP/hostname where AGH listens (on the node)'})
-    + formInput('AGH port', 'agh_port', String(cfg.agh_port || 3000), {type: 'number'})
+    + formInput('AGH host', 'agh_host', defaultHost, {help: 'IP/hostname where AGH listens (on the node). Probe SSH values are used as defaults when available.'})
+    + formInput('AGH port', 'agh_port', String(defaultPort), {type: 'number'})
     + formInput('Web username', 'agh_web_user', cfg.agh_web_user || '')
     + formInput('Web password', 'agh_web_password', '', {type: 'password', help: 'Leave blank to keep existing'})
     + formCheckbox('AGH enabled', 'agh_enabled', !!cfg.agh_enabled, {caption: 'Enable AGH integration for this node'})

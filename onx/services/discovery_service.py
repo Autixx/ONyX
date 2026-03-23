@@ -1,5 +1,7 @@
 import asyncio
 import ipaddress
+import json
+import shlex
 from datetime import datetime, timezone
 
 import asyncssh
@@ -26,6 +28,133 @@ class DiscoveryService:
         if result.exit_status == 0:
             return True, result.stdout.strip()
         return False, (result.stderr or result.stdout).strip()
+
+    async def _discover_adguard_home(self, conn: asyncssh.SSHClientConnection) -> dict[str, object]:
+        script = r"""
+set -eu
+PY_BIN="$(command -v python3 || command -v python || true)"
+CONFIG=""
+for path in /opt/AdGuardHome/AdGuardHome.yaml /etc/AdGuardHome.yaml; do
+  if [ -f "$path" ]; then
+    CONFIG="$path"
+    break
+  fi
+done
+BIN=""
+for path in /opt/AdGuardHome/AdGuardHome /usr/local/bin/AdGuardHome /usr/bin/AdGuardHome; do
+  if [ -x "$path" ]; then
+    BIN="$path"
+    break
+  fi
+done
+SERVICE_PRESENT=0
+if command -v systemctl >/dev/null 2>&1; then
+  if systemctl cat AdGuardHome >/dev/null 2>&1; then
+    SERVICE_PRESENT=1
+  fi
+fi
+if [ -z "$BIN" ] && [ -z "$CONFIG" ] && [ "$SERVICE_PRESENT" -ne 1 ]; then
+  exit 1
+fi
+ACTIVE=""
+ENABLED=""
+if command -v systemctl >/dev/null 2>&1; then
+  ACTIVE="$(systemctl is-active AdGuardHome 2>/dev/null || true)"
+  ENABLED="$(systemctl is-enabled AdGuardHome 2>/dev/null || true)"
+fi
+if [ -n "$PY_BIN" ]; then
+  AGH_BIN="$BIN" AGH_CONFIG="$CONFIG" AGH_ACTIVE="$ACTIVE" AGH_ENABLED="$ENABLED" "$PY_BIN" - <<'PY'
+import json
+import os
+
+config_path = os.environ.get("AGH_CONFIG") or ""
+bin_path = os.environ.get("AGH_BIN") or ""
+active_state = os.environ.get("AGH_ACTIVE") or ""
+enabled_state = os.environ.get("AGH_ENABLED") or ""
+details = {
+    "bin_path": bin_path or None,
+    "config_path": config_path or None,
+    "service_active_state": active_state or None,
+    "service_enabled_state": enabled_state or None,
+    "active": active_state == "active",
+    "enabled": enabled_state in {"enabled", "static"},
+    "http_host": None,
+    "http_port": None,
+    "dns_host": None,
+    "dns_port": None,
+}
+
+if config_path:
+    try:
+        lines = open(config_path, "r", encoding="utf-8", errors="ignore").read().splitlines()
+    except OSError:
+        lines = []
+    section = None
+    collect_dns_bind_hosts = False
+    for raw in lines:
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        if indent == 0:
+            section = stripped[:-1] if stripped.endswith(":") else None
+            collect_dns_bind_hosts = False
+            continue
+        if section == "http":
+            if indent == 2 and stripped.startswith("address:"):
+                value = stripped.split(":", 1)[1].strip().strip("\"'")
+                if value.startswith("[") and "]:" in value:
+                    host, port = value[1:].split("]:", 1)
+                elif value.count(":") >= 1:
+                    host, port = value.rsplit(":", 1)
+                else:
+                    host, port = value, ""
+                details["http_host"] = host or None
+                if port.isdigit():
+                    details["http_port"] = int(port)
+        elif section == "dns":
+            if indent == 2 and stripped.startswith("port:"):
+                value = stripped.split(":", 1)[1].strip().strip("\"'")
+                if value.isdigit():
+                    details["dns_port"] = int(value)
+            elif indent == 2 and stripped.startswith("bind_host:"):
+                value = stripped.split(":", 1)[1].strip().strip("\"'")
+                details["dns_host"] = value or None
+                collect_dns_bind_hosts = False
+            elif indent == 2 and stripped.startswith("bind_hosts:"):
+                collect_dns_bind_hosts = True
+            elif collect_dns_bind_hosts:
+                if indent >= 4 and stripped.startswith("- "):
+                    value = stripped[2:].strip().strip("\"'")
+                    if value and not details["dns_host"]:
+                        details["dns_host"] = value
+                elif indent <= 2:
+                    collect_dns_bind_hosts = False
+
+if details["http_port"] is None and config_path:
+    details["http_port"] = 3000
+if details["dns_port"] is None and config_path:
+    details["dns_port"] = 53
+
+print(json.dumps(details, separators=(",", ":")))
+PY
+else
+  ACTIVE_BOOL=false
+  ENABLED_BOOL=false
+  if [ "$ACTIVE" = "active" ]; then ACTIVE_BOOL=true; fi
+  if [ "$ENABLED" = "enabled" ] || [ "$ENABLED" = "static" ]; then ENABLED_BOOL=true; fi
+  printf '{"bin_path":"%s","config_path":"%s","service_active_state":"%s","service_enabled_state":"%s","active":%s,"enabled":%s,"http_host":null,"http_port":null,"dns_host":null,"dns_port":null}\n' \
+    "$BIN" "$CONFIG" "$ACTIVE" "$ENABLED" "$ACTIVE_BOOL" "$ENABLED_BOOL"
+fi
+"""
+        supported, output = await self._run_remote_command(conn, "sh -lc " + shlex.quote(script))
+        if not supported:
+            return {"supported": False, "details": {}}
+        try:
+            details = json.loads(output) if output else {}
+        except json.JSONDecodeError:
+            details = {"raw_output": output}
+        return {"supported": True, "details": details}
 
     async def _discover_async(self, node: Node, secret_value: str) -> dict:
         connect_kwargs = {
@@ -78,6 +207,7 @@ class DiscoveryService:
                     "supported": supported,
                     "details": {"path": output} if supported and output else {},
                 }
+            capabilities["adguard_home"] = await self._discover_adguard_home(conn)
 
             os_family = "unknown"
             os_version = "unknown"
