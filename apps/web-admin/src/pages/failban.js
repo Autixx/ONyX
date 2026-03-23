@@ -3,6 +3,34 @@
 window._failbanTimer = null;
 window._failbanPaused = false;
 
+var _failbanScopeKind = 'control_plane';
+var _failbanScopeNodeId = null;
+
+function currentFailbanNode() {
+  if (!_failbanScopeNodeId) return null;
+  return (window.NODES || []).find(function(n) { return n.id === _failbanScopeNodeId; }) || null;
+}
+
+window.selectFailbanScope = function selectFailbanScope(kind, nodeId) {
+  _failbanScopeKind = kind;
+  _failbanScopeNodeId = nodeId || null;
+  window.refreshFailban?.().catch(function() {});
+};
+
+function failbanSummaryPath() {
+  if (_failbanScopeKind === 'node' && _failbanScopeNodeId) {
+    return window.API_PREFIX + '/fail2ban/nodes/' + encodeURIComponent(_failbanScopeNodeId) + '/summary';
+  }
+  return window.API_PREFIX + '/fail2ban/summary';
+}
+
+function failbanEntryClass(entry) {
+  if (!entry) return 'info';
+  var msg = String(entry.message || '').toLowerCase();
+  if (entry.level === 'error' || msg.indexOf('ban') !== -1) return 'warning';
+  return 'info';
+}
+
 window.refreshFailban = async function refreshFailban(){
   if(window._failbanPaused) return;
   try{

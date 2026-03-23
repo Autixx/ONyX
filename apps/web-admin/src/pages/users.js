@@ -10,11 +10,13 @@ window.renderUsers = function renderUsers(){
   if(!tb) return;
   var filterSel = document.getElementById('userSubFilter');
   var filterPlanId = filterSel ? filterSel.value : '';
-  var list = filterPlanId
-    ? USERS.filter(function(u){
-        return SUBSCRIPTIONS.some(function(s){ return s.user_id === u.id && s.plan_id === filterPlanId && s.status === 'active'; });
-      })
-    : USERS;
+  var searchEl = document.getElementById('userSearchInput');
+  var searchStr = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  var list = USERS.filter(function(u){
+    if(filterPlanId && !SUBSCRIPTIONS.some(function(s){ return s.user_id === u.id && s.plan_id === filterPlanId && s.status === 'active'; })) return false;
+    if(searchStr && !(u.username||'').toLowerCase().includes(searchStr) && !(u.email||'').toLowerCase().includes(searchStr)) return false;
+    return true;
+  });
   if(!list.length){
     tb.innerHTML = '<tr><td class="empty-state" colspan="6">No users.</td></tr>';
     return;
