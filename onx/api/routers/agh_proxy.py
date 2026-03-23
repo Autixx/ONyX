@@ -246,9 +246,22 @@ def refresh_agh_filters(node_id: str, db: Session = Depends(get_database_session
 @router.get("/{node_id}/agh/querylog")
 def get_agh_querylog(
     node_id: str,
+    limit: int = 100,
+    offset: int = 0,
+    search: str = "",
+    client: str = "",
+    response_status: str = "",
     db: Session = Depends(get_database_session),
 ):
+    """Proxy AGH query log. Supports filtering by domain (search), client IP/name, and response_status."""
     node = _get_node(db, node_id)
     _require_agh_enabled(node)
     secret = _get_management_secret(db, node)
-    return _ssh_curl(node, secret, "/control/querylog?limit=100")
+    params = f"limit={limit}&offset={offset}"
+    if search:
+        params += "&search=" + search
+    if client:
+        params += "&client=" + client
+    if response_status:
+        params += "&response_status=" + response_status
+    return _ssh_curl(node, secret, f"/control/querylog?{params}")

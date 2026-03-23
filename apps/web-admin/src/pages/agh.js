@@ -1,7 +1,7 @@
 // AGH (AdGuard Home) page — SSH-proxied via control plane
 
 var _aghNodeId = null;
-var _aghConfig  = null;   // { agh_enabled, agh_host, agh_port, agh_web_user }
+var _aghConfig  = null;
 
 // ── Node selection ────────────────────────────────────────────────────────────
 
@@ -45,8 +45,8 @@ window.aghRefresh = async function aghRefresh() {
       apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(_aghNodeId) + '/agh/filtering'),
     ]);
     _aghConfig = configRes.status === 'fulfilled' ? configRes.value : null;
-    var stats   = statsRes.status === 'fulfilled'  ? statsRes.value  : null;
-    var filter  = filterRes.status === 'fulfilled' ? filterRes.value : null;
+    var stats  = statsRes.status  === 'fulfilled' ? statsRes.value  : null;
+    var filter = filterRes.status === 'fulfilled' ? filterRes.value : null;
     _aghRender(_aghConfig, stats, filter, {
       statsErr:  statsRes.status  === 'rejected' ? statsRes.reason  : null,
       filterErr: filterRes.status === 'rejected' ? filterRes.reason : null,
@@ -69,49 +69,42 @@ function _aghRender(config, stats, filter, errs) {
 
   var html = '';
 
-  // Config card
+  // ── Config card ───────────────────────────────────────────────────────────
   html += '<div class="card" style="margin-bottom:16px;">';
   html += '<div class="stitle">Configuration</div>';
   html += rows([
     ['Host', (config ? (config.agh_host || '127.0.0.1') : '-') + ':' + (config ? (config.agh_port || 3000) : '-')],
     ['Web user', config ? (config.agh_web_user || '—') : '-'],
   ]);
-  html += '<div class="dp-actions" style="margin-top:8px;">';
-  html += '<button class="btn" onclick="aghOpenConfigModal()">EDIT CONFIG</button>';
-  html += '</div></div>';
+  html += '<div class="dp-actions" style="margin-top:8px;"><button class="btn" onclick="aghOpenConfigModal()">EDIT CONFIG</button></div>';
+  html += '</div>';
 
-  // Stats card
+  // ── Stats card ────────────────────────────────────────────────────────────
   html += '<div class="card" style="margin-bottom:16px;">';
   html += '<div class="stitle">Statistics</div>';
   if (errs && errs.statsErr) {
     html += '<div style="color:var(--red);font-size:13px;">' + esc(String(errs.statsErr && errs.statsErr.message ? errs.statsErr.message : errs.statsErr)) + '</div>';
   } else if (stats) {
     html += rows([
-      ['DNS queries (24h)',    String(stats.num_dns_queries          || 0)],
-      ['Blocked today',        String(stats.num_blocked_filtering    || 0)],
-      ['Replaced (safe)',      String(stats.num_replaced_safebrowsing|| 0)],
-      ['Replaced (parental)',  String(stats.num_replaced_parental    || 0)],
-      ['Avg processing time',  stats.avg_processing_time != null ? stats.avg_processing_time.toFixed(3) + ' ms' : '-'],
+      ['DNS queries (24h)',   String(stats.num_dns_queries           || 0)],
+      ['Blocked today',       String(stats.num_blocked_filtering     || 0)],
+      ['Replaced (safe)',     String(stats.num_replaced_safebrowsing || 0)],
+      ['Replaced (parental)', String(stats.num_replaced_parental     || 0)],
+      ['Avg processing',      stats.avg_processing_time != null ? stats.avg_processing_time.toFixed(3) + ' ms' : '-'],
     ]);
-    // Top domains table
     if (Array.isArray(stats.top_queried_domains) && stats.top_queried_domains.length) {
       html += '<div class="stitle" style="margin-top:12px;">Top Queried Domains</div>';
       html += '<div class="tw" style="margin-top:4px;"><table><thead><tr><th>Domain</th><th>Count</th></tr></thead><tbody>';
-      html += stats.top_queried_domains.slice(0, 10).map(function(entry) {
-        var domain = Object.keys(entry)[0];
-        var count  = entry[domain];
-        return '<tr><td>' + esc(domain) + '</td><td>' + esc(String(count)) + '</td></tr>';
+      html += stats.top_queried_domains.slice(0, 10).map(function(e) {
+        var d = Object.keys(e)[0]; return '<tr><td>' + esc(d) + '</td><td>' + esc(String(e[d])) + '</td></tr>';
       }).join('');
       html += '</tbody></table></div>';
     }
-    // Top blocked
     if (Array.isArray(stats.top_blocked_domains) && stats.top_blocked_domains.length) {
       html += '<div class="stitle" style="margin-top:12px;">Top Blocked Domains</div>';
       html += '<div class="tw" style="margin-top:4px;"><table><thead><tr><th>Domain</th><th>Count</th></tr></thead><tbody>';
-      html += stats.top_blocked_domains.slice(0, 10).map(function(entry) {
-        var domain = Object.keys(entry)[0];
-        var count  = entry[domain];
-        return '<tr><td>' + esc(domain) + '</td><td>' + esc(String(count)) + '</td></tr>';
+      html += stats.top_blocked_domains.slice(0, 10).map(function(e) {
+        var d = Object.keys(e)[0]; return '<tr><td>' + esc(d) + '</td><td>' + esc(String(e[d])) + '</td></tr>';
       }).join('');
       html += '</tbody></table></div>';
     }
@@ -120,7 +113,7 @@ function _aghRender(config, stats, filter, errs) {
   }
   html += '</div>';
 
-  // Filtering card
+  // ── Filtering card ────────────────────────────────────────────────────────
   html += '<div class="card" style="margin-bottom:16px;">';
   html += '<div class="stitle">Filtering Lists</div>';
   if (errs && errs.filterErr) {
@@ -133,7 +126,7 @@ function _aghRender(config, stats, filter, errs) {
     ]);
     if (Array.isArray(filter.filters) && filter.filters.length) {
       html += '<div class="tw" style="margin-top:8px;"><table><thead><tr><th>Name</th><th>Rules</th><th>State</th><th>Actions</th></tr></thead><tbody>';
-      html += filter.filters.map(function(f, idx) {
+      html += filter.filters.map(function(f) {
         return '<tr>'
           + '<td>' + esc(f.name || f.url || '—') + '</td>'
           + '<td>' + esc(String(f.rules_count || 0)) + '</td>'
@@ -153,7 +146,108 @@ function _aghRender(config, stats, filter, errs) {
   }
   html += '</div>';
 
+  // ── Query Log card ────────────────────────────────────────────────────────
+  html += _aghQuerylogCard();
+
   content.innerHTML = html;
+}
+
+// ── Query Log ─────────────────────────────────────────────────────────────────
+
+function _aghQuerylogCard() {
+  // Build peer options for client filter
+  var peers = (window.PEERS || []).filter(function(p) { return p.is_active !== false && !p.revoked_at; });
+  var peerOpts = '<option value="">All clients</option>';
+  peers.forEach(function(p) {
+    var ip = p.awg_address_v4 || p.wg_address_v4 || '';
+    var label = (p.username || p.email || p.id);
+    if (ip) { label += ' (' + ip + ')'; }
+    peerOpts += '<option value="' + esc(ip || p.id) + '">' + esc(label) + '</option>';
+  });
+
+  var html = '<div class="card" style="margin-bottom:16px;">';
+  html += '<div class="stitle">Query Log</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">';
+  // Peer / client filter
+  html += '<select id="aghLogClientSel" class="mf-select" style="width:220px;padding:6px 10px;font-size:13px;">' + peerOpts + '</select>';
+  // Domain search
+  html += '<input id="aghLogSearch" class="mf-input" placeholder="Domain search…" style="width:200px;padding:6px 10px;font-size:13px;" onkeydown="if(event.key===\'Enter\')aghLoadQuerylog()">';
+  // Response status
+  html += '<select id="aghLogStatus" class="mf-select" style="width:140px;padding:6px 10px;font-size:13px;">'
+    + '<option value="">All responses</option>'
+    + '<option value="filtered">Filtered/Blocked</option>'
+    + '<option value="processed">Allowed</option>'
+    + '</select>';
+  html += '<button class="btn" onclick="aghLoadQuerylog()">SEARCH</button>';
+  html += '</div>';
+  html += '<div id="aghLogTable"><div style="color:var(--t2);font-size:13px;">Press SEARCH to load query log.</div></div>';
+  html += '</div>';
+  return html;
+}
+
+window.aghLoadQuerylog = async function aghLoadQuerylog() {
+  if (!_aghNodeId) return;
+  var clientSel = document.getElementById('aghLogClientSel');
+  var searchEl  = document.getElementById('aghLogSearch');
+  var statusSel = document.getElementById('aghLogStatus');
+  var client    = clientSel ? clientSel.value : '';
+  var search    = searchEl  ? searchEl.value.trim() : '';
+  var status    = statusSel ? statusSel.value : '';
+
+  var tableEl = document.getElementById('aghLogTable');
+  if (tableEl) { tableEl.innerHTML = '<div style="color:var(--t2);font-size:13px;">Loading…</div>'; }
+
+  var qs = '?limit=200';
+  if (client)  { qs += '&client='          + encodeURIComponent(client); }
+  if (search)  { qs += '&search='          + encodeURIComponent(search); }
+  if (status)  { qs += '&response_status=' + encodeURIComponent(status); }
+
+  try {
+    var data = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(_aghNodeId) + '/agh/querylog' + qs);
+    var entries = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : []);
+    if (!entries.length) {
+      tableEl.innerHTML = '<div style="color:var(--t2);font-size:13px;">No entries found.</div>';
+      return;
+    }
+    var html = '<div class="tw"><table><thead><tr>'
+      + '<th>Time</th><th>Client</th><th>Domain</th><th>Type</th><th>Status</th><th>Duration</th>'
+      + '</tr></thead><tbody>';
+    html += entries.map(function(e) {
+      var t      = e.time ? new Date(e.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '-';
+      var client = esc(e.client || '-');
+      // Show peer name alongside IP if we can resolve it
+      var peerName = _aghResolvePeer(e.client);
+      if (peerName) { client = esc(peerName) + ' <span style="color:var(--t2);font-size:11px;">(' + esc(e.client) + ')</span>'; }
+      var domain = esc(e.question && e.question.name ? e.question.name : '-');
+      var qtype  = esc(e.question && e.question.type ? e.question.type : '-');
+      var isBlocked = e.reason && (e.reason.indexOf('Filter') !== -1 || e.reason.indexOf('Block') !== -1 || e.reason === 'FilteredBlacklist');
+      var statusPill = isBlocked
+        ? '<span class="pill" style="background:var(--red);color:#fff;font-size:11px;">blocked</span>'
+        : '<span class="pill pq" style="font-size:11px;">' + esc(e.reason || 'ok') + '</span>';
+      var dur = e.elapsed_ms != null ? e.elapsed_ms.toFixed(1) + ' ms' : '-';
+      return '<tr>'
+        + '<td style="white-space:nowrap;font-size:12px;">' + t + '</td>'
+        + '<td>' + client + '</td>'
+        + '<td style="word-break:break-all;">' + domain + '</td>'
+        + '<td style="font-size:12px;">' + qtype + '</td>'
+        + '<td>' + statusPill + '</td>'
+        + '<td style="font-size:12px;">' + esc(dur) + '</td>'
+        + '</tr>';
+    }).join('');
+    html += '</tbody></table></div>';
+    tableEl.innerHTML = html;
+  } catch (err) {
+    if (tableEl) { tableEl.innerHTML = '<div style="color:var(--red);font-size:13px;">' + esc(String(err && err.message ? err.message : err)) + '</div>'; }
+  }
+};
+
+function _aghResolvePeer(ip) {
+  if (!ip) return null;
+  var peers = window.PEERS || [];
+  var p = peers.find(function(p) {
+    return p.awg_address_v4 === ip || p.wg_address_v4 === ip;
+  });
+  return p ? (p.username || p.email || null) : null;
 }
 
 // ── AGH config modal ──────────────────────────────────────────────────────────
@@ -191,7 +285,6 @@ async function _aghSaveConfig(fd) {
       body: payload,
     });
     closeModal();
-    // Refresh NODES list so selector reflects new agh_enabled state
     await window.refreshNodes?.();
     _aghBuildNodeSelect();
   } catch (err) {
@@ -199,7 +292,7 @@ async function _aghSaveConfig(fd) {
   }
 }
 
-// ── Add filter list modal ─────────────────────────────────────────────────────
+// ── Filter list modals ────────────────────────────────────────────────────────
 
 window.aghOpenAddListModal = function aghOpenAddListModal() {
   var body = '<form id="aghAddListForm"><div class="modal-grid">'
