@@ -17,6 +17,7 @@ class JobKind(StrEnum):
     DESTROY = "destroy"
     PROBE = "probe"
     ROLLBACK = "rollback"
+    INSTALL_AGH = "install_agh"
 
 
 class JobTargetType(StrEnum):

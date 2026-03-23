@@ -21,6 +21,7 @@ from onx.services.discovery_service import DiscoveryService
 from onx.services.interface_runtime_service import InterfaceRuntimeService
 from onx.services.job_service import JobCancelledError, JobService
 from onx.services.link_service import LinkService
+from onx.services.agh_install_service import AghInstallService
 from onx.services.node_runtime_bootstrap_service import NodeRuntimeBootstrapService
 from onx.services.route_policy_service import RoutePolicyService
 from onx.workers.runtime_state import WorkerRuntimeState, get_worker_runtime_state
@@ -46,6 +47,7 @@ class JobWorker:
         self._links = LinkService()
         self._route_policies = RoutePolicyService()
         self._node_runtime = NodeRuntimeBootstrapService(InterfaceRuntimeService(SSHExecutor()))
+        self._agh_install = AghInstallService()
         self._runtime_state = runtime_state or get_worker_runtime_state()
 
     def start(self) -> None:
@@ -117,6 +119,8 @@ class JobWorker:
                     self._execute_bootstrap(db, job)
                 elif job.kind == JobKind.APPLY:
                     self._execute_apply(db, job)
+                elif job.kind == JobKind.INSTALL_AGH:
+                    self._execute_install_agh(db, job)
                 else:
                     raise ValueError(f"Unsupported job kind '{job.kind.value}'.")
             except JobCancelledError:
@@ -232,6 +236,18 @@ class JobWorker:
             return
 
         raise ValueError(f"Unsupported apply target type '{job.target_type.value}'.")
+
+    def _execute_install_agh(self, db, job: Job) -> None:
+        node = db.get(Node, job.target_id)
+        if node is None:
+            raise ValueError("Target node not found.")
+
+        result = self._agh_install.install_agh(
+            db,
+            node,
+            progress_callback=lambda step: self._progress(db, job, step),
+        )
+        self._jobs.succeed(db, job, result)
 
     def _execute_bootstrap(self, db, job: Job) -> None:
         node = db.get(Node, job.target_id)

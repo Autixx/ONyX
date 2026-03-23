@@ -343,6 +343,39 @@ def bootstrap_node_runtime(
     return job
 
 
+@router.post("/{node_id}/install-agh", response_model=JobRead, status_code=status.HTTP_202_ACCEPTED)
+def install_agh_on_node(
+    node_id: str,
+    options: JobEnqueueOptions | None = Body(default=None),
+    db: Session = Depends(get_database_session),
+) -> JobRead:
+    """Enqueue an AGH (AdGuard Home) installation job for the given node."""
+    node = db.get(Node, node_id)
+    if node is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found.")
+
+    try:
+        job = job_service.create_job(
+            db,
+            kind=JobKind.INSTALL_AGH,
+            target_type=JobTargetType.NODE,
+            target_id=node.id,
+            request_payload={"node_id": node.id, "node_name": node.name},
+            max_attempts=options.max_attempts if options else 1,
+            retry_delay_seconds=options.retry_delay_seconds if options else 0,
+        )
+    except JobConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": str(exc),
+                "existing_job_id": exc.job_id,
+                "existing_job_state": exc.job_state,
+            },
+        ) from exc
+    return job
+
+
 @router.post("/{node_id}/force-reboot", response_model=NodeActionResult, status_code=status.HTTP_202_ACCEPTED)
 def force_reboot_node(node_id: str, db: Session = Depends(get_database_session)) -> NodeActionResult:
     node = db.get(Node, node_id)
