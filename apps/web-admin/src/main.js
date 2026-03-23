@@ -32,6 +32,7 @@ import './pages/xray.js';
 import './pages/awg.js';
 import './pages/wg.js';
 import './pages/ovpn.js';
+import './pages/agh.js';
 import './pages/tickets.js';
 import './pages/apidebug.js';
 import './pages/routing-summary.js';

@@ -66,6 +66,11 @@ class Node(Base):
     traffic_hard_enforced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     traffic_hard_enforcement_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    agh_enabled: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="0")
+    agh_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    agh_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    agh_web_user: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    agh_web_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

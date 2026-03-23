@@ -27,13 +27,14 @@ window.NAV_GROUPS = {
                 {p:'failban',       label:'Fail2Ban',      dot:'red'},
                 {p:'audit',         label:'Audit / Access'},
               ]},
-  services: { label:'Services',       pages:['xray','awg','wg','ovpn','email'],
+  services: { label:'Services',       pages:['xray','awg','wg','ovpn','email','agh'],
               subs:[
                 {p:'xray',  label:'XRAY'},
                 {p:'awg',   label:'AWG'},
                 {p:'wg',    label:'WG'},
                 {p:'ovpn',  label:'oVPN'},
                 {p:'email', label:'E-Mail'},
+                {p:'agh',   label:'AdGuard Home'},
               ]},
   topology: { label:'Topology',       pages:['topology'], subs:[] },
   debug:    { label:'Debug',          pages:['apidebug'], subs:[] },
@@ -142,6 +143,7 @@ window.showPage = function showPage(pageId){
   if(pageId==='awg'){ window.refreshAwgServices?.().catch(function(){}); }
   if(pageId==='wg'){ window.refreshWgServices?.().catch(function(){}); }
   if(pageId==='ovpn'){ window.refreshOpenvpnCloakServices?.().catch(function(){}); }
+  if(pageId==='agh'){ window.aghOnPageShow?.(); }
   if(pageId==='tickets'){ window.loadSupportTickets?.(); window.startSupportTicketsRefresh?.(); if(window._supportTicketId) window._clearSupportUnread?.(window._supportTicketId); }
   else { window.stopSupportTicketsRefresh?.(); }
 

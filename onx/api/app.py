@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi import Request
 
+from onx.api.routers.agh_proxy import router as agh_proxy_router
 from onx.api.routers.admin_web_auth import router as admin_web_auth_router
 from onx.api.routers.agent_metrics import router as agent_metrics_router
 from onx.api.routers.awg_services import router as awg_services_router
@@ -168,6 +169,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_logs_router, prefix=settings.api_prefix)
     app.include_router(jobs_router, prefix=settings.api_prefix)
     app.include_router(nodes_router, prefix=settings.api_prefix)
+    app.include_router(agh_proxy_router, prefix=settings.api_prefix)
     app.include_router(node_traffic_router, prefix=settings.api_prefix)
     app.include_router(devices_router, prefix=settings.api_prefix)
     app.include_router(users_router, prefix=settings.api_prefix)

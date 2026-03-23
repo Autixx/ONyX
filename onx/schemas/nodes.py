@@ -87,6 +87,10 @@ class NodeRead(ONXBaseModel):
     traffic_hard_enforced_at: datetime | None
     traffic_hard_enforcement_reason: str | None
     last_seen_at: datetime | None
+    agh_enabled: bool
+    agh_host: str | None
+    agh_port: int | None
+    agh_web_user: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -115,6 +119,10 @@ def serialize_node_read(node: "Node", *, traffic_used_gb: float | None = None) -
         traffic_hard_enforced_at=node.traffic_hard_enforced_at,
         traffic_hard_enforcement_reason=node.traffic_hard_enforcement_reason,
         last_seen_at=node.last_seen_at,
+        agh_enabled=node.agh_enabled,
+        agh_host=node.agh_host,
+        agh_port=node.agh_port,
+        agh_web_user=node.agh_web_user,
         created_at=node.created_at,
         updated_at=node.updated_at,
     )
