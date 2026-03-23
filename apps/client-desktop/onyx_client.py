@@ -36,7 +36,7 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from PyQt6.QtCore import (
-    QPointF, QRect, QRectF, QSize, Qt, QThread, QTimer, QUrl,
+    QEvent, QPointF, QRect, QRectF, QSize, Qt, QThread, QTimer, QUrl,
     pyqtSignal, QObject,
 )
 from PyQt6.QtGui import (
@@ -1097,6 +1097,17 @@ class LocalTunnelRuntime:
         return None
 
 # ── Worker ─────────────────────────────────────────────────────────────────────
+
+class FocusOutFilter(QObject):
+    """Event filter that calls a callback when the watched widget loses focus."""
+    def __init__(self, callback, parent=None):
+        super().__init__(parent)
+        self._cb = callback
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.FocusOut:
+            self._cb()
+        return False
+
 
 class ApiWorker(QObject):
     done = pyqtSignal(object, object)
@@ -2478,7 +2489,8 @@ class DashboardScreen(QWidget):
         self._s_bypass.setFixedHeight(80)
         self._s_bypass.setPlaceholderText("One domain per line, e.g.:\npanel.example.com\napi.example.com")
         self._s_bypass.setPlainText("\n".join(self.st.split_tunnel_bypass_domains))
-        self._s_bypass.focusOutEvent = lambda e: (self._s_save_bypass(), type(self._s_bypass).focusOutEvent(self._s_bypass, e))
+        self._s_bypass_filter = FocusOutFilter(self._s_save_bypass, self._s_bypass)
+        self._s_bypass.installEventFilter(self._s_bypass_filter)
         sl.addWidget(self._s_bypass)
         bypass_note = QLabel("These domains will bypass the tunnel (go direct). Effective on next connect. Tip: add your admin panel domain here to keep panel access while connected.")
         bypass_note.setStyleSheet(f"color:{C_T2};font-size:10px;")
