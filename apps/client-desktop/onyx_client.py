@@ -668,12 +668,18 @@ class LocalTunnelRuntime:
                 continue
             new: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
             for net in nets:
-                if net.overlaps(exc):
-                    try:
-                        new.extend(net.address_exclude(exc))
-                    except ValueError:
+                if net.version != exc.version:
+                    new.append(net)  # разные версии IP — не пересекаются, оставляем
+                    continue
+                try:
+                    if net.overlaps(exc):
+                        try:
+                            new.extend(net.address_exclude(exc))
+                        except ValueError:
+                            new.append(net)
+                    else:
                         new.append(net)
-                else:
+                except Exception:
                     new.append(net)
             nets = new
         return [str(n) for n in nets]
@@ -697,11 +703,17 @@ class LocalTunnelRuntime:
             return config_text
 
         def _replace(m: re.Match) -> str:
-            current = [x.strip() for x in m.group(1).split(",") if x.strip()]
-            updated = self._subtract_ips(current, resolved)
-            return "AllowedIPs = " + ", ".join(updated) if updated else m.group(0)
+            try:
+                current = [x.strip() for x in m.group(1).split(",") if x.strip()]
+                updated = self._subtract_ips(current, resolved)
+                return "AllowedIPs = " + ", ".join(updated) if updated else m.group(0)
+            except Exception:
+                return m.group(0)
 
-        return re.sub(r'(?m)^AllowedIPs\s*=\s*(.+)$', _replace, config_text)
+        try:
+            return re.sub(r'(?m)^AllowedIPs\s*=\s*(.+)$', _replace, config_text)
+        except Exception:
+            return config_text
 
     def _patch_config(self, config_text: str) -> str:
         """Apply all client-side split-tunnel overrides to a WireGuard config."""
