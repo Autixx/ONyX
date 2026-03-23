@@ -121,7 +121,7 @@ class WgServiceManager:
         from onx.services.transit_policy_service import transit_policy_manager
         transit_policy_manager.sync_for_next_hop(db, "wg_service", service_id)
 
-    def assign_peer(self, db: Session, service: WgService, peer: Peer, *, save_to_peer: bool = True) -> dict:
+    def assign_peer(self, db: Session, service: WgService, peer: Peer, *, save_to_peer: bool = True, allowed_ips_override: list[str] | None = None) -> dict:
         _, server_public, _ = self._ensure_server_keypair(db, service)
         peer_private, peer_public = self._resolve_peer_keypair(peer)
         peer_address = peer.wg_address_v4 or self._allocate_client_address(db, service)
@@ -129,7 +129,7 @@ class WgServiceManager:
         peer.wg_service_id = service.id
         peer.wg_public_key = peer_public
         peer.wg_address_v4 = peer_address
-        config_text = self.render_peer_config(service, peer_private, peer_address, server_public)
+        config_text = self.render_peer_config(service, peer_private, peer_address, server_public, allowed_ips_override=allowed_ips_override)
         if save_to_peer:
             peer.config = config_text
         db.add(peer)
@@ -238,6 +238,8 @@ class WgServiceManager:
         peer_private_key: str,
         peer_address_v4: str,
         server_public_key: str,
+        *,
+        allowed_ips_override: list[str] | None = None,
     ) -> str:
         lines = [
             "[Interface]",
@@ -252,7 +254,7 @@ class WgServiceManager:
                 "",
                 "[Peer]",
                 f"PublicKey = {server_public_key}",
-                f"AllowedIPs = {','.join(service.client_allowed_ips_json or ['0.0.0.0/0', '::/0'])}",
+                f"AllowedIPs = {','.join(allowed_ips_override or service.client_allowed_ips_json or ['0.0.0.0/0', '::/0'])}",
                 f"Endpoint = {service.public_host}:{service.public_port or service.listen_port}",
                 f"PersistentKeepalive = {service.persistent_keepalive}",
             ]

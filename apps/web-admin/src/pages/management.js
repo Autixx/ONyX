@@ -315,6 +315,84 @@ window.deleteSubscriptionFlow = async function deleteSubscriptionFlow(subscripti
   await loadSubscriptions();
 };
 
+window.saveTransportPackageForm = async function saveTransportPackageForm(pkgId, fd){
+  var routes = (fd.get('split_tunnel_routes') || '').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+  var priority = (fd.get('priority_order') || '').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+  var payload = {
+    name: fd.get('name'),
+    enable_xray: !!fd.get('enable_xray'),
+    enable_awg: !!fd.get('enable_awg'),
+    enable_wg: !!fd.get('enable_wg'),
+    enable_openvpn_cloak: !!fd.get('enable_openvpn_cloak'),
+    split_tunnel_enabled: !!fd.get('split_tunnel_enabled'),
+    split_tunnel_routes: routes,
+    priority_order: priority.length ? priority : ['xray', 'awg', 'wg', 'openvpn_cloak'],
+  };
+  if(pkgId){
+    await apiFetch(API_PREFIX + '/transport-packages/' + encodeURIComponent(pkgId), {
+      method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+  }else{
+    await apiFetch(API_PREFIX + '/transport-packages', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+  }
+  closeModal();
+  await loadTransportPackages();
+};
+
+var _userPkgShouldReconcile = false;
+
+window.openUserPackageModal = function openUserPackageModal(userId){
+  var pkg = (TRANSPORT_PACKAGES || []).find(function(p){ return p.user_id === userId; }) || null;
+  var body = '<form id="userPkgForm"><div class="modal-grid">'
+    +formCheckbox('Enable AWG', 'enable_awg', pkg ? !!pkg.enable_awg : true, {caption:'Include AmneziaWG profiles'})
+    +formCheckbox('Enable WG', 'enable_wg', pkg ? !!pkg.enable_wg : true, {caption:'Include WireGuard profiles'})
+    +formCheckbox('Enable XRAY', 'enable_xray', pkg ? !!pkg.enable_xray : true, {caption:'Include Xray profiles'})
+    +formCheckbox('Enable OpenVPN+Cloak', 'enable_openvpn_cloak', pkg ? !!pkg.enable_openvpn_cloak : true, {caption:'Include OpenVPN+Cloak profiles'})
+    +formCheckbox('Split Tunnel', 'split_tunnel_enabled', pkg ? !!pkg.split_tunnel_enabled : false, {caption:'Route only listed CIDRs through VPN tunnel'})
+    +formTextarea('Split Routes', 'split_tunnel_routes', pkg ? (pkg.split_tunnel_routes_json || []).join(', ') : '', {help:'Comma-separated CIDRs, e.g.: 10.8.0.0/24, 10.0.0.0/8'})
+    +formInput('Priority', 'priority_order', pkg ? (pkg.priority_order_json || []).join(', ') : 'xray, awg, wg, openvpn_cloak', {help:'Comma-separated transport priority'})
+    +'</div></form>';
+  openModal('User Transport Package', body, {
+    buttons:[
+      {label:'Cancel', className:'btn', onClick:closeModal},
+      {label:'Save', className:'btn', onClick:function(){ _userPkgShouldReconcile = false; document.getElementById('userPkgForm').requestSubmit(); }},
+      {label:'Save & Reconcile', className:'btn pri', onClick:function(){ _userPkgShouldReconcile = true; document.getElementById('userPkgForm').requestSubmit(); }},
+    ]
+  });
+  bindModalForm('userPkgForm', function(fd){ window.saveUserPackageForm(userId, fd, _userPkgShouldReconcile); });
+};
+
+window.saveUserPackageForm = async function saveUserPackageForm(userId, fd, reconcile){
+  var pkg = (TRANSPORT_PACKAGES || []).find(function(p){ return p.user_id === userId; }) || null;
+  var routes = (fd.get('split_tunnel_routes') || '').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+  var priority = (fd.get('priority_order') || '').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+  var payload = {
+    preferred_xray_service_id: pkg ? (pkg.preferred_xray_service_id || null) : null,
+    preferred_awg_service_id: pkg ? (pkg.preferred_awg_service_id || null) : null,
+    preferred_wg_service_id: pkg ? (pkg.preferred_wg_service_id || null) : null,
+    preferred_openvpn_cloak_service_id: pkg ? (pkg.preferred_openvpn_cloak_service_id || null) : null,
+    enable_xray: !!fd.get('enable_xray'),
+    enable_awg: !!fd.get('enable_awg'),
+    enable_wg: !!fd.get('enable_wg'),
+    enable_openvpn_cloak: !!fd.get('enable_openvpn_cloak'),
+    split_tunnel_enabled: !!fd.get('split_tunnel_enabled'),
+    split_tunnel_routes: routes,
+    priority_order: priority.length ? priority : ['xray', 'awg', 'wg', 'openvpn_cloak'],
+  };
+  await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId), {
+    method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+  });
+  if(reconcile){
+    await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId) + '/reconcile', {
+      method:'POST'
+    });
+  }
+  closeModal();
+  await loadTransportPackages();
+};
+
 window.deleteTransportPackageFlow = async function deleteTransportPackageFlow(pkgId){
   var pkg = transportPackageById(pkgId);
   if(!confirm('Delete transport package ' + (pkg ? (pkg.name || pkgId) : pkgId) + '?')) return;

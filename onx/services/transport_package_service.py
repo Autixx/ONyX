@@ -212,7 +212,12 @@ class TransportPackageService:
             peer.node_id = service.node_id
             if subscription is not None:
                 peer.config_expires_at = subscription.expires_at
-        result = awg_service_manager.assign_peer(db, service, peer, save_to_peer=True)
+        allowed_ips_override = (
+            package.split_tunnel_routes_json
+            if package.split_tunnel_enabled and package.split_tunnel_routes_json
+            else None
+        )
+        result = awg_service_manager.assign_peer(db, service, peer, save_to_peer=True, allowed_ips_override=allowed_ips_override)
         return {
             "enabled": True,
             "status": "ready",
@@ -251,7 +256,12 @@ class TransportPackageService:
             peer.node_id = service.node_id
             if subscription is not None:
                 peer.config_expires_at = subscription.expires_at
-        result = wg_service_manager.assign_peer(db, service, peer, save_to_peer=True)
+        allowed_ips_override = (
+            package.split_tunnel_routes_json
+            if package.split_tunnel_enabled and package.split_tunnel_routes_json
+            else None
+        )
+        result = wg_service_manager.assign_peer(db, service, peer, save_to_peer=True, allowed_ips_override=allowed_ips_override)
         return {
             "enabled": True,
             "status": "ready",

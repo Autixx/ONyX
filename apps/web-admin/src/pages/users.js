@@ -30,7 +30,7 @@ window.renderUsers = function renderUsers(){
       +'<td>'+esc(String(u.requested_device_count || '-'))+'</td>'
       +'<td style="display:flex;gap:5px;">'
         +'<button class="btn sm" onclick="showUser(\''+esc(u.id)+'\')">VIEW</button>'
-        +'<button class="btn sm" onclick="openTransportPackageModal(\''+esc(u.id)+'\')">PACKAGE</button>'
+        +'<button class="btn sm" onclick="openUserPackageModal(\''+esc(u.id)+'\')">PACKAGE</button>'
         +'<button class="btn sm" onclick="openUserModal(\''+esc(u.id)+'\')">EDIT</button>'
         +'<button class="btn sm red" onclick="deleteUserFlow(\''+esc(u.id)+'\')">DEL</button>'
       +'</td>'
