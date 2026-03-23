@@ -575,6 +575,34 @@ def _bootstrap_runtime_screen(base_url: str, admin_token: str | None) -> None:
     _pause()
 
 
+def _install_agh_screen(base_url: str, admin_token: str | None) -> None:
+    node = _pick_user_node(base_url, admin_token, "ONX / Install AdGuard Home")
+    if node is None:
+        return
+    _render(
+        [
+            "ONX / Install AdGuard Home",
+            "",
+            f"Selected node: {node['name']}",
+            "Running install-agh job (may take a few minutes)...",
+            "",
+        ]
+    )
+    try:
+        nodes_cli._install_agh(
+            _build_nodes_args(
+                base_url=base_url,
+                admin_token=admin_token,
+                node_ref=str(node["name"]),
+                wait=True,
+            )
+        )
+    except Exception as exc:
+        print(f"Error: {exc}")
+    print()
+    _pause()
+
+
 def _check_node_availability_screen(base_url: str, admin_token: str | None) -> None:
     node = _pick_user_node(base_url, admin_token, "ONX / Check Node Availability")
     if node is None:
@@ -703,7 +731,8 @@ def _nodes_menu(base_url: str, admin_token: str | None) -> None:
                 "7. Bootstrap runtime",
                 "8. View node capabilities",
                 "9. AWG readiness check",
-                "10. Back",
+                "10. Install AdGuard Home",
+                "11. Back",
                 "",
             ]
         )
@@ -729,6 +758,8 @@ def _nodes_menu(base_url: str, admin_token: str | None) -> None:
         elif choice == "9":
             _awg_readiness_screen(base_url, admin_token)
         elif choice == "10":
+            _install_agh_screen(base_url, admin_token)
+        elif choice == "11":
             return
 
 

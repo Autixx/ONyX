@@ -405,6 +405,33 @@ def _bootstrap_runtime(args: argparse.Namespace) -> int:
     return 0 if str(job["state"]) == "succeeded" else 1
 
 
+def _install_agh(args: argparse.Namespace) -> int:
+    base_url = _derive_base_url(args.base_url)
+    node, job = _enqueue_node_job(
+        base_url,
+        args.admin_token,
+        args.node_ref,
+        action="install-agh",
+        path_suffix="install-agh",
+        wait=args.wait,
+        poll_interval=args.poll_interval,
+    )
+    if not args.wait:
+        _print_json(job)
+        return 0
+
+    summary = {
+        "node_id": node["id"],
+        "node_name": node["name"],
+        "job_id": job["id"],
+        "job_state": job["state"],
+        "error_text": job.get("error_text"),
+        "result": job.get("result_payload_json"),
+    }
+    _print_json(summary)
+    return 0 if str(job["state"]) == "succeeded" else 1
+
+
 def _provision_node(args: argparse.Namespace) -> int:
     base_url = _derive_base_url(args.base_url)
     node = _create_node(base_url, args.admin_token, args)
@@ -525,6 +552,12 @@ def main() -> int:
     bootstrap_parser.add_argument("--no-wait", action="store_false", dest="wait", help="Only enqueue bootstrap job")
     bootstrap_parser.add_argument("--poll-interval", type=int, default=2, help="Job poll interval in seconds")
     bootstrap_parser.set_defaults(handler=_bootstrap_runtime, wait=True)
+
+    install_agh_parser = subparsers.add_parser("install-agh", help="Install AdGuard Home on a node")
+    install_agh_parser.add_argument("node_ref", help="Node ID or node name")
+    install_agh_parser.add_argument("--no-wait", action="store_false", dest="wait", help="Only enqueue job")
+    install_agh_parser.add_argument("--poll-interval", type=int, default=2, help="Job poll interval in seconds")
+    install_agh_parser.set_defaults(handler=_install_agh, wait=True)
 
     delete_parser = subparsers.add_parser("delete-node", help="Delete a node by name or ID")
     delete_parser.add_argument("node_ref", help="Node ID or node name")

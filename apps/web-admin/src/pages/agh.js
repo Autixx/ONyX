@@ -373,4 +373,47 @@ async function _aghSaveCustomRules(fd) {
   }
 }
 
+// ── Install AGH modal ─────────────────────────────────────────────────────────
+
+window.aghOpenInstallModal = function aghOpenInstallModal() {
+  var nodes = window.NODES || [];
+  if (!nodes.length) {
+    alert('No nodes available.');
+    return;
+  }
+  var nodeOpts = nodes.map(function(n) {
+    return '<option value="' + esc(n.id) + '">' + esc(n.name) + '</option>';
+  }).join('');
+  var body = '<form id="aghInstallForm">'
+    + '<div class="modal-grid">'
+    + '<div class="mf-row"><label class="mf-label">Target node</label>'
+    + '<select id="aghInstallNodeSel" name="node_id" class="mf-select" style="width:100%;">' + nodeOpts + '</select></div>'
+    + '</div>'
+    + '<div style="margin-top:14px;padding:10px 12px;background:var(--bg2);border-radius:6px;border:1px solid var(--bdr);font-size:13px;color:var(--t2);">'
+    + '<strong style="color:var(--t1);">Warning:</strong> This will enqueue an <strong>install-agh</strong> job on the selected node. '
+    + 'The job runs the official AdGuard Home installer script via SSH and may take several minutes. '
+    + 'Progress is visible in <em>Network → Jobs</em>.'
+    + '</div>'
+    + '</form>';
+  openModal('Install AdGuard Home on Node', body, {
+    buttons: [
+      {label: 'Cancel', className: 'btn', onClick: closeModal},
+      {label: 'Install', className: 'btn pri', onClick: _aghSubmitInstall},
+    ],
+  });
+};
+
+async function _aghSubmitInstall() {
+  var sel = document.getElementById('aghInstallNodeSel');
+  var nodeId = sel ? sel.value : null;
+  if (!nodeId) { alert('Select a node.'); return; }
+  try {
+    var job = await apiFetch(API_PREFIX + '/nodes/' + encodeURIComponent(nodeId) + '/install-agh', { method: 'POST' });
+    closeModal();
+    alert('Install AGH job enqueued: ' + (job && job.id ? job.id : '?') + '\nTrack progress in Network → Jobs.');
+  } catch (err) {
+    alert(err && err.message ? err.message : String(err));
+  }
+}
+
 export {};
