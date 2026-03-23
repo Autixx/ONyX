@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ONyX Panel</title>
-  <script type="module" crossorigin src="/assets/index-IiNtPvII.js"></script>
+  <script type="module" crossorigin src="/assets/index-Da6bz3EC.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-QWWLg0u8.css">
 </head>
 <body>
@@ -684,6 +684,20 @@
         </div>
         <div style="color:var(--t2);font-size:14px;padding:24px 0;">
           E-Mail service configuration panel — backend integration pending.
+        </div>
+      </div>
+
+      <!-- ADGUARD HOME -->
+      <div class="page" id="page-agh">
+        <div class="ph">
+          <span class="ptitle">AdGuard Home</span>
+          <div class="pbtn-row">
+            <select id="aghNodeSelect" class="select-sm" onchange="aghSelectNode(this.value)" style="margin-right:8px;"></select>
+            <button class="btn" onclick="aghRefresh()">REFRESH</button>
+          </div>
+        </div>
+        <div id="aghContent">
+          <div style="color:var(--t2);font-size:14px;padding:24px 0;">Select a node with AGH configured to view statistics.</div>
         </div>
       </div>
 
