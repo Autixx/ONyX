@@ -1,10 +1,15 @@
+import logging
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from onx.core.config import get_settings
+from onx.db.migrations import upgrade_to_head
+
 settings = get_settings()
+_log = logging.getLogger(__name__)
+_db_initialized = False
 
 engine_kwargs = {
     "future": True,
@@ -28,11 +33,18 @@ SessionLocal = sessionmaker(
 
 
 def init_db() -> None:
-    # Import models so metadata/enums are registered for the runtime.
-    #
-    # Database migrations are applied by install/update workflows and should
-    # not be executed again from the API lifespan startup path.
+    global _db_initialized
+    if _db_initialized:
+        return
+
+    _log.info("Applying database migrations to head.")
+    upgrade_to_head()
+
+    # Import models after migrations so runtime enum metadata matches the
+    # upgraded schema.
     import onx.db.models  # noqa: F401
+
+    _db_initialized = True
 
 
 def get_db() -> Generator[Session, None, None]:
