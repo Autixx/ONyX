@@ -74,6 +74,36 @@ window.openUserModal = function openUserModal(userId){
   bindModalForm('userForm', function(fd){ saveUserForm(fd, userId); });
 };
 
+window.saveUserForm = async function saveUserForm(fd, userId){
+  try{
+    if(userId){
+      var patch = {};
+      ['email','status','first_name','last_name','referral_code','usage_goal'].forEach(function(k){
+        var v = fd.get(k); if(v != null) patch[k] = v || null;
+      });
+      var dc = parseInt(fd.get('requested_device_count'), 10); if(dc > 0) patch.requested_device_count = dc;
+      var pw = (fd.get('password') || '').trim(); if(pw) patch.password = pw;
+      await apiFetch(API_PREFIX+'/users/'+encodeURIComponent(userId), {method:'PATCH', body:patch});
+    }else{
+      var payload = {
+        username: fd.get('username'),
+        email: fd.get('email'),
+        password: fd.get('password'),
+        status: fd.get('status') || 'active',
+        requested_device_count: parseInt(fd.get('requested_device_count'), 10) || 1
+      };
+      ['first_name','last_name','referral_code','usage_goal'].forEach(function(k){
+        var v = (fd.get(k) || '').trim(); if(v) payload[k] = v;
+      });
+      await apiFetch(API_PREFIX+'/users', {method:'POST', body:payload});
+    }
+    closeModal();
+    await Promise.all([loadUsers(), loadSubscriptions()]);
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
 window.deleteUserFlow = async function deleteUserFlow(userId){
   var user = userById(userId);
   if(!confirm('Delete user ' + (user ? user.username : userId) + '?')) return;

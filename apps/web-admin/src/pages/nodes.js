@@ -286,6 +286,66 @@ window.nodeNetworkTestOptions = function nodeNetworkTestOptions(preferredId){
   });
 };
 
+window.saveNodeForm = async function saveNodeForm(fd, nodeId){
+  function num(v){ var n = parseFloat(v); return isNaN(n) ? null : n; }
+  var secretValue = (fd.get('secret_value') || '').trim();
+  var authType = fd.get('auth_type');
+  var secretKind = authType === 'private_key' ? 'ssh_private_key' : 'ssh_password';
+  try{
+    var node;
+    if(nodeId){
+      var patch = {};
+      var fields = ['name','role','management_address','ssh_host','ssh_user','auth_type'];
+      fields.forEach(function(k){ var v = fd.get(k); if(v != null) patch[k] = v; });
+      var port = parseInt(fd.get('ssh_port'), 10); if(port > 0) patch.ssh_port = port;
+      var tl = num(fd.get('traffic_limit_gb')); if(tl != null) patch.traffic_limit_gb = tl;
+      node = await apiFetch(API_PREFIX+'/nodes/'+encodeURIComponent(nodeId), {method:'PATCH', body:patch});
+    }else{
+      var payload = {
+        name: fd.get('name'),
+        role: fd.get('role'),
+        management_address: fd.get('management_address'),
+        ssh_host: fd.get('ssh_host'),
+        ssh_port: parseInt(fd.get('ssh_port'), 10) || 22,
+        ssh_user: fd.get('ssh_user'),
+        auth_type: authType
+      };
+      var tlNew = num(fd.get('traffic_limit_gb')); if(tlNew != null) payload.traffic_limit_gb = tlNew;
+      node = await apiFetch(API_PREFIX+'/nodes', {method:'POST', body:payload});
+    }
+    if(secretValue){
+      await apiFetch(API_PREFIX+'/nodes/'+encodeURIComponent(node.id)+'/secret', {method:'PUT', body:{kind:secretKind, value:secretValue}});
+    }
+    closeModal();
+    await refreshNodes();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
+window.runNodeNetworkTestForm = async function runNodeNetworkTestForm(fd){
+  var sourceNodeId = fd.get('source_node_id');
+  var targetPort = parseInt(fd.get('target_port'), 10);
+  var payload = {
+    mode: fd.get('mode'),
+    target_host: fd.get('target_host'),
+    target_port: targetPort > 0 ? targetPort : null,
+    dns_server: fd.get('dns_server') || '8.8.8.8',
+    timeout_seconds: parseInt(fd.get('timeout_seconds'), 10) || 8,
+    ping_count: parseInt(fd.get('ping_count'), 10) || 3,
+    http_scheme: fd.get('http_scheme') || 'https',
+    http_path: fd.get('http_path') || '/'
+  };
+  var ta = document.getElementById('nodeTestResult');
+  if(ta) ta.value = 'Running…';
+  try{
+    var result = await apiFetch(API_PREFIX+'/nodes/'+encodeURIComponent(sourceNodeId)+'/network-test', {method:'POST', body:payload});
+    if(ta) ta.value = (result.ok ? '✓ OK' : '✗ FAILED') + '\n\n' + (result.output || '') + (result.error ? '\nError: '+result.error : '');
+  }catch(err){
+    if(ta) ta.value = 'Error: ' + (err && err.message ? err.message : String(err));
+  }
+};
+
 window.openNodeNetworkTestModal = function openNodeNetworkTestModal(sourceNodeId, preset){
   var sourceId = String(sourceNodeId || '');
   var config = preset || {};
