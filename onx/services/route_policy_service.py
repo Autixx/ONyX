@@ -1116,7 +1116,7 @@ class RoutePolicyService:
         )
         if target_gateway:
             lines.append(
-                f"ip route replace default via {shlex.quote(target_gateway)} dev \"$TARGET_IF\" table \"$TABLE_ID\""
+                f"ip route replace default via {shlex.quote(target_gateway)} dev \"$TARGET_IF\" table \"$TABLE_ID\" onlink"
             )
         else:
             lines.append("ip route replace default dev \"$TARGET_IF\" table \"$TABLE_ID\"")
