@@ -369,7 +369,7 @@ function _aghRenderLogTable(data) {
     if (peerName) { clientStr = esc(peerName) + ' <span style="color:var(--t2);font-size:11px;">(' + esc(e.client) + ')</span>'; }
     var domain    = esc(e.question && e.question.name ? e.question.name : '-');
     var qtype     = esc(e.question && e.question.type ? e.question.type : '-');
-    var isBlocked = e.reason && (e.reason.indexOf('Filter') !== -1 || e.reason.indexOf('Block') !== -1 || e.reason === 'FilteredBlacklist');
+    var isBlocked = e.reason && (e.reason.indexOf('Filtered') === 0 || e.reason.indexOf('Block') !== -1);
     var statusPill = isBlocked
       ? '<span class="pill" style="background:var(--red);color:#fff;font-size:11px;">blocked</span>'
       : '<span class="pill pq" style="font-size:11px;">' + esc(e.reason || 'ok') + '</span>';
