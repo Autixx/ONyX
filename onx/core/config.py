@@ -136,6 +136,7 @@ class Settings(BaseSettings):
     client_latest_version: str = ""          # e.g. "0.3.0"; empty = no update available
     client_download_url: str = ""            # direct download link to the new client ZIP
     client_update_notes: str = ""            # short release notes shown to user
+    client_updates_dir: str = "./client-updates"  # directory to store uploaded client ZIPs
 
     model_config = SettingsConfigDict(
         env_prefix="ONX_",

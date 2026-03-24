@@ -18,6 +18,7 @@ from onx.api.routers.client_bundles import router as client_bundles_router
 from onx.api.routers.client_devices import router as client_devices_router
 from onx.api.routers.client_registrations import router as client_registrations_router
 from onx.api.routers.client_routing import router as client_routing_router
+from onx.api.routers.client_split_tunnel import router as client_split_tunnel_router
 from onx.api.routers.client_support import router as client_support_router
 from onx.api.routers.support_chat import router as support_chat_router
 from onx.api.routers.client_updates import router as client_updates_router
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(client_bundles_router, prefix=settings.api_prefix)
     app.include_router(client_registrations_router, prefix=settings.api_prefix)
     app.include_router(client_routing_router, prefix=settings.api_prefix)
+    app.include_router(client_split_tunnel_router, prefix=settings.api_prefix)
     app.include_router(client_support_router, prefix=settings.api_prefix)
     app.include_router(support_chat_router, prefix=settings.api_prefix)
     app.include_router(client_updates_router, prefix=settings.api_prefix)
@@ -196,8 +198,16 @@ def create_app() -> FastAPI:
     app.include_router(maintenance_router, prefix=settings.api_prefix)
     app.include_router(system_config_router, prefix=settings.api_prefix)
     app.include_router(realtime_router, prefix=settings.api_prefix)
+    _mount_client_updates(app, settings)
     _mount_static_ui(app, settings)
     return app
+
+
+def _mount_client_updates(app: FastAPI, settings) -> None:
+    from starlette.staticfiles import StaticFiles as _SF
+    updates_dir = Path(settings.client_updates_dir).expanduser().resolve()
+    updates_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/client-updates", _SF(directory=str(updates_dir)), name="client-updates")
 
 
 def _mount_static_ui(app: FastAPI, settings) -> None:

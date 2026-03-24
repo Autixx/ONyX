@@ -35,6 +35,7 @@ import './pages/ovpn.js';
 import './pages/agh.js';
 import './pages/tickets.js';
 import './pages/apidebug.js';
+import './pages/clientupdate.js';
 import './pages/routing-summary.js';
 
 // ── Shared helpers (peers uses these) ──────────────────────────────────────

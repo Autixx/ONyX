@@ -4,6 +4,12 @@ from onx.db.models.system_config import SystemConfig
 
 PUBLIC_BASE_URL_KEY = "public_base_url"
 
+CLIENT_UPDATE_MODE_KEY     = "client_update_mode"
+CLIENT_UPDATE_VERSION_KEY  = "client_update_version"
+CLIENT_UPDATE_NOTES_KEY    = "client_update_notes"
+CLIENT_UPDATE_MIRROR_URL_KEY = "client_update_mirror_url"
+CLIENT_UPDATE_FILENAME_KEY = "client_update_filename"
+
 
 class SystemConfigService:
     def get(self, db: Session, key: str) -> str | None:

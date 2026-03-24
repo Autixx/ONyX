@@ -37,7 +37,11 @@ window.NAV_GROUPS = {
                 {p:'agh',   label:'AdGuard Home'},
               ]},
   topology: { label:'Topology',       pages:['topology'], subs:[] },
-  debug:    { label:'Debug',          pages:['apidebug'], subs:[] },
+  debug:    { label:'Debug',          pages:['apidebug','clientupdate'],
+              subs:[
+                {p:'apidebug',     label:'API Debug'},
+                {p:'clientupdate', label:'Client Update'},
+              ]},
 };
 
 window.PAGE_TO_GROUP = {};
@@ -138,7 +142,8 @@ window.showPage = function showPage(pageId){
     window.stopTopologyMetaRefresh?.();
   }
   window.syncTopologyAutoButton?.();
-  if(pageId==='failban'){ window.refreshFailban?.().catch(function(){}); }
+  if(pageId==='failban'){   window.refreshFailban?.().catch(function(){}); }
+  if(pageId==='clientupdate'){ window.cuOnPageShow?.(); }
   if(pageId==='xray'){ window.refreshXrayServices?.().catch(function(){}); }
   if(pageId==='awg'){ window.refreshAwgServices?.().catch(function(){}); }
   if(pageId==='wg'){ window.refreshWgServices?.().catch(function(){}); }
