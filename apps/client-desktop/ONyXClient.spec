@@ -3,11 +3,12 @@ import os
 HERE = os.path.dirname(os.path.abspath(SPEC))
 
 a = Analysis(
-    [os.path.join(HERE, 'onyx_daemon_service.py')],
+    [os.path.join(HERE, 'onyx_client.py')],
     pathex=[HERE],
     binaries=[],
     datas=[
-        (os.path.join(HERE, 'bin'), 'bin'),
+        (os.path.join(HERE, 'assets'), 'assets'),
+        (os.path.join(HERE, 'bin'),    'bin'),
     ],
     hiddenimports=[
         'runtime',
@@ -29,10 +30,9 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
-    name='ONyXClientDaemon',
+    exclude_binaries=True,
+    name='ONyXClient',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -44,4 +44,13 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=[os.path.join(HERE, 'assets', 'icons', 'onyx.ico')],
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='ONyXClient',
 )
