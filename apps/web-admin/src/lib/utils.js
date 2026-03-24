@@ -100,6 +100,36 @@ window.obfValue = function obfValue(obf, key, def){
   return v != null ? String(v) : '';
 };
 
+// Autofill public_host from node's management_address when node select changes.
+// Fills only if the field is empty or still matches the previously auto-set value.
+window.bindNodeHostAutofill = function bindNodeHostAutofill(formId, nodeSelectName, hostInputName){
+  var form = document.getElementById(formId);
+  if(!form) return;
+  var nodeSelect = form.querySelector('[name="' + nodeSelectName + '"]');
+  var hostInput  = form.querySelector('[name="' + hostInputName  + '"]');
+  if(!nodeSelect || !hostInput) return;
+
+  function mgmtHost(nodeId){
+    var node = window.nById(String(nodeId || '').trim());
+    return node ? String(node.management_address || node.ssh_host || '').trim() : '';
+  }
+
+  function sync(){
+    var current = String(hostInput.value || '').trim();
+    var prev    = String(hostInput.getAttribute('data-autofill') || '').trim();
+    var next    = mgmtHost(nodeSelect.value);
+    if(!next) return;
+    // Only overwrite if empty or we put the previous value there
+    if(!current || current === prev){
+      hostInput.value = next;
+      hostInput.setAttribute('data-autofill', next);
+    }
+  }
+
+  nodeSelect.addEventListener('change', sync);
+  sync(); // run immediately on open
+};
+
 export var sp                   = window.sp;
 export var rp                   = window.rp;
 export var esc                  = window.esc;
@@ -114,3 +144,4 @@ export var getLinkFilters       = window.getLinkFilters;
 export var getNodeTrafficFilters    = window.getNodeTrafficFilters;
 export var awgDefaultObfuscation    = window.awgDefaultObfuscation;
 export var obfValue                 = window.obfValue;
+export var bindNodeHostAutofill     = window.bindNodeHostAutofill;
