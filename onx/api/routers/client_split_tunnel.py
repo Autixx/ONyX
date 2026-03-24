@@ -1,11 +1,9 @@
 """Client endpoint — report split-tunnel toggle status."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-
-from fastapi import Depends
 from onx.api.deps import get_database_session
 from onx.api.routers.client_auth import _extract_bearer_token
 from onx.db.models.event_log import EventLevel
@@ -28,7 +26,7 @@ def report_split_tunnel_status(
     payload: SplitTunnelStatusRequest,
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_database_session),
-) -> None:
+) -> Response:
     token = _extract_bearer_token(authorization)
     resolved = client_auth_service.resolve_session(db, token)
     if resolved is None:
@@ -53,3 +51,4 @@ def report_split_tunnel_status(
         "split_tunnel.status_changed",
         {"user_id": user.id, "username": user.username, "enabled": payload.enabled, "device_id": payload.device_id},
     )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
