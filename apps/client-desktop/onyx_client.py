@@ -456,6 +456,9 @@ class LocalTunnelRuntime:
         self._last_transfer_sample: tuple[int, int] | None = None
         self._daemon = DaemonPipeClient()
         self._clear_dns_enforcement_rules()
+        # Capture ISP DNS before any tunnel modifies system DNS.
+        # Used to resolve bypass domains without going through the tunnel resolver.
+        self._local_dns: list[str] = self._get_windows_dns_servers()
 
     def available_profiles(self):
         decrypted = ((self.st.last_bundle or {}).get("decrypted") or {})
@@ -507,6 +510,14 @@ class LocalTunnelRuntime:
         }
 
     def connect(self) -> dict:
+        # Refresh the pre-tunnel DNS snapshot when initiating a fresh connection.
+        # This handles reconnects after disconnect: the system DNS is clean again
+        # at that point, so we get the real ISP resolvers, not tunnel ones.
+        if not self.st.connected:
+            fresh = self._get_windows_dns_servers()
+            if fresh:
+                self._local_dns = fresh
+
         profiles = self.available_profiles()
         if not profiles:
             raise RuntimeError("No AWG/WG/Xray/OpenVPN+Cloak runtime profiles are available in the issued bundle.")
@@ -684,8 +695,124 @@ class LocalTunnelRuntime:
             nets = new
         return [str(n) for n in nets]
 
+    @staticmethod
+    def _get_windows_dns_servers() -> list[str]:
+        """Return the current non-tunnel DNS server IPs from all physical interfaces.
+
+        Reads 'netsh interface ip show dns' and skips interfaces whose names
+        suggest they are WireGuard / VPN tunnels so we capture only the real
+        ISP resolvers that were active before the tunnel was established.
+        """
+        import re
+        _TUNNEL_RE = re.compile(
+            r'wireguard|amnezia|awg|wg\d|onyx|loopback|pseudo', re.IGNORECASE
+        )
+        servers: list[str] = []
+        try:
+            result = subprocess.run(
+                ["netsh", "interface", "ip", "show", "dns"],
+                capture_output=True, text=True, timeout=5,
+                **_subprocess_hidden_kwargs()
+            )
+            skip = False
+            for line in result.stdout.splitlines():
+                m_iface = re.match(r'Configuration for interface\s+"(.+)"', line, re.IGNORECASE)
+                if m_iface:
+                    skip = bool(_TUNNEL_RE.search(m_iface.group(1)))
+                    continue
+                if skip:
+                    continue
+                m_ip = re.search(r'(\d{1,3}(?:\.\d{1,3}){3})', line)
+                if m_ip:
+                    ip = m_ip.group(1)
+                    if ip not in servers and not ip.startswith(('0.', '127.')):
+                        servers.append(ip)
+        except Exception:
+            pass
+        return servers
+
+    @staticmethod
+    def _query_dns_direct(domain: str, nameservers: list[str], timeout: float = 2.0) -> list[str]:
+        """Resolve a domain by sending raw UDP DNS queries directly to nameservers.
+
+        Bypasses the system resolver entirely, so the query goes to the ISP DNS
+        even while the WireGuard tunnel (with its own DNS override) is active.
+        The UDP socket is a plain AF_INET socket whose destination IP is excluded
+        from AllowedIPs, so the packet travels outside the tunnel.
+        """
+        import socket, struct, random as _rnd
+        results: list[str] = []
+        for qtype in (1, 28):  # A then AAAA
+            for ns in nameservers:
+                try:
+                    qid = _rnd.randint(1, 65535)
+                    # DNS header: ID, RD=1, QDCOUNT=1, rest 0
+                    header = struct.pack(">HHHHHH", qid, 0x0100, 1, 0, 0, 0)
+                    labels = domain.rstrip('.').encode('ascii').split(b'.')
+                    qname = b''.join(bytes([len(lb)]) + lb for lb in labels) + b'\x00'
+                    packet = header + qname + struct.pack(">HH", qtype, 1)
+
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.settimeout(timeout)
+                    try:
+                        sock.sendto(packet, (ns, 53))
+                        data, _ = sock.recvfrom(4096)
+                    finally:
+                        sock.close()
+
+                    if len(data) < 12:
+                        continue
+                    ancount = struct.unpack(">H", data[6:8])[0]
+
+                    # Skip header (12) and question section
+                    offset = 12
+                    while offset < len(data):
+                        if data[offset] == 0:
+                            offset += 1
+                            break
+                        if data[offset] & 0xC0 == 0xC0:
+                            offset += 2
+                            break
+                        offset += data[offset] + 1
+                    offset += 4  # qtype + qclass
+
+                    for _ in range(ancount):
+                        if offset >= len(data):
+                            break
+                        # Skip answer name (possibly compressed)
+                        if data[offset] & 0xC0 == 0xC0:
+                            offset += 2
+                        else:
+                            while offset < len(data) and data[offset] != 0:
+                                offset += data[offset] + 1
+                            offset += 1
+                        if offset + 10 > len(data):
+                            break
+                        rtype, _rc, _ttl, rdlen = struct.unpack(">HHIH", data[offset:offset + 10])
+                        offset += 10
+                        rdata = data[offset:offset + rdlen]
+                        offset += rdlen
+                        if rtype == 1 and rdlen == 4:
+                            ip = ".".join(str(b) for b in rdata)
+                            if ip not in results:
+                                results.append(ip)
+                        elif rtype == 28 and rdlen == 16:
+                            ip = socket.inet_ntop(socket.AF_INET6, rdata)
+                            if ip not in results:
+                                results.append(ip)
+
+                    if results:
+                        break  # got answer from this nameserver
+                except Exception:
+                    continue
+        return results
+
     def _apply_domain_bypass(self, config_text: str) -> str:
         """Resolve bypass domains to IPs and remove them from AllowedIPs.
+
+        Uses the pre-tunnel ISP DNS servers (captured before tunnel activation)
+        to resolve bypass domains directly via UDP, so that lookups do not travel
+        through the tunnel and are not answered by the exit-node resolver.
 
         Also always excludes ::1/128 from ::/0 so that WireGuard-Windows does
         not see a literal ::/0 entry and activate its WFP kill switch, which
@@ -695,16 +822,34 @@ class LocalTunnelRuntime:
         domains = [d.strip() for d in self.st.split_tunnel_bypass_domains if d.strip()]
         if not domains:
             return config_text
+
         resolved: list[str] = []
+
+        # Always exclude the ISP DNS server IPs themselves from the tunnel so
+        # that the direct UDP queries we make to them bypass the tunnel too.
+        for ns_ip in self._local_dns:
+            if ns_ip not in resolved:
+                resolved.append(ns_ip)
+
         for domain in domains:
-            for family in (socket.AF_INET, socket.AF_INET6):
-                try:
-                    for info in socket.getaddrinfo(domain, None, family):
-                        ip = info[4][0]
-                        if ip not in resolved:
-                            resolved.append(ip)
-                except Exception:
-                    pass
+            ips: list[str] = []
+            # Prefer direct query to pre-tunnel ISP resolvers.
+            if self._local_dns:
+                ips = self._query_dns_direct(domain, self._local_dns)
+            # Fall back to system resolver only if direct query yielded nothing.
+            if not ips:
+                for family in (socket.AF_INET, socket.AF_INET6):
+                    try:
+                        for info in socket.getaddrinfo(domain, None, family):
+                            ip = info[4][0]
+                            if ip not in ips:
+                                ips.append(ip)
+                    except Exception:
+                        pass
+            for ip in ips:
+                if ip not in resolved:
+                    resolved.append(ip)
+
         # Always split ::/0 to prevent WireGuard kill switch activation.
         # ::1 is IPv6 loopback — safe to exclude from any tunnel.
         if "::1" not in resolved:
