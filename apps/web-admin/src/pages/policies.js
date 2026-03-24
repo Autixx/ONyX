@@ -486,4 +486,106 @@ window.actionBalancerPick = async function actionBalancerPick(balancerId){
   }
 };
 
+window.saveRoutePolicyForm = async function saveRoutePolicyForm(fd, policyId){
+  function csv(v){ return String(v||'').split(',').map(function(x){return x.trim();}).filter(Boolean); }
+  var action = fd.get('action')||'next_hop';
+  var balancerId = (fd.get('balancer_id')||'').trim()||null;
+  var targetInterface = (fd.get('target_interface')||'').trim()||null;
+  var targetGateway = (fd.get('target_gateway')||'').trim()||null;
+  var base = {
+    name: fd.get('name'),
+    ingress_interface: fd.get('ingress_interface'),
+    action: action,
+    target_interface: targetInterface,
+    target_gateway: targetGateway,
+    balancer_id: balancerId,
+    routed_networks: csv(fd.get('routed_networks')),
+    excluded_networks: csv(fd.get('excluded_networks')),
+    table_id: parseInt(fd.get('table_id'),10),
+    rule_priority: parseInt(fd.get('rule_priority'),10),
+    firewall_mark: parseInt(fd.get('firewall_mark'),10),
+    masquerade: !!fd.get('masquerade'),
+    enabled: !!fd.get('enabled')
+  };
+  try{
+    if(policyId){
+      await apiFetch(API_PREFIX+'/route-policies/'+encodeURIComponent(policyId), {method:'PATCH', body:base});
+    }else{
+      await apiFetch(API_PREFIX+'/route-policies', {method:'POST', body:Object.assign({node_id:fd.get('node_id')}, base)});
+    }
+    closeModal();
+    await refreshPolicies();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
+window.saveDNSPolicyForm = async function saveDNSPolicyForm(fd, policyId){
+  function csv(v){ return String(v||'').split(',').map(function(x){return x.trim();}).filter(Boolean); }
+  var protocols = csv(fd.get('capture_protocols'));
+  var ports = csv(fd.get('capture_ports')).map(Number).filter(function(n){return !isNaN(n)&&n>0;});
+  var exceptions = csv(fd.get('exceptions_networks'));
+  var base = {
+    dns_address: fd.get('dns_address'),
+    enabled: !!fd.get('enabled'),
+    capture_protocols: protocols,
+    capture_ports: ports,
+    exceptions_networks: exceptions
+  };
+  try{
+    if(policyId){
+      await apiFetch(API_PREFIX+'/dns-policies/'+encodeURIComponent(policyId), {method:'PATCH', body:base});
+    }else{
+      await apiFetch(API_PREFIX+'/dns-policies', {method:'POST', body:Object.assign({route_policy_id:fd.get('route_policy_id')}, base)});
+    }
+    closeModal();
+    await refreshPolicies();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
+window.saveGeoPolicyForm = async function saveGeoPolicyForm(fd, policyId){
+  var countryCode = (fd.get('country_code')||'').trim();
+  var sourceUrl = (fd.get('source_url_template')||'').trim()||null;
+  var base = {
+    country_code: countryCode,
+    mode: fd.get('mode')||'direct',
+    source_url_template: sourceUrl,
+    enabled: !!fd.get('enabled')
+  };
+  try{
+    if(policyId){
+      await apiFetch(API_PREFIX+'/geo-policies/'+encodeURIComponent(policyId), {method:'PATCH', body:base});
+    }else{
+      await apiFetch(API_PREFIX+'/geo-policies', {method:'POST', body:Object.assign({route_policy_id:fd.get('route_policy_id')}, base)});
+    }
+    closeModal();
+    await refreshPolicies();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
+window.saveBalancerForm = async function saveBalancerForm(fd, balancerId){
+  var members = parseMembers(fd.get('members'));
+  var base = {
+    name: fd.get('name'),
+    method: fd.get('method')||'random',
+    enabled: !!fd.get('enabled'),
+    members: members
+  };
+  try{
+    if(balancerId){
+      await apiFetch(API_PREFIX+'/balancers/'+encodeURIComponent(balancerId), {method:'PATCH', body:base});
+    }else{
+      await apiFetch(API_PREFIX+'/balancers', {method:'POST', body:Object.assign({node_id:fd.get('node_id')}, base)});
+    }
+    closeModal();
+    await refreshPolicies();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
 export {};
