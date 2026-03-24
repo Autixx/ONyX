@@ -42,6 +42,12 @@ def _ensure_alembic_version_column_capacity(connection) -> None:
         )
     ).first()
     if row is None:
+        # Table does not exist yet. Pre-create it with a wide column so that
+        # Alembic skips its own CREATE (which defaults to VARCHAR(32)).
+        connection.execute(text(
+            "CREATE TABLE IF NOT EXISTS alembic_version "
+            "(version_num VARCHAR(128) NOT NULL)"
+        ))
         return
     current_length = row[0]
     if current_length is None or current_length >= 128:
