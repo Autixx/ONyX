@@ -56,7 +56,7 @@ class DNSPolicyService:
         return policy
 
     def update_policy(self, db: Session, policy: DNSPolicy, payload: DNSPolicyUpdate) -> DNSPolicy:
-        updates = payload.model_dump(exclude_unset=True)
+        updates = payload.model_dump(exclude_unset=True, mode="json")
         if not updates:
             return policy
 
@@ -78,7 +78,7 @@ class DNSPolicyService:
         db.commit()
 
     def _normalize_create(self, payload: DNSPolicyCreate) -> dict:
-        data = payload.model_dump()
+        data = payload.model_dump(mode="json")
         data["dns_address"] = self.normalize_dns_address(data["dns_address"])
         data["capture_protocols"] = self._normalize_capture_protocols(data["capture_protocols"])
         data["capture_ports"] = self._normalize_ports(data["capture_ports"])

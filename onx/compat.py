@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 try:
-    from onx.compat import StrEnum as StrEnum
+    from enum import StrEnum as StrEnum  # Python 3.11+
 except ImportError:
     from enum import Enum
 
