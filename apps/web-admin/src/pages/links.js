@@ -222,4 +222,76 @@ window.actionLinkApply = async function actionLinkApply(linkId){
   }
 };
 
+window.saveLinkForm = async function saveLinkForm(fd, linkId){
+  function csv(v){ return String(v||'').split(',').map(function(x){return x.trim();}).filter(Boolean); }
+  function num(v){ return parseInt(v, 10) || 0; }
+  var spec = {
+    mode: 'site_to_site',
+    left: {
+      interface_name: fd.get('left_interface_name'),
+      listen_port: num(fd.get('left_listen_port')),
+      address_v4: fd.get('left_address_v4'),
+      mtu: num(fd.get('left_mtu')),
+      endpoint_host: fd.get('left_endpoint_host')
+    },
+    right: {
+      interface_name: fd.get('right_interface_name'),
+      listen_port: num(fd.get('right_listen_port')),
+      address_v4: fd.get('right_address_v4'),
+      mtu: num(fd.get('right_mtu')),
+      endpoint_host: fd.get('right_endpoint_host')
+    },
+    peer: {
+      persistent_keepalive: num(fd.get('persistent_keepalive')),
+      mtu: num(fd.get('peer_mtu')),
+      left_allowed_ips: csv(fd.get('left_allowed_ips')),
+      right_allowed_ips: csv(fd.get('right_allowed_ips'))
+    },
+    awg_obfuscation: {
+      jc:   num(fd.get('jc')),
+      jmin: num(fd.get('jmin')),
+      jmax: num(fd.get('jmax')),
+      s1:   num(fd.get('s1')),
+      s2:   num(fd.get('s2')),
+      s3:   num(fd.get('s3')),
+      s4:   num(fd.get('s4')),
+      h1:   num(fd.get('h1')),
+      h2:   num(fd.get('h2')),
+      h3:   num(fd.get('h3')),
+      h4:   num(fd.get('h4'))
+    }
+  };
+  var payload;
+  if(linkId){
+    payload = {
+      name: fd.get('name'),
+      topology_type: fd.get('topology_type'),
+      left_node_id: fd.get('left_node_id'),
+      right_node_id: fd.get('right_node_id'),
+      spec: spec
+    };
+  }else{
+    payload = {
+      name: fd.get('name'),
+      driver_name: 'awg',
+      topology_type: fd.get('topology_type'),
+      left_node_id: fd.get('left_node_id'),
+      right_node_id: fd.get('right_node_id'),
+      spec: spec
+    };
+  }
+  try{
+    if(linkId){
+      await apiFetch(API_PREFIX+'/links/'+encodeURIComponent(linkId), {method:'PATCH', body:payload});
+    }else{
+      await apiFetch(API_PREFIX+'/links', {method:'POST', body:payload});
+    }
+    closeModal();
+    await refreshLinks();
+    await refreshTopology();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
 export {};
