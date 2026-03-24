@@ -91,6 +91,15 @@ window.getNodeTrafficFilters = function getNodeTrafficFilters(){
   };
 };
 
+window.awgDefaultObfuscation = function awgDefaultObfuscation(){
+  return {jc:4, jmin:40, jmax:120, s1:20, s2:40, s3:80, s4:120, h1:10101, h2:20202, h3:30303, h4:40404};
+};
+
+window.obfValue = function obfValue(obf, key, def){
+  var v = obf && obf[key] != null ? obf[key] : def;
+  return v != null ? String(v) : '';
+};
+
 export var sp                   = window.sp;
 export var rp                   = window.rp;
 export var esc                  = window.esc;
@@ -102,4 +111,6 @@ export var rows                 = window.rows;
 export var updateShellCounters  = window.updateShellCounters;
 export var getNodeFilters       = window.getNodeFilters;
 export var getLinkFilters       = window.getLinkFilters;
-export var getNodeTrafficFilters = window.getNodeTrafficFilters;
+export var getNodeTrafficFilters    = window.getNodeTrafficFilters;
+export var awgDefaultObfuscation    = window.awgDefaultObfuscation;
+export var obfValue                 = window.obfValue;
