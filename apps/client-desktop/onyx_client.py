@@ -3951,6 +3951,12 @@ class ONyXClient(QMainWindow):
             self._ds.refresh(offline=True)
             self._ds._refresh_me()
             QTimer.singleShot(5000, self._check_for_updates)
+            if self.st.connected:
+                # st.connected is True on disk only after a crash — a clean exit
+                # via the tray menu calls disconnect_runtime() which sets it False.
+                # Tear down the leftover tunnel so system DNS reverts to ISP
+                # resolvers, then reconnect with a fresh _local_dns snapshot.
+                QTimer.singleShot(1500, self._startup_reconnect)
         else:
             self._go(0)
 
@@ -4036,6 +4042,29 @@ class ONyXClient(QMainWindow):
             return
         self._ds._toggle()
         self._update_tray_state()
+
+    def _startup_reconnect(self) -> None:
+        """Recover from a crash: tear down leftover tunnel, then reconnect.
+
+        On a clean exit the tray menu calls disconnect_runtime() which persists
+        st.connected = False.  After a crash that never runs, so st.connected
+        is True on the next launch even though the tunnel state is unknown.
+
+        We disconnect first so WireGuard releases its DNS override and the
+        system reverts to ISP resolvers.  LocalTunnelRuntime.connect() then
+        re-captures _local_dns from the clean state, ensuring bypass-domain
+        DNS queries go through the ISP resolver rather than the exit-node.
+        """
+        if not self.st.has_session:
+            return
+        self._ds.disconnect_runtime(silent=True)
+        # Give WireGuard ~1 s to flush its DNS override before redialling.
+        QTimer.singleShot(1000, self._startup_connect)
+
+    def _startup_connect(self) -> None:
+        if not self.st.has_session or not self.st.last_bundle:
+            return
+        self._ds._issue_bundle(auto_connect=True)
 
     def _exit_from_tray(self):
         self._quit_requested = True
