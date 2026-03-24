@@ -205,7 +205,14 @@ window.refreshOpenJobDetail = function refreshOpenJobDetail(){
 
 window.startJobsTicker = function startJobsTicker(){
   if(window._jobsTicker) clearInterval(window._jobsTicker);
+  var _tickCount = 0;
   window._jobsTicker = setInterval(function(){
+    _tickCount++;
+    var hasActive = (window.JOBS || []).some(function(j){ return j.state === 'running' || j.state === 'pending'; });
+    if(hasActive && _tickCount % 3 === 0){
+      window.refreshJobs?.().catch(function(){});
+      return;
+    }
     if(_currentPage === 'jobs'){ renderJobs(); }
     refreshOpenJobDetail();
   }, 1000);
