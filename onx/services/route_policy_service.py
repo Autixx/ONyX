@@ -1346,12 +1346,11 @@ class RoutePolicyService:
             f"iptables -t nat -A \"$CHAIN\" -d {network} -j RETURN"
             for network in exceptions
         )
+        lines.append("")
+        lines.append("# Force DNS requests to local resolver.")
         lines.extend(
-            [
-                "",
-                "# Force DNS requests to local resolver.",
-                "iptables -t nat -A \"$CHAIN\" -j DNAT --to-destination \"$DNS_HOST:$DNS_PORT\"",
-            ]
+            f"iptables -t nat -A \"$CHAIN\" -p {protocol} -j DNAT --to-destination \"$DNS_HOST:$DNS_PORT\""
+            for protocol in protocols
         )
         lines.extend(
             (
