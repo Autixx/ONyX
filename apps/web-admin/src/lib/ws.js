@@ -47,7 +47,7 @@ window.connectWS = function connectWS(){
       var payload = data.payload || {};
       var msg = payload.message || payload.detail || payload.id || JSON.stringify(payload);
       window.pushEv(type, msg, payload.created_at);
-      if(type.indexOf('job.') === 0){ window.refreshJobs?.().catch(function(){}); }
+      if(type.indexOf('job.') === 0){ window.refreshJobs?.().catch(function(){}); window.refreshHealth?.().catch(function(){}); }
       if(type.indexOf('link.') === 0){ window.refreshLinks?.().catch(function(){}); window.scheduleTopologyRealtimeRefresh?.(); }
       if(type.indexOf('node.') === 0){ window.refreshNodes?.().catch(function(){}); window.scheduleTopologyRealtimeRefresh?.(); }
       if(type.indexOf('node.traffic.') === 0){ window.refreshNodes?.().catch(function(){}); window.refreshNodeTrafficSummary?.().catch(function(){}); window.scheduleTopologyRealtimeRefresh?.(); }

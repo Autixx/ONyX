@@ -11,9 +11,32 @@ window._topologyAutoInFlight = false;
 window._topologyRealtimeTimer = null;
 window._topologyMetaTimer = null;
 
+window._topologyPosSaveTimer = null;
+
+window.scheduleTopologyPosSave = function scheduleTopologyPosSave(pos){
+  if(window._topologyPosSaveTimer) clearTimeout(window._topologyPosSaveTimer);
+  window._topologyPosSaveTimer = setTimeout(function(){
+    window._topologyPosSaveTimer = null;
+    apiFetch(API_PREFIX + '/graph/positions', {method:'PUT', body:{positions: pos}}).catch(function(){});
+  }, 600);
+};
+
 window.refreshTopology = async function refreshTopology(){
   var graph = await apiFetch(API_PREFIX + '/graph');
   GRAPH_DATA = graph || {nodes:[], edges:[], generated_at:null};
+  var svg = document.getElementById('tc');
+  if(svg && !svg._nodePos){
+    try{
+      var posData = await apiFetch(API_PREFIX + '/graph/positions');
+      if(posData && posData.positions && Object.keys(posData.positions).length){
+        svg._nodePos = {};
+        Object.keys(posData.positions).forEach(function(id){
+          var p = posData.positions[id];
+          svg._nodePos[id] = {x: Number(p.x || 0), y: Number(p.y || 0)};
+        });
+      }
+    }catch(_){}
+  }
   renderTopologyMeta();
   drawTopo();
 };
@@ -373,17 +396,24 @@ window.drawTopo = function drawTopo(){
   var allIds = graphNodes.map(function(n){ return n.id; });
   // Remove stale
   existing.forEach(function(id){ if(allIds.indexOf(id) === -1) delete pos[id]; });
-  // Init missing via circular layout
+  // Init missing via hierarchical layout (gateway → relay → egress rows)
   var missing = graphNodes.filter(function(n){ return !pos[n.id]; });
   if(missing.length){
-    var total = graphNodes.length;
-    var cx = W/2, cy = H/2;
-    var r = Math.max(100, Math.min(W, H) * 0.32);
-    graphNodes.forEach(function(n, i){
-      if(!pos[n.id]){
-        var angle = (Math.PI * 2 * i / total) - Math.PI/2;
-        pos[n.id] = { x: cx + Math.cos(angle)*r, y: cy + Math.sin(angle)*r };
-      }
+    var rowOrder = ['gateway', 'relay', 'egress', 'mixed'];
+    var byRole = {gateway: [], relay: [], egress: [], mixed: []};
+    missing.forEach(function(n){
+      var r = n.role && byRole[n.role] !== undefined ? n.role : 'mixed';
+      byRole[r].push(n);
+    });
+    var rows = rowOrder.filter(function(r){ return byRole[r].length > 0; });
+    var rowCount = rows.length || 1;
+    rows.forEach(function(role, ri){
+      var rNodes = byRole[role];
+      var colStep = W / (rNodes.length + 1);
+      var rowY = H * (ri + 1) / (rowCount + 1);
+      rNodes.forEach(function(n, ci){
+        pos[n.id] = {x: colStep * (ci + 1), y: rowY};
+      });
     });
   }
 
@@ -586,7 +616,12 @@ window.drawTopo = function drawTopo(){
       _redrawEdges(pos, graphEdges, edgeG, ns, mk);
     });
     svg.addEventListener('mouseup', function(){
-      if(dragging){ dragging = false; g.style.cursor='grab'; svg.style.cursor='grab'; }
+      if(dragging){
+        dragging = false;
+        g.style.cursor='grab';
+        svg.style.cursor='grab';
+        if(g._dragged) window.scheduleTopologyPosSave(pos);
+      }
     });
 
     nodeG.appendChild(g);

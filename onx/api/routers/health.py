@@ -8,16 +8,16 @@ from sqlalchemy.orm import Session
 
 from onx.api.deps import get_database_session
 from onx.core.config import get_settings
-from onx.db.models.awg_service import AwgService
+from onx.db.models.awg_service import AwgService, AwgServiceState
 from onx.db.models.job import Job, JobState
 from onx.db.models.job_lock import JobLock
 from onx.db.models.link import Link, LinkState
 from onx.db.models.node import Node, NodeStatus
-from onx.db.models.openvpn_cloak_service import OpenVpnCloakService
+from onx.db.models.openvpn_cloak_service import OpenVpnCloakService, OpenVpnCloakServiceState
 from onx.db.models.peer_traffic_state import PeerTrafficState
 from onx.db.models.support_ticket import SupportTicket
-from onx.db.models.wg_service import WgService
-from onx.db.models.xray_service import XrayService
+from onx.db.models.wg_service import WgService, WgServiceState
+from onx.db.models.xray_service import XrayService, XrayServiceState
 from onx.schemas.common import HealthResponse, SystemSummaryResponse, WorkerHealthResponse
 from onx.workers.runtime_state import get_worker_runtime_state
 
@@ -137,10 +137,10 @@ def system_summary(db: Session = Depends(get_database_session)) -> SystemSummary
     total_links = int(db.scalar(select(func.count()).select_from(Link)) or 0)
 
     services_total = (
-        int(db.scalar(select(func.count()).select_from(XrayService)) or 0) +
-        int(db.scalar(select(func.count()).select_from(AwgService)) or 0) +
-        int(db.scalar(select(func.count()).select_from(WgService)) or 0) +
-        int(db.scalar(select(func.count()).select_from(OpenVpnCloakService)) or 0)
+        int(db.scalar(select(func.count()).select_from(XrayService).where(XrayService.state == XrayServiceState.ACTIVE)) or 0) +
+        int(db.scalar(select(func.count()).select_from(AwgService).where(AwgService.state == AwgServiceState.ACTIVE)) or 0) +
+        int(db.scalar(select(func.count()).select_from(WgService).where(WgService.state == WgServiceState.ACTIVE)) or 0) +
+        int(db.scalar(select(func.count()).select_from(OpenVpnCloakService).where(OpenVpnCloakService.state == OpenVpnCloakServiceState.ACTIVE)) or 0)
     )
     five_min_ago = now - timedelta(minutes=5)
     peers_online = int(
