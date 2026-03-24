@@ -398,6 +398,7 @@ class ClientState:
         self.saved_username = ""
         self.saved_password = ""
         self.split_tunnel_disabled = False
+        self.split_tunnel_exclude_lan = False
         self.split_tunnel_bypass_domains: list[str] = []
 
     def load(self):
@@ -407,7 +408,7 @@ class ClientState:
                   "device_id","device_private_key","device_public_key","last_bundle",
                   "active_transport","active_interface","active_profile_id","active_config_path","active_runtime_mode",
                   "lang","remember_me","saved_username","saved_password","split_tunnel_disabled",
-                  "split_tunnel_bypass_domains"):
+                  "split_tunnel_exclude_lan","split_tunnel_bypass_domains"):
             setattr(self, k, d.get(k, getattr(self, k)))
         self.base_url = normalize_api_base_url(self.base_url)
 
@@ -423,6 +424,7 @@ class ClientState:
             "active_runtime_mode":self.active_runtime_mode,"lang":self.lang,
             "remember_me":self.remember_me,"saved_username":self.saved_username,"saved_password":self.saved_password,
             "split_tunnel_disabled":self.split_tunnel_disabled,
+            "split_tunnel_exclude_lan":self.split_tunnel_exclude_lan,
             "split_tunnel_bypass_domains":self.split_tunnel_bypass_domains,
         },indent=2,ensure_ascii=False),encoding="utf-8")
 
@@ -868,10 +870,34 @@ class LocalTunnelRuntime:
         except Exception:
             return config_text
 
+    _LAN_RANGES = [
+        "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+        "169.254.0.0/16", "127.0.0.0/8",
+        "fc00::/7", "fe80::/10", "::1/128",
+    ]
+
+    @classmethod
+    def _exclude_lan_from_config(cls, config_text: str) -> str:
+        """Remove RFC-1918 / link-local ranges from AllowedIPs."""
+        import re
+        def _replace(m: re.Match) -> str:
+            try:
+                current = [x.strip() for x in m.group(1).split(",") if x.strip()]
+                updated = cls._subtract_ips(current, cls._LAN_RANGES)
+                return "AllowedIPs = " + ", ".join(updated) if updated else m.group(0)
+            except Exception:
+                return m.group(0)
+        try:
+            return re.sub(r'(?m)^AllowedIPs\s*=\s*(.+)$', _replace, config_text)
+        except Exception:
+            return config_text
+
     def _patch_config(self, config_text: str) -> str:
         """Apply all client-side split-tunnel overrides to a WireGuard config."""
         if self.st.split_tunnel_disabled:
             return self._force_full_tunnel(config_text)
+        if self.st.split_tunnel_exclude_lan:
+            config_text = self._exclude_lan_from_config(config_text)
         return self._apply_domain_bypass(config_text)
 
     def _write_config(self, interface_name: str, config_text: str) -> Path:
@@ -2648,6 +2674,15 @@ class DashboardScreen(QWidget):
         st_note.setStyleSheet(f"color:{C_T2};font-size:10px;")
         st_note.setWordWrap(True); sl.addWidget(st_note)
 
+        self._s_excl_lan_chk = QCheckBox("Exclude LAN (allow local network access)")
+        self._s_excl_lan_chk.setStyleSheet(f"color:{C_T1};font-size:11px;margin-top:4px;")
+        self._s_excl_lan_chk.setChecked(self.st.split_tunnel_exclude_lan)
+        self._s_excl_lan_chk.stateChanged.connect(self._s_toggle_exclude_lan)
+        sl.addWidget(self._s_excl_lan_chk)
+        excl_note = QLabel("Routes 10.x, 172.16–31.x, 192.168.x directly. Effective on next connect.")
+        excl_note.setStyleSheet(f"color:{C_T2};font-size:10px;")
+        excl_note.setWordWrap(True); sl.addWidget(excl_note)
+
         bypass_lbl = QLabel("BYPASS DOMAINS")
         bypass_lbl.setStyleSheet(f"color:{C_T2};font-size:9px;letter-spacing:2px;margin-top:6px;"); sl.addWidget(bypass_lbl)
         self._s_bypass = QTextEdit()
@@ -2676,6 +2711,9 @@ class DashboardScreen(QWidget):
         self._s_st_chk.blockSignals(True)
         self._s_st_chk.setChecked(self.st.split_tunnel_disabled)
         self._s_st_chk.blockSignals(False)
+        self._s_excl_lan_chk.blockSignals(True)
+        self._s_excl_lan_chk.setChecked(self.st.split_tunnel_exclude_lan)
+        self._s_excl_lan_chk.blockSignals(False)
         self._s_bypass.setPlainText("\n".join(self.st.split_tunnel_bypass_domains))
         self._view_stack.setCurrentIndex(1)
 
@@ -2764,6 +2802,10 @@ class DashboardScreen(QWidget):
     def _s_toggle_split_tunnel(self, state):
         disabled = bool(state)
         self.st.split_tunnel_disabled = disabled
+        self.st.save()
+
+    def _s_toggle_exclude_lan(self, state):
+        self.st.split_tunnel_exclude_lan = bool(state)
         self.st.save()
         base = self.st.base_url; hdrs = self._hdrs()
         did = self.st.device_id
