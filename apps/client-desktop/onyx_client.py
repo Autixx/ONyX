@@ -685,22 +685,30 @@ class LocalTunnelRuntime:
         return [str(n) for n in nets]
 
     def _apply_domain_bypass(self, config_text: str) -> str:
-        """Resolve bypass domains to IPs and remove them from AllowedIPs."""
+        """Resolve bypass domains to IPs and remove them from AllowedIPs.
+
+        Also always excludes ::1/128 from ::/0 so that WireGuard-Windows does
+        not see a literal ::/0 entry and activate its WFP kill switch, which
+        would block all direct (non-tunnel) connections at the kernel level.
+        """
         import re, socket
         domains = [d.strip() for d in self.st.split_tunnel_bypass_domains if d.strip()]
         if not domains:
             return config_text
         resolved: list[str] = []
         for domain in domains:
-            try:
-                for info in socket.getaddrinfo(domain, None, socket.AF_INET):
-                    ip = info[4][0]
-                    if ip not in resolved:
-                        resolved.append(ip)
-            except Exception:
-                pass
-        if not resolved:
-            return config_text
+            for family in (socket.AF_INET, socket.AF_INET6):
+                try:
+                    for info in socket.getaddrinfo(domain, None, family):
+                        ip = info[4][0]
+                        if ip not in resolved:
+                            resolved.append(ip)
+                except Exception:
+                    pass
+        # Always split ::/0 to prevent WireGuard kill switch activation.
+        # ::1 is IPv6 loopback — safe to exclude from any tunnel.
+        if "::1" not in resolved:
+            resolved.append("::1")
 
         def _replace(m: re.Match) -> str:
             try:
