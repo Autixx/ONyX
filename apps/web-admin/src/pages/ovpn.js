@@ -108,6 +108,51 @@ window.openOpenvpnCloakServiceModal = function openOpenvpnCloakServiceModal(serv
   bindModalForm('openvpnCloakServiceForm', function(fd){ saveOpenvpnCloakServiceForm(fd, serviceId); });
 };
 
+window.saveOpenvpnCloakServiceForm = async function saveOpenvpnCloakServiceForm(fd, serviceId){
+  function intField(v){ var n = parseInt(v, 10); return isNaN(n) ? null : n; }
+  function parseIps(v){ return (v||'').split(',').map(function(s){ return s.trim(); }).filter(Boolean); }
+  try{
+    if(serviceId){
+      var patch = {};
+      ['name','node_id','openvpn_local_host','cloak_listen_host','server_network_v4'].forEach(function(k){
+        var v = fd.get(k); if(v != null) patch[k] = v;
+      });
+      var olp = intField(fd.get('openvpn_local_port')); if(olp != null) patch.openvpn_local_port = olp;
+      var clp = intField(fd.get('cloak_listen_port')); if(clp != null) patch.cloak_listen_port = clp;
+      var ph = fd.get('public_host'); if(ph) patch.public_host = ph;
+      var pp = intField(fd.get('public_port')); if(pp != null) patch.public_port = pp;
+      var sn = (fd.get('server_name') || '').trim(); if(sn) patch.server_name = sn;
+      var clport = intField(fd.get('client_local_port')); if(clport != null) patch.client_local_port = clport;
+      var dns = (fd.get('dns_server_v4') || '').trim(); if(dns) patch.dns_server_v4 = dns;
+      var mtu = intField(fd.get('mtu')); if(mtu != null) patch.mtu = mtu;
+      var ips = parseIps(fd.get('client_allowed_ips_json')); if(ips.length) patch.client_allowed_ips_json = ips;
+      await apiFetch(API_PREFIX+'/openvpn-cloak-services/'+encodeURIComponent(serviceId), {method:'PATCH', body:patch});
+    }else{
+      var payload = {
+        name: fd.get('name'),
+        node_id: fd.get('node_id'),
+        openvpn_local_host: fd.get('openvpn_local_host') || '127.0.0.1',
+        openvpn_local_port: intField(fd.get('openvpn_local_port')),
+        cloak_listen_host: fd.get('cloak_listen_host') || '0.0.0.0',
+        cloak_listen_port: intField(fd.get('cloak_listen_port')),
+        public_host: fd.get('public_host'),
+        client_local_port: intField(fd.get('client_local_port')),
+        server_network_v4: fd.get('server_network_v4'),
+        client_allowed_ips_json: parseIps(fd.get('client_allowed_ips_json'))
+      };
+      var pp = intField(fd.get('public_port')); if(pp != null) payload.public_port = pp;
+      var sn = (fd.get('server_name') || '').trim(); if(sn) payload.server_name = sn;
+      var dns = (fd.get('dns_server_v4') || '').trim(); if(dns) payload.dns_server_v4 = dns;
+      var mtu = intField(fd.get('mtu')); if(mtu != null) payload.mtu = mtu;
+      await apiFetch(API_PREFIX+'/openvpn-cloak-services', {method:'POST', body:payload});
+    }
+    closeModal();
+    await refreshOpenvpnCloakServices();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
 window.deleteOpenvpnCloakServiceFlow = async function deleteOpenvpnCloakServiceFlow(serviceId){
   var service = openvpnCloakServiceById(serviceId);
   if(!confirm('Delete OpenVPN+Cloak service ' + (service ? service.name : serviceId) + '?')) return;

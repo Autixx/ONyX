@@ -117,6 +117,56 @@ window.openAwgServiceModal = function openAwgServiceModal(serviceId){
   bindModalForm('awgServiceForm', function(fd){ saveAwgServiceForm(fd, serviceId); });
 };
 
+window.saveAwgServiceForm = async function saveAwgServiceForm(fd, serviceId){
+  function intField(v){ var n = parseInt(v, 10); return isNaN(n) ? null : n; }
+  function parseIps(v){ return (v||'').split(',').map(function(s){ return s.trim(); }).filter(Boolean); }
+  function buildObf(){
+    var o = {};
+    ['jc','jmin','jmax','s1','s2','s3','s4','h1','h2','h3','h4'].forEach(function(k){
+      var v = intField(fd.get(k)); if(v != null) o[k] = v;
+    });
+    return Object.keys(o).length ? o : null;
+  }
+  try{
+    if(serviceId){
+      var patch = {};
+      ['name','node_id','interface_name','server_address_v4'].forEach(function(k){
+        var v = fd.get(k); if(v != null) patch[k] = v;
+      });
+      var lp = intField(fd.get('listen_port')); if(lp != null) patch.listen_port = lp;
+      var ph = fd.get('public_host'); if(ph) patch.public_host = ph;
+      var pp = intField(fd.get('public_port')); if(pp != null) patch.public_port = pp;
+      var dns = (fd.get('dns_server_v4') || '').trim(); if(dns) patch.dns_server_v4 = dns;
+      var mtu = intField(fd.get('mtu')); if(mtu != null) patch.mtu = mtu;
+      var ka = intField(fd.get('persistent_keepalive')); if(ka != null) patch.persistent_keepalive = ka;
+      var ips = parseIps(fd.get('client_allowed_ips_json')); if(ips.length) patch.client_allowed_ips_json = ips;
+      var obf = buildObf(); if(obf) patch.awg_obfuscation_json = obf;
+      await apiFetch(API_PREFIX+'/awg-services/'+encodeURIComponent(serviceId), {method:'PATCH', body:patch});
+    }else{
+      var obf = buildObf();
+      var payload = {
+        name: fd.get('name'),
+        node_id: fd.get('node_id'),
+        interface_name: fd.get('interface_name'),
+        listen_port: intField(fd.get('listen_port')),
+        public_host: fd.get('public_host'),
+        server_address_v4: fd.get('server_address_v4'),
+        client_allowed_ips_json: parseIps(fd.get('client_allowed_ips_json'))
+      };
+      var pp = intField(fd.get('public_port')); if(pp != null) payload.public_port = pp;
+      var dns = (fd.get('dns_server_v4') || '').trim(); if(dns) payload.dns_server_v4 = dns;
+      var mtu = intField(fd.get('mtu')); if(mtu != null) payload.mtu = mtu;
+      var ka = intField(fd.get('persistent_keepalive')); if(ka != null) payload.persistent_keepalive = ka;
+      if(obf) payload.awg_obfuscation_json = obf;
+      await apiFetch(API_PREFIX+'/awg-services', {method:'POST', body:payload});
+    }
+    closeModal();
+    await refreshAwgServices();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
 window.deleteAwgServiceFlow = async function deleteAwgServiceFlow(serviceId){
   var service = awgServiceById(serviceId);
   if(!confirm('Delete AWG service ' + (service ? service.name : serviceId) + '?')) return;

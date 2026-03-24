@@ -115,6 +115,41 @@ window.openXrayServiceModal = function openXrayServiceModal(serviceId){
   bindModalForm('xrayServiceForm', function(fd){ saveXrayServiceForm(fd, serviceId); });
 };
 
+window.saveXrayServiceForm = async function saveXrayServiceForm(fd, serviceId){
+  function intField(v){ var n = parseInt(v, 10); return isNaN(n) ? null : n; }
+  try{
+    if(serviceId){
+      var patch = {};
+      ['name','node_id','listen_host','xhttp_path'].forEach(function(k){
+        var v = fd.get(k); if(v != null) patch[k] = v;
+      });
+      var lp = intField(fd.get('listen_port')); if(lp != null) patch.listen_port = lp;
+      var ph = fd.get('public_host'); if(ph) patch.public_host = ph;
+      var pp = intField(fd.get('public_port')); if(pp != null) patch.public_port = pp;
+      var sn = (fd.get('server_name') || '').trim(); if(sn) patch.server_name = sn;
+      patch.tls_enabled = fd.get('tls_enabled') === 'on';
+      await apiFetch(API_PREFIX+'/xray-services/'+encodeURIComponent(serviceId), {method:'PATCH', body:patch});
+    }else{
+      var payload = {
+        name: fd.get('name'),
+        node_id: fd.get('node_id'),
+        listen_host: fd.get('listen_host') || '0.0.0.0',
+        listen_port: intField(fd.get('listen_port')),
+        public_host: fd.get('public_host'),
+        xhttp_path: fd.get('xhttp_path') || '/',
+        tls_enabled: fd.get('tls_enabled') === 'on'
+      };
+      var pp = intField(fd.get('public_port')); if(pp != null) payload.public_port = pp;
+      var sn = (fd.get('server_name') || '').trim(); if(sn) payload.server_name = sn;
+      await apiFetch(API_PREFIX+'/xray-services', {method:'POST', body:payload});
+    }
+    closeModal();
+    await refreshXrayServices();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
 window.deleteXrayServiceFlow = async function deleteXrayServiceFlow(serviceId){
   var service = xrayServiceById(serviceId);
   if(!confirm('Delete XRAY service ' + (service ? service.name : serviceId) + '?')) return;

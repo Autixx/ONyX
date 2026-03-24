@@ -104,6 +104,46 @@ window.openWgServiceModal = function openWgServiceModal(serviceId){
   bindModalForm('wgServiceForm', function(fd){ saveWgServiceForm(fd, serviceId); });
 };
 
+window.saveWgServiceForm = async function saveWgServiceForm(fd, serviceId){
+  function intField(v){ var n = parseInt(v, 10); return isNaN(n) ? null : n; }
+  function parseIps(v){ return (v||'').split(',').map(function(s){ return s.trim(); }).filter(Boolean); }
+  try{
+    if(serviceId){
+      var patch = {};
+      ['name','node_id','interface_name','server_address_v4'].forEach(function(k){
+        var v = fd.get(k); if(v != null) patch[k] = v;
+      });
+      var lp = intField(fd.get('listen_port')); if(lp != null) patch.listen_port = lp;
+      var ph = fd.get('public_host'); if(ph) patch.public_host = ph;
+      var pp = intField(fd.get('public_port')); if(pp != null) patch.public_port = pp;
+      var dns = (fd.get('dns_server_v4') || '').trim(); if(dns) patch.dns_server_v4 = dns;
+      var mtu = intField(fd.get('mtu')); if(mtu != null) patch.mtu = mtu;
+      var ka = intField(fd.get('persistent_keepalive')); if(ka != null) patch.persistent_keepalive = ka;
+      var ips = parseIps(fd.get('client_allowed_ips_json')); if(ips.length) patch.client_allowed_ips_json = ips;
+      await apiFetch(API_PREFIX+'/wg-services/'+encodeURIComponent(serviceId), {method:'PATCH', body:patch});
+    }else{
+      var payload = {
+        name: fd.get('name'),
+        node_id: fd.get('node_id'),
+        interface_name: fd.get('interface_name'),
+        listen_port: intField(fd.get('listen_port')),
+        public_host: fd.get('public_host'),
+        server_address_v4: fd.get('server_address_v4'),
+        client_allowed_ips_json: parseIps(fd.get('client_allowed_ips_json'))
+      };
+      var pp = intField(fd.get('public_port')); if(pp != null) payload.public_port = pp;
+      var dns = (fd.get('dns_server_v4') || '').trim(); if(dns) payload.dns_server_v4 = dns;
+      var mtu = intField(fd.get('mtu')); if(mtu != null) payload.mtu = mtu;
+      var ka = intField(fd.get('persistent_keepalive')); if(ka != null) payload.persistent_keepalive = ka;
+      await apiFetch(API_PREFIX+'/wg-services', {method:'POST', body:payload});
+    }
+    closeModal();
+    await refreshWgServices();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
 window.deleteWgServiceFlow = async function deleteWgServiceFlow(serviceId){
   var service = wgServiceById(serviceId);
   if(!confirm('Delete WG service ' + (service ? service.name : serviceId) + '?')) return;
