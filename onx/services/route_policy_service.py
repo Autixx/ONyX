@@ -1360,6 +1360,16 @@ class RoutePolicyService:
             for protocol in protocols
             for port in ports
         )
+        lines.append("")
+        lines.append("# Allow redirected DNS to reach local resolver (INPUT chain).")
+        lines.extend(
+            (
+                f"iptables -C INPUT -i \"$INGRESS_IF\" -p {protocol} --dport {port} -j ACCEPT 2>/dev/null || "
+                f"iptables -I INPUT 1 -i \"$INGRESS_IF\" -p {protocol} --dport {port} -j ACCEPT"
+            )
+            for protocol in protocols
+            for port in ports
+        )
         return "\n".join(lines) + "\n"
 
     def _render_geo_cleanup_script(self, entries: list[dict]) -> str:
@@ -1390,6 +1400,14 @@ class RoutePolicyService:
             (
                 f"while iptables -t nat -C PREROUTING -i \"$INGRESS_IF\" -p {protocol} --dport {port} -j \"$CHAIN\" 2>/dev/null; do "
                 f"iptables -t nat -D PREROUTING -i \"$INGRESS_IF\" -p {protocol} --dport {port} -j \"$CHAIN\"; done"
+            )
+            for protocol in protocols
+            for port in ports
+        )
+        lines.extend(
+            (
+                f"while iptables -C INPUT -i \"$INGRESS_IF\" -p {protocol} --dport {port} -j ACCEPT 2>/dev/null; do "
+                f"iptables -D INPUT -i \"$INGRESS_IF\" -p {protocol} --dport {port} -j ACCEPT; done"
             )
             for protocol in protocols
             for port in ports
