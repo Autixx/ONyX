@@ -12,6 +12,7 @@ from onx.schemas.transport_packages import (
     TransportPackageUpsert,
 )
 from onx.services.event_log_service import EventLogService
+from onx.services.geoip_service import compute_excluded_allowed_ips
 from onx.services.realtime_service import realtime_service
 from onx.services.transport_package_service import transport_package_service
 
@@ -57,13 +58,20 @@ def update_transport_package(
     pkg = db.get(TransportPackage, package_id)
     if pkg is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transport package not found.")
-    for field_name, value in payload.model_dump(exclude_unset=True).items():
+    dumped = payload.model_dump(exclude_unset=True)
+    for field_name, value in dumped.items():
         if field_name == "split_tunnel_routes":
             pkg.split_tunnel_routes_json = value
         elif field_name == "priority_order":
             pkg.priority_order_json = value
         else:
             setattr(pkg, field_name, value)
+    # If country code was set and split tunnel is enabled, auto-compute GeoIP routes
+    if "split_tunnel_country_code" in dumped and pkg.split_tunnel_enabled and pkg.split_tunnel_country_code:
+        try:
+            pkg.split_tunnel_routes_json = compute_excluded_allowed_ips(pkg.split_tunnel_country_code.lower())
+        except Exception:
+            pass
     db.add(pkg)
     db.commit()
     db.refresh(pkg)

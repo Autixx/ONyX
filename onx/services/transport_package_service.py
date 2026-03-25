@@ -16,6 +16,7 @@ from onx.db.models.wg_service import WgService, WgServiceState
 from onx.db.models.xray_service import XrayService, XrayServiceState
 from onx.schemas.transport_packages import DEFAULT_TRANSPORT_PRIORITY, SUPPORTED_TRANSPORT_TYPES
 from onx.services.awg_service_service import awg_service_manager
+from onx.services.geoip_service import compute_excluded_allowed_ips
 from onx.services.openvpn_cloak_service_service import openvpn_cloak_service_manager
 from onx.services.wg_service_service import wg_service_manager
 from onx.services.xray_service_service import xray_service_manager
@@ -57,7 +58,16 @@ class TransportPackageService:
         package.enable_wg = payload.enable_wg
         package.enable_openvpn_cloak = payload.enable_openvpn_cloak
         package.split_tunnel_enabled = payload.split_tunnel_enabled
-        package.split_tunnel_routes_json = self._normalize_split_tunnel_routes(payload.split_tunnel_routes)
+        country_code = (payload.split_tunnel_country_code or "").strip().lower() or None
+        package.split_tunnel_country_code = country_code
+        if package.split_tunnel_enabled and country_code:
+            # Auto-compute GeoIP complement routes; fall back to explicit routes on failure
+            try:
+                package.split_tunnel_routes_json = compute_excluded_allowed_ips(country_code)
+            except Exception:
+                package.split_tunnel_routes_json = self._normalize_split_tunnel_routes(payload.split_tunnel_routes)
+        else:
+            package.split_tunnel_routes_json = self._normalize_split_tunnel_routes(payload.split_tunnel_routes)
         package.priority_order_json = self._normalize_priority_order(payload.priority_order)
         db.add(package)
         db.commit()

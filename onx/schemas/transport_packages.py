@@ -22,6 +22,7 @@ class TransportPackageRead(ONXBaseModel):
     enable_wg: bool
     enable_openvpn_cloak: bool
     split_tunnel_enabled: bool
+    split_tunnel_country_code: str | None
     split_tunnel_routes_json: list[str]
     priority_order_json: list[str]
     last_reconciled_at: datetime | None
@@ -39,6 +40,7 @@ class TransportPackageCreate(BaseModel):
     enable_wg: bool = True
     enable_openvpn_cloak: bool = True
     split_tunnel_enabled: bool = False
+    split_tunnel_country_code: str | None = None
     split_tunnel_routes: list[str] = Field(default_factory=list)
     priority_order: list[str] = Field(
         default_factory=lambda: list(DEFAULT_TRANSPORT_PRIORITY),
@@ -56,6 +58,7 @@ class TransportPackageUpdate(BaseModel):
     enable_wg: bool | None = None
     enable_openvpn_cloak: bool | None = None
     split_tunnel_enabled: bool | None = None
+    split_tunnel_country_code: str | None = None
     split_tunnel_routes: list[str] | None = None
     priority_order: list[str] | None = Field(default=None, min_length=1, max_length=8)
 
@@ -73,6 +76,7 @@ class TransportPackageUpsert(BaseModel):
     enable_wg: bool = True
     enable_openvpn_cloak: bool = True
     split_tunnel_enabled: bool = False
+    split_tunnel_country_code: str | None = None
     split_tunnel_routes: list[str] = Field(default_factory=list)
     priority_order: list[str] = Field(
         default_factory=lambda: list(DEFAULT_TRANSPORT_PRIORITY),
