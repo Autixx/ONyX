@@ -18,6 +18,21 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _table_exists(table: str) -> bool:
+    from sqlalchemy import inspect as sa_inspect
+    return table in sa_inspect(op.get_bind()).get_table_names()
+
+
+def _column_exists(table: str, column: str) -> bool:
+    from sqlalchemy import inspect as sa_inspect
+    return column in [c["name"] for c in sa_inspect(op.get_bind()).get_columns(table)]
+
+
+def _index_exists(table: str, index_name: str) -> bool:
+    from sqlalchemy import inspect as sa_inspect
+    return any(i["name"] == index_name for i in sa_inspect(op.get_bind()).get_indexes(table))
+
+
 def upgrade() -> None:
     user_status = postgresql.ENUM("pending", "active", "blocked", "deleted", name="user_status", create_type=False)
     billing_mode = postgresql.ENUM("manual", "lifetime", "periodic", "trial", name="billing_mode", create_type=False)
@@ -27,116 +42,143 @@ def upgrade() -> None:
     billing_mode.create(bind, checkfirst=True)
     subscription_status.create(bind, checkfirst=True)
 
-    op.create_table(
-        "users",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("username", sa.String(length=64), nullable=False),
-        sa.Column("email", sa.String(length=255), nullable=False),
-        sa.Column("password_hash", sa.String(length=255), nullable=False),
-        sa.Column("status", user_status, nullable=False, server_default="active"),
-        sa.Column("first_name", sa.String(length=128), nullable=True),
-        sa.Column("last_name", sa.String(length=128), nullable=True),
-        sa.Column("referral_code", sa.String(length=128), nullable=True),
-        sa.Column("usage_goal", sa.String(length=32), nullable=True),
-        sa.Column("requested_device_count", sa.Integer(), nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_users_username"), "users", ["username"], unique=True)
-    op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
+    if not _table_exists("users"):
+        op.create_table(
+            "users",
+            sa.Column("id", sa.String(length=36), nullable=False),
+            sa.Column("username", sa.String(length=64), nullable=False),
+            sa.Column("email", sa.String(length=255), nullable=False),
+            sa.Column("password_hash", sa.String(length=255), nullable=False),
+            sa.Column("status", user_status, nullable=False, server_default="active"),
+            sa.Column("first_name", sa.String(length=128), nullable=True),
+            sa.Column("last_name", sa.String(length=128), nullable=True),
+            sa.Column("referral_code", sa.String(length=128), nullable=True),
+            sa.Column("usage_goal", sa.String(length=32), nullable=True),
+            sa.Column("requested_device_count", sa.Integer(), nullable=False, server_default="1"),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.PrimaryKeyConstraint("id"),
+        )
+    if not _index_exists("users", "ix_users_username"):
+        op.create_index(op.f("ix_users_username"), "users", ["username"], unique=True)
+    if not _index_exists("users", "ix_users_email"):
+        op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
 
-    op.create_table(
-        "plans",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("code", sa.String(length=64), nullable=False),
-        sa.Column("name", sa.String(length=128), nullable=False),
-        sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column("billing_mode", billing_mode, nullable=False, server_default="manual"),
-        sa.Column("duration_days", sa.Integer(), nullable=True),
-        sa.Column("default_device_limit", sa.Integer(), nullable=False, server_default="1"),
-        sa.Column("default_usage_goal_policy", sa.String(length=32), nullable=True),
-        sa.Column("traffic_quota_bytes", sa.BigInteger(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_plans_code"), "plans", ["code"], unique=True)
+    if not _table_exists("plans"):
+        op.create_table(
+            "plans",
+            sa.Column("id", sa.String(length=36), nullable=False),
+            sa.Column("code", sa.String(length=64), nullable=False),
+            sa.Column("name", sa.String(length=128), nullable=False),
+            sa.Column("description", sa.Text(), nullable=True),
+            sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column("billing_mode", billing_mode, nullable=False, server_default="manual"),
+            sa.Column("duration_days", sa.Integer(), nullable=True),
+            sa.Column("default_device_limit", sa.Integer(), nullable=False, server_default="1"),
+            sa.Column("default_usage_goal_policy", sa.String(length=32), nullable=True),
+            sa.Column("traffic_quota_bytes", sa.BigInteger(), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.PrimaryKeyConstraint("id"),
+        )
+    if not _index_exists("plans", "ix_plans_code"):
+        op.create_index(op.f("ix_plans_code"), "plans", ["code"], unique=True)
 
-    op.create_table(
-        "subscriptions",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("user_id", sa.String(length=36), nullable=False),
-        sa.Column("plan_id", sa.String(length=36), nullable=True),
-        sa.Column("status", subscription_status, nullable=False, server_default="active"),
-        sa.Column("billing_mode", billing_mode, nullable=False, server_default="manual"),
-        sa.Column("starts_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("device_limit", sa.Integer(), nullable=False, server_default="1"),
-        sa.Column("traffic_quota_bytes", sa.BigInteger(), nullable=True),
-        sa.Column("suspended_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["plan_id"], ["plans.id"], ondelete="SET NULL"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_subscriptions_user_id"), "subscriptions", ["user_id"], unique=False)
-    op.create_index(op.f("ix_subscriptions_plan_id"), "subscriptions", ["plan_id"], unique=False)
-    op.create_index(op.f("ix_subscriptions_expires_at"), "subscriptions", ["expires_at"], unique=False)
+    if not _table_exists("subscriptions"):
+        op.create_table(
+            "subscriptions",
+            sa.Column("id", sa.String(length=36), nullable=False),
+            sa.Column("user_id", sa.String(length=36), nullable=False),
+            sa.Column("plan_id", sa.String(length=36), nullable=True),
+            sa.Column("status", subscription_status, nullable=False, server_default="active"),
+            sa.Column("billing_mode", billing_mode, nullable=False, server_default="manual"),
+            sa.Column("starts_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("device_limit", sa.Integer(), nullable=False, server_default="1"),
+            sa.Column("traffic_quota_bytes", sa.BigInteger(), nullable=True),
+            sa.Column("suspended_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+            sa.ForeignKeyConstraint(["plan_id"], ["plans.id"], ondelete="SET NULL"),
+            sa.PrimaryKeyConstraint("id"),
+        )
+    if not _index_exists("subscriptions", "ix_subscriptions_user_id"):
+        op.create_index(op.f("ix_subscriptions_user_id"), "subscriptions", ["user_id"], unique=False)
+    if not _index_exists("subscriptions", "ix_subscriptions_plan_id"):
+        op.create_index(op.f("ix_subscriptions_plan_id"), "subscriptions", ["plan_id"], unique=False)
+    if not _index_exists("subscriptions", "ix_subscriptions_expires_at"):
+        op.create_index(op.f("ix_subscriptions_expires_at"), "subscriptions", ["expires_at"], unique=False)
 
-    op.create_table(
-        "referral_codes",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("code", sa.String(length=128), nullable=False),
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column("auto_approve", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("plan_id", sa.String(length=36), nullable=True),
-        sa.Column("max_uses", sa.Integer(), nullable=True),
-        sa.Column("used_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("device_limit_override", sa.Integer(), nullable=True),
-        sa.Column("usage_goal_override", sa.String(length=32), nullable=True),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("note", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(["plan_id"], ["plans.id"], ondelete="SET NULL"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_referral_codes_code"), "referral_codes", ["code"], unique=True)
-    op.create_index(op.f("ix_referral_codes_plan_id"), "referral_codes", ["plan_id"], unique=False)
+    if not _table_exists("referral_codes"):
+        op.create_table(
+            "referral_codes",
+            sa.Column("id", sa.String(length=36), nullable=False),
+            sa.Column("code", sa.String(length=128), nullable=False),
+            sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column("auto_approve", sa.Boolean(), nullable=False, server_default=sa.false()),
+            sa.Column("plan_id", sa.String(length=36), nullable=True),
+            sa.Column("max_uses", sa.Integer(), nullable=True),
+            sa.Column("used_count", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("device_limit_override", sa.Integer(), nullable=True),
+            sa.Column("usage_goal_override", sa.String(length=32), nullable=True),
+            sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("note", sa.Text(), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.ForeignKeyConstraint(["plan_id"], ["plans.id"], ondelete="SET NULL"),
+            sa.PrimaryKeyConstraint("id"),
+        )
+    if not _index_exists("referral_codes", "ix_referral_codes_code"):
+        op.create_index(op.f("ix_referral_codes_code"), "referral_codes", ["code"], unique=True)
+    if not _index_exists("referral_codes", "ix_referral_codes_plan_id"):
+        op.create_index(op.f("ix_referral_codes_plan_id"), "referral_codes", ["plan_id"], unique=False)
 
-    op.create_table(
-        "client_auth_sessions",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("user_id", sa.String(length=36), nullable=False),
-        sa.Column("session_token_hash", sa.String(length=64), nullable=False),
-        sa.Column("client_ip", sa.String(length=64), nullable=True),
-        sa.Column("user_agent", sa.String(length=512), nullable=True),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_client_auth_sessions_user_id"), "client_auth_sessions", ["user_id"], unique=False)
-    op.create_index(op.f("ix_client_auth_sessions_session_token_hash"), "client_auth_sessions", ["session_token_hash"], unique=True)
-    op.create_index(op.f("ix_client_auth_sessions_expires_at"), "client_auth_sessions", ["expires_at"], unique=False)
+    if not _table_exists("client_auth_sessions"):
+        op.create_table(
+            "client_auth_sessions",
+            sa.Column("id", sa.String(length=36), nullable=False),
+            sa.Column("user_id", sa.String(length=36), nullable=False),
+            sa.Column("session_token_hash", sa.String(length=64), nullable=False),
+            sa.Column("client_ip", sa.String(length=64), nullable=True),
+            sa.Column("user_agent", sa.String(length=512), nullable=True),
+            sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+            sa.PrimaryKeyConstraint("id"),
+        )
+    if not _index_exists("client_auth_sessions", "ix_client_auth_sessions_user_id"):
+        op.create_index(op.f("ix_client_auth_sessions_user_id"), "client_auth_sessions", ["user_id"], unique=False)
+    if not _index_exists("client_auth_sessions", "ix_client_auth_sessions_session_token_hash"):
+        op.create_index(op.f("ix_client_auth_sessions_session_token_hash"), "client_auth_sessions", ["session_token_hash"], unique=True)
+    if not _index_exists("client_auth_sessions", "ix_client_auth_sessions_expires_at"):
+        op.create_index(op.f("ix_client_auth_sessions_expires_at"), "client_auth_sessions", ["expires_at"], unique=False)
 
-    op.add_column("registrations", sa.Column("password_hash", sa.String(length=255), nullable=True))
-    op.add_column("registrations", sa.Column("first_name", sa.String(length=128), nullable=True))
-    op.add_column("registrations", sa.Column("last_name", sa.String(length=128), nullable=True))
-    op.add_column("registrations", sa.Column("usage_goal", sa.String(length=32), nullable=True))
-    op.add_column("registrations", sa.Column("reviewed_by", sa.String(length=36), nullable=True))
-    op.add_column("registrations", sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("registrations", sa.Column("reject_reason", sa.Text(), nullable=True))
-    op.add_column("registrations", sa.Column("approved_user_id", sa.String(length=36), nullable=True))
-    op.add_column("registrations", sa.Column("auto_approved_at", sa.DateTime(timezone=True), nullable=True))
-    op.create_index(op.f("ix_registrations_reviewed_by"), "registrations", ["reviewed_by"], unique=False)
-    op.create_index(op.f("ix_registrations_approved_user_id"), "registrations", ["approved_user_id"], unique=False)
+    if not _column_exists("registrations", "password_hash"):
+        op.add_column("registrations", sa.Column("password_hash", sa.String(length=255), nullable=True))
+    if not _column_exists("registrations", "first_name"):
+        op.add_column("registrations", sa.Column("first_name", sa.String(length=128), nullable=True))
+    if not _column_exists("registrations", "last_name"):
+        op.add_column("registrations", sa.Column("last_name", sa.String(length=128), nullable=True))
+    if not _column_exists("registrations", "usage_goal"):
+        op.add_column("registrations", sa.Column("usage_goal", sa.String(length=32), nullable=True))
+    if not _column_exists("registrations", "reviewed_by"):
+        op.add_column("registrations", sa.Column("reviewed_by", sa.String(length=36), nullable=True))
+    if not _column_exists("registrations", "reviewed_at"):
+        op.add_column("registrations", sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True))
+    if not _column_exists("registrations", "reject_reason"):
+        op.add_column("registrations", sa.Column("reject_reason", sa.Text(), nullable=True))
+    if not _column_exists("registrations", "approved_user_id"):
+        op.add_column("registrations", sa.Column("approved_user_id", sa.String(length=36), nullable=True))
+    if not _column_exists("registrations", "auto_approved_at"):
+        op.add_column("registrations", sa.Column("auto_approved_at", sa.DateTime(timezone=True), nullable=True))
+    if not _index_exists("registrations", "ix_registrations_reviewed_by"):
+        op.create_index(op.f("ix_registrations_reviewed_by"), "registrations", ["reviewed_by"], unique=False)
+    if not _index_exists("registrations", "ix_registrations_approved_user_id"):
+        op.create_index(op.f("ix_registrations_approved_user_id"), "registrations", ["approved_user_id"], unique=False)
     with op.batch_alter_table("registrations") as batch_op:
         batch_op.create_foreign_key("fk_registrations_reviewed_by_admin_users", "admin_users", ["reviewed_by"], ["id"], ondelete="SET NULL")
         batch_op.create_foreign_key("fk_registrations_approved_user_id_users", "users", ["approved_user_id"], ["id"], ondelete="SET NULL")
