@@ -28,6 +28,7 @@ from onx.schemas.transport_packages import DEFAULT_TRANSPORT_PRIORITY
 from onx.services.client_device_service import client_device_service
 from onx.services.dns_policy_service import DNSPolicyService
 from onx.services.subscription_service import subscription_service
+from onx.services.transport_package_service import transport_package_service
 
 
 class BundleService:
@@ -57,6 +58,12 @@ class BundleService:
         if subscription.expires_at is not None and subscription.expires_at <= datetime.now(timezone.utc):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Subscription is expired.")
         client_device_service.assert_recently_verified(device)
+
+        # Auto-provision peers on first bundle issue if none exist yet.
+        transport_package = transport_package_service.get_or_create_for_user(db, user)
+        profiles_check = self._build_runtime_profiles(db, user=user, transport_package=transport_package)
+        if not profiles_check:
+            transport_package_service.reconcile_for_user(db, user, transport_package)
 
         issued_at = datetime.now(timezone.utc)
         expires_at = issued_at + timedelta(seconds=self._settings.client_bundle_ttl_seconds)
