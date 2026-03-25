@@ -83,6 +83,9 @@ class TransitPolicyManager:
             ),
         )
         self._validate_attachments(db, policy)
+        db.add(policy)
+        db.commit()
+        db.refresh(policy)
         policy.desired_config_json = self._serialize_policy(policy)
         db.add(policy)
         db.commit()
