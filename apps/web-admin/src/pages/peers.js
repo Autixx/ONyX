@@ -89,13 +89,29 @@ window.openPeerConfig = async function openPeerConfig(peerId){
       return;
     }
   }
-  if(!config){
-    alert('No config available for this peer.');
-    return;
-  }
-  openModal('Peer Config', '<div class="modal-grid one"><div class="form-group full"><textarea readonly style="width:100%;height:320px;font-family:monospace;font-size:12px;">'+esc(config)+'</textarea></div></div>',
-    {buttons:[{label:'Close', className:'btn', onClick:closeModal}]}
+  openModal('Peer Config',
+    '<div class="modal-grid one"><div class="form-group full">'
+      +'<textarea id="peerConfigText" style="width:100%;height:320px;font-family:monospace;font-size:12px;">'+esc(config || '')+'</textarea>'
+    +'</div></div>',
+    {buttons:[
+      {label:'Close', className:'btn', onClick:closeModal},
+      {label:'Save', className:'btn pri', onClick:function(){ savePeerConfig(peerId); }}
+    ]}
   );
+};
+
+window.savePeerConfig = async function savePeerConfig(peerId){
+  var el = document.getElementById('peerConfigText');
+  if(!el) return;
+  try{
+    await apiFetch(API_PREFIX + '/peers/' + encodeURIComponent(peerId) + '/config', {
+      method:'PUT', body:{ config: el.value }
+    });
+    closeModal();
+    await loadPeers();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
 };
 
 window.revokePeer = async function revokePeer(peerId){
