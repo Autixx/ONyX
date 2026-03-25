@@ -3171,6 +3171,16 @@ class DashboardScreen(QWidget):
                 self.refresh()
         def _c():
             with httpx_client(timeout=45, base_url=base) as c:
+                # Silently re-verify device before any bundle call so a PENDING/stale
+                # device becomes ACTIVE without requiring a separate manual step.
+                ch = c.post(base + "/client/devices/challenge", json={"device_id": did}, headers=hdrs)
+                _raise_for_device(ch)
+                dec_ch = self._dec_env(ch.json()["envelope"])
+                vr = c.post(base + "/client/devices/verify",
+                            json={"device_id": did, "challenge_response": dec_ch["challenge"]},
+                            headers=hdrs)
+                if vr.status_code >= 400:
+                    raise RuntimeError(response_detail(vr))
                 if auto_connect:
                     current = c.get(base + "/client/bundles/current", params={"device_id": did}, headers=hdrs)
                     _raise_for_device(current)
