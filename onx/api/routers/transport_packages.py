@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
+
+_log = logging.getLogger(__name__)
 
 from onx.api.deps import get_database_session
 from onx.db.models.transport_package import TransportPackage
@@ -107,35 +111,47 @@ def upsert_transport_package_for_user(
     payload: TransportPackageUpsert,
     db: Session = Depends(get_database_session),
 ):
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-    package = transport_package_service.upsert_for_user(db, user, payload)
-    event_log_service.log(
-        db,
-        entity_type="transport_package",
-        entity_id=package.id,
-        message=f"Transport package updated for user '{user.username}'.",
-        details={"user_id": user.id, "enabled_transports": transport_package_service.enabled_transport_types(package)},
-    )
-    realtime_service.publish("transport_package.updated", {"id": package.id, "user_id": user.id})
-    return package
+    try:
+        user = db.get(User, user_id)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        package = transport_package_service.upsert_for_user(db, user, payload)
+        event_log_service.log(
+            db,
+            entity_type="transport_package",
+            entity_id=package.id,
+            message=f"Transport package updated for user '{user.username}'.",
+            details={"user_id": user.id, "enabled_transports": transport_package_service.enabled_transport_types(package)},
+        )
+        realtime_service.publish("transport_package.updated", {"id": package.id, "user_id": user.id})
+        return package
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.error("upsert_transport_package_for_user failed user_id=%s: %s", user_id, exc, exc_info=True)
+        raise
 
 
 @router.post("/by-user/{user_id}/reconcile", response_model=TransportPackageReconcileResponse, status_code=status.HTTP_200_OK)
 def reconcile_transport_package_for_user(user_id: str, db: Session = Depends(get_database_session)):
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-    package = transport_package_service.get_or_create_for_user(db, user)
-    summary = transport_package_service.reconcile_for_user(db, user, package)
-    db.refresh(package)
-    event_log_service.log(
-        db,
-        entity_type="transport_package",
-        entity_id=package.id,
-        message=f"Transport package reconciled for user '{user.username}'.",
-        details=summary,
-    )
-    realtime_service.publish("transport_package.reconciled", {"id": package.id, "user_id": user.id})
-    return TransportPackageReconcileResponse(package=TransportPackageRead.model_validate(package), summary=summary)
+    try:
+        user = db.get(User, user_id)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        package = transport_package_service.get_or_create_for_user(db, user)
+        summary = transport_package_service.reconcile_for_user(db, user, package)
+        db.refresh(package)
+        event_log_service.log(
+            db,
+            entity_type="transport_package",
+            entity_id=package.id,
+            message=f"Transport package reconciled for user '{user.username}'.",
+            details=summary,
+        )
+        realtime_service.publish("transport_package.reconciled", {"id": package.id, "user_id": user.id})
+        return TransportPackageReconcileResponse(package=TransportPackageRead.model_validate(package), summary=summary)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.error("reconcile_transport_package_for_user failed user_id=%s: %s", user_id, exc, exc_info=True)
+        raise
