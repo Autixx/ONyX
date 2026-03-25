@@ -18,6 +18,7 @@ import math
 import os
 import platform
 import random
+import re
 import secrets
 import shutil
 import subprocess
@@ -58,10 +59,27 @@ from PyQt6.QtWidgets import (
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-APP_DIR     = Path.home() / ".onyx-client"
-STATE_PATH  = APP_DIR / "state.json"
-RUNTIME_DIR = APP_DIR / "runtime"
-TOOLS_DIR   = APP_DIR / "bin"
+APP_DIR            = Path.home() / ".onyx-client"
+GLOBAL_CONFIG_PATH = APP_DIR / "config.json"
+TOOLS_DIR          = APP_DIR / "bin"
+
+
+def _server_slug(url: str) -> str:
+    """Return a filesystem-safe slug for a server URL (used as per-server subdirectory name)."""
+    try:
+        from urllib.parse import urlparse as _up
+        parsed = _up(url)
+        host = (parsed.hostname or "local").lower()
+        port = f"_{parsed.port}" if parsed.port else ""
+        slug = re.sub(r"[^a-zA-Z0-9._-]", "_", host + port)
+        return slug[:64] or "default"
+    except Exception:
+        return "default"
+
+
+def _server_dir(url: str) -> Path:
+    """Return the per-server data directory for the given server URL."""
+    return APP_DIR / "servers" / _server_slug(url)
 APP_ROOT    = Path(__file__).resolve().parent
 PROJECT_BIN_DIR = APP_ROOT / "bin"
 ICON_DIR    = APP_ROOT / "assets" / "icons"
@@ -401,32 +419,135 @@ class ClientState:
         self.split_tunnel_exclude_lan = False
         self.split_tunnel_bypass_domains: list[str] = []
 
+    # ── Per-server paths ────────────────────────────────────────────────────
+
+    @property
+    def state_path(self) -> Path:
+        return _server_dir(self.base_url) / "state.json"
+
+    @property
+    def runtime_dir(self) -> Path:
+        return _server_dir(self.base_url) / "runtime"
+
+    # ── Load / save ─────────────────────────────────────────────────────────
+
+    _SERVER_KEYS = (
+        "session_token", "user", "subscription",
+        "device_id", "device_private_key", "device_public_key", "last_bundle",
+        "active_transport", "active_interface", "active_profile_id",
+        "active_config_path", "active_runtime_mode",
+        "remember_me", "saved_username", "saved_password",
+        "split_tunnel_disabled", "split_tunnel_exclude_lan", "split_tunnel_bypass_domains",
+    )
+
     def load(self):
-        if not STATE_PATH.exists(): return
-        d = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-        for k in ("base_url","session_token","user","subscription",
-                  "device_id","device_private_key","device_public_key","last_bundle",
-                  "active_transport","active_interface","active_profile_id","active_config_path","active_runtime_mode",
-                  "lang","remember_me","saved_username","saved_password","split_tunnel_disabled",
-                  "split_tunnel_exclude_lan","split_tunnel_bypass_domains"):
-            setattr(self, k, d.get(k, getattr(self, k)))
+        # Phase 1 – global config: base_url + lang
+        if GLOBAL_CONFIG_PATH.exists():
+            try:
+                gc = json.loads(GLOBAL_CONFIG_PATH.read_text(encoding="utf-8"))
+                self.base_url = gc.get("base_url", self.base_url)
+                self.lang     = gc.get("lang", self.lang)
+            except Exception:
+                pass
+        else:
+            # Backwards compat: read base_url from old flat state.json
+            old = APP_DIR / "state.json"
+            if old.exists():
+                try:
+                    d = json.loads(old.read_text(encoding="utf-8"))
+                    self.base_url = d.get("base_url", self.base_url)
+                    self.lang     = d.get("lang", self.lang)
+                except Exception:
+                    pass
         self.base_url = normalize_api_base_url(self.base_url)
+
+        # Phase 2 – per-server state
+        sp = self.state_path
+        if sp.exists():
+            try:
+                d = json.loads(sp.read_text(encoding="utf-8"))
+                for k in self._SERVER_KEYS:
+                    setattr(self, k, d.get(k, getattr(self, k)))
+            except Exception:
+                pass
+        else:
+            # One-time migration from legacy flat state.json
+            self._migrate_legacy_state()
+
+    def _migrate_legacy_state(self):
+        """Migrate from the old flat ~/.onyx-client/state.json to the per-server layout."""
+        old = APP_DIR / "state.json"
+        if not old.exists():
+            return
+        try:
+            d = json.loads(old.read_text(encoding="utf-8"))
+            stored_url = normalize_api_base_url(d.get("base_url", ""))
+            if stored_url != self.base_url:
+                return  # different server – don't mix data
+            for k in self._SERVER_KEYS:
+                setattr(self, k, d.get(k, getattr(self, k)))
+            self.save()                                    # write new per-server file
+            old.rename(old.with_name("state.json.bak"))   # keep backup
+        except Exception:
+            pass
 
     def save(self):
         APP_DIR.mkdir(parents=True, exist_ok=True)
-        STATE_PATH.write_text(json.dumps({
-            "base_url":self.base_url,"session_token":self.session_token,
-            "user":self.user,"subscription":self.subscription,
-            "device_id":self.device_id,"device_private_key":self.device_private_key,
-            "device_public_key":self.device_public_key,"last_bundle":self.last_bundle,
-            "active_transport":self.active_transport,"active_interface":self.active_interface,
-            "active_profile_id":self.active_profile_id,"active_config_path":self.active_config_path,
-            "active_runtime_mode":self.active_runtime_mode,"lang":self.lang,
-            "remember_me":self.remember_me,"saved_username":self.saved_username,"saved_password":self.saved_password,
-            "split_tunnel_disabled":self.split_tunnel_disabled,
-            "split_tunnel_exclude_lan":self.split_tunnel_exclude_lan,
-            "split_tunnel_bypass_domains":self.split_tunnel_bypass_domains,
-        },indent=2,ensure_ascii=False),encoding="utf-8")
+        # Global config (server-independent settings)
+        GLOBAL_CONFIG_PATH.write_text(json.dumps({
+            "base_url": self.base_url,
+            "lang":     self.lang,
+        }, indent=2, ensure_ascii=False), encoding="utf-8")
+        # Per-server state
+        sp = self.state_path
+        sp.parent.mkdir(parents=True, exist_ok=True)
+        sp.write_text(json.dumps({
+            "session_token":            self.session_token,
+            "user":                     self.user,
+            "subscription":             self.subscription,
+            "device_id":                self.device_id,
+            "device_private_key":       self.device_private_key,
+            "device_public_key":        self.device_public_key,
+            "last_bundle":              self.last_bundle,
+            "active_transport":         self.active_transport,
+            "active_interface":         self.active_interface,
+            "active_profile_id":        self.active_profile_id,
+            "active_config_path":       self.active_config_path,
+            "active_runtime_mode":      self.active_runtime_mode,
+            "remember_me":              self.remember_me,
+            "saved_username":           self.saved_username,
+            "saved_password":           self.saved_password,
+            "split_tunnel_disabled":    self.split_tunnel_disabled,
+            "split_tunnel_exclude_lan": self.split_tunnel_exclude_lan,
+            "split_tunnel_bypass_domains": self.split_tunnel_bypass_domains,
+        }, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def switch_server(self, new_url: str) -> None:
+        """Change the active server and load its stored state (or start fresh)."""
+        self.base_url = normalize_api_base_url(new_url)
+        self._reset_server_state()
+        sp = self.state_path
+        if sp.exists():
+            try:
+                d = json.loads(sp.read_text(encoding="utf-8"))
+                for k in self._SERVER_KEYS:
+                    setattr(self, k, d.get(k, getattr(self, k)))
+            except Exception:
+                pass
+        self.save()
+
+    def _reset_server_state(self) -> None:
+        """Reset all per-server fields to their defaults."""
+        self.session_token = ""; self.user = None; self.subscription = None
+        self.device_id = ""; self.device_private_key = ""; self.device_public_key = ""
+        self.last_bundle = None
+        self.connected = False
+        self.rx_bytes = self.tx_bytes = 0; self.rx_rate = self.tx_rate = 0.0
+        self.active_transport = ""; self.active_interface = ""
+        self.active_profile_id = ""; self.active_config_path = ""; self.active_runtime_mode = ""
+        self.remember_me = False; self.saved_username = ""; self.saved_password = ""
+        self.split_tunnel_disabled = False; self.split_tunnel_exclude_lan = False
+        self.split_tunnel_bypass_domains = []
 
     def clear_session(self):
         self.session_token=""; self.user=None; self.subscription=None
@@ -901,8 +1022,9 @@ class LocalTunnelRuntime:
         return self._apply_domain_bypass(config_text)
 
     def _write_config(self, interface_name: str, config_text: str) -> Path:
-        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-        config_path = RUNTIME_DIR / f"{interface_name}.conf"
+        runtime_dir = self.st.runtime_dir
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        config_path = runtime_dir / f"{interface_name}.conf"
         normalized = self._patch_config(config_text).replace("\r\n", "\n").strip() + "\n"
         config_path.write_text(normalized, encoding="utf-8")
         return config_path
@@ -2203,9 +2325,10 @@ class LoginScreen(QWidget):
         self._remember.setText(S["remember_me"])
 
     def _save_url(self):
-        self.st.base_url = normalize_api_base_url(self._url.text())
+        new_url = normalize_api_base_url(self._url.text())
+        if new_url != self.st.base_url:
+            self.st.switch_server(new_url)
         self._url.setText(self.st.base_url)
-        self.st.save()
 
     def _test_api(self):
         self._save_url()
@@ -2365,9 +2488,10 @@ class RegisterScreen(QWidget):
         self._retranslate(self._lang)
 
     def _save_reg_url(self):
-        self.st.base_url = normalize_api_base_url(self._reg_url.text())
+        new_url = normalize_api_base_url(self._reg_url.text())
+        if new_url != self.st.base_url:
+            self.st.switch_server(new_url)
         self._reg_url.setText(self.st.base_url)
-        self.st.save()
 
     def _retranslate(self, lang):
         S = _STRINGS[lang]
@@ -2734,8 +2858,12 @@ class DashboardScreen(QWidget):
         self._view_stack.setCurrentIndex(0)
 
     def _s_save_api(self):
-        self.st.base_url = normalize_api_base_url(self._s_api_url.text())
-        self._s_api_url.setText(self.st.base_url); self.st.save()
+        new_url = normalize_api_base_url(self._s_api_url.text())
+        if new_url != self.st.base_url:
+            self.st.switch_server(new_url)
+        else:
+            self.st.save()
+        self._s_api_url.setText(self.st.base_url)
 
     def _s_save_bypass(self):
         domains = [d.strip() for d in self._s_bypass.toPlainText().splitlines() if d.strip()]
