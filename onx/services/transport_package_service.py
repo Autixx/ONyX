@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
+
+_log = logging.getLogger(__name__)
 
 from onx.db.models.awg_service import AwgService, AwgServiceState
 from onx.db.models.node import Node, NodeStatus
@@ -184,7 +187,15 @@ class TransportPackageService:
             peer.node_id = service.node_id
             if subscription is not None:
                 peer.config_expires_at = subscription.expires_at
-        result = xray_service_manager.assign_peer(db, service, peer, save_to_peer=True)
+        try:
+            result = xray_service_manager.assign_peer(db, service, peer, save_to_peer=True)
+        except Exception as exc:
+            _log.error("reconcile xray assign_peer failed for user %s: %s", user.id, exc, exc_info=True)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return {"enabled": True, "status": "error", "automation": "full", "error": str(exc), "service_id": service.id}
         return {
             "enabled": True,
             "status": "ready",
@@ -227,7 +238,15 @@ class TransportPackageService:
             if package.split_tunnel_enabled and package.split_tunnel_routes_json
             else None
         )
-        result = awg_service_manager.assign_peer(db, service, peer, save_to_peer=True, allowed_ips_override=allowed_ips_override)
+        try:
+            result = awg_service_manager.assign_peer(db, service, peer, save_to_peer=True, allowed_ips_override=allowed_ips_override)
+        except Exception as exc:
+            _log.error("reconcile awg assign_peer failed for user %s: %s", user.id, exc, exc_info=True)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return {"enabled": True, "status": "error", "automation": "full", "error": str(exc), "service_id": service.id}
         return {
             "enabled": True,
             "status": "ready",
@@ -271,7 +290,15 @@ class TransportPackageService:
             if package.split_tunnel_enabled and package.split_tunnel_routes_json
             else None
         )
-        result = wg_service_manager.assign_peer(db, service, peer, save_to_peer=True, allowed_ips_override=allowed_ips_override)
+        try:
+            result = wg_service_manager.assign_peer(db, service, peer, save_to_peer=True, allowed_ips_override=allowed_ips_override)
+        except Exception as exc:
+            _log.error("reconcile wg assign_peer failed for user %s: %s", user.id, exc, exc_info=True)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return {"enabled": True, "status": "error", "automation": "full", "error": str(exc), "service_id": service.id}
         return {
             "enabled": True,
             "status": "ready",
@@ -310,7 +337,15 @@ class TransportPackageService:
             peer.node_id = service.node_id
             if subscription is not None:
                 peer.config_expires_at = subscription.expires_at
-        result = openvpn_cloak_service_manager.assign_peer(db, service, peer, save_to_peer=True)
+        try:
+            result = openvpn_cloak_service_manager.assign_peer(db, service, peer, save_to_peer=True)
+        except Exception as exc:
+            _log.error("reconcile openvpn_cloak assign_peer failed for user %s: %s", user.id, exc, exc_info=True)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return {"enabled": True, "status": "error", "automation": "full", "error": str(exc), "service_id": service.id}
         return {
             "enabled": True,
             "status": "ready",
