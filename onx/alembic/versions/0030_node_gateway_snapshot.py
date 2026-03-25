@@ -17,8 +17,9 @@ depends_on = None
 
 def upgrade() -> None:
     op.add_column("nodes", sa.Column("discovered_gateways_json", sa.JSON(), nullable=True))
-    op.execute("UPDATE nodes SET discovered_gateways_json = '{}'::json WHERE discovered_gateways_json IS NULL")
-    op.alter_column("nodes", "discovered_gateways_json", nullable=False)
+    op.execute("UPDATE nodes SET discovered_gateways_json = '{}' WHERE discovered_gateways_json IS NULL")
+    with op.batch_alter_table("nodes") as batch_op:
+        batch_op.alter_column("discovered_gateways_json", existing_type=sa.JSON(), nullable=False)
 
 
 def downgrade() -> None:

@@ -22,8 +22,9 @@ def upgrade() -> None:
         "nodes",
         sa.Column("discovered_interfaces_json", sa.JSON(), nullable=True),
     )
-    op.execute("UPDATE nodes SET discovered_interfaces_json = '[]'::json WHERE discovered_interfaces_json IS NULL")
-    op.alter_column("nodes", "discovered_interfaces_json", nullable=False)
+    op.execute("UPDATE nodes SET discovered_interfaces_json = '[]' WHERE discovered_interfaces_json IS NULL")
+    with op.batch_alter_table("nodes") as batch_op:
+        batch_op.alter_column("discovered_interfaces_json", existing_type=sa.JSON(), nullable=False)
 
 
 def downgrade() -> None:

@@ -28,7 +28,8 @@ def upgrade() -> None:
     )
     op.add_column("nodes", sa.Column("traffic_limit_gb", sa.Float(), nullable=True))
     op.execute("UPDATE nodes SET registered_at = COALESCE(registered_at, created_at)")
-    op.alter_column("nodes", "registered_at", nullable=False)
+    with op.batch_alter_table("nodes") as batch_op:
+        batch_op.alter_column("registered_at", existing_type=sa.DateTime(timezone=True), nullable=False)
 
     op.create_table(
         "registrations",

@@ -22,10 +22,11 @@ def upgrade() -> None:
     )
     op.add_column(
         "transport_packages",
-        sa.Column("split_tunnel_routes_json", sa.JSON(), nullable=False, server_default=sa.text("'[]'::json")),
+        sa.Column("split_tunnel_routes_json", sa.JSON(), nullable=False, server_default=sa.text("'[]'")),
     )
-    op.alter_column("transport_packages", "split_tunnel_enabled", server_default=None)
-    op.alter_column("transport_packages", "split_tunnel_routes_json", server_default=None)
+    with op.batch_alter_table("transport_packages") as batch_op:
+        batch_op.alter_column("split_tunnel_enabled", existing_type=sa.Boolean(), server_default=None)
+        batch_op.alter_column("split_tunnel_routes_json", existing_type=sa.JSON(), server_default=None)
 
 
 def downgrade() -> None:

@@ -53,12 +53,8 @@ def upgrade() -> None:
             .values(next_hop_candidates_json=json.loads(json.dumps(candidates)))
         )
 
-    op.alter_column(
-        "transit_policies",
-        "next_hop_candidates_json",
-        existing_type=sa.JSON(),
-        nullable=False,
-    )
+    with op.batch_alter_table("transit_policies") as batch_op:
+        batch_op.alter_column("next_hop_candidates_json", existing_type=sa.JSON(), nullable=False)
 
 
 def downgrade() -> None:
