@@ -1132,6 +1132,16 @@ class LocalTunnelRuntime:
         except Exception as exc:
             return {"available": False, "error": str(exc)}
 
+    def try_start_daemon_background(self) -> None:
+        """Attempt to launch the daemon at startup so it is ready before the user connects."""
+        if platform.system() != "Windows":
+            return
+        if daemon_executable_path() is None:
+            return
+        if self._can_use_daemon():
+            return
+        self._start_daemon_elevated()
+
     def _start_daemon_elevated(self) -> bool:
         if platform.system() != "Windows":
             return False
@@ -2520,6 +2530,7 @@ class DashboardScreen(QWidget):
         self._stats_timer = QTimer(self)
         self._stats_timer.timeout.connect(self._poll_runtime_stats)
         self._stats_timer.start(2000)
+        QTimer.singleShot(600, self._runtime.try_start_daemon_background)
 
     def _build(self):
         outer = QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
