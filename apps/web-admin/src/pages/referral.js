@@ -177,6 +177,77 @@ window.openReferralCodeModal = function openReferralCodeModal(referralId){
   bindModalForm('referralCodeForm', function(fd){ saveReferralCodeForm(fd, referralId); });
 };
 
+window.createReferralPool = async function createReferralPool(fd){
+  var payload = {
+    name:         fd.get('name'),
+    plan_id:      fd.get('plan_id') || null,
+    auto_approve: !!fd.get('auto_approve'),
+    expires_at:   fd.get('expires_at') || null,
+    code_length:  parseInt(fd.get('code_length'), 10) || 10,
+    quantity:     parseInt(fd.get('quantity'), 10) || 0,
+  };
+  await apiFetch(API_PREFIX + '/referral-pools', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+  });
+  closeModal();
+  await loadReferralCodes();
+};
+
+window.savePoolForm = async function savePoolForm(fd, poolId){
+  var payload = {
+    name:         fd.get('name'),
+    plan_id:      fd.get('plan_id') || null,
+    auto_approve: !!fd.get('auto_approve'),
+    expires_at:   fd.get('expires_at') || null,
+  };
+  await apiFetch(API_PREFIX + '/referral-pools/' + encodeURIComponent(poolId), {
+    method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+  });
+  closeModal();
+  await loadReferralCodes();
+};
+
+window.generateMorePoolCodes = async function generateMorePoolCodes(poolId){
+  var length = parseInt((document.getElementById('genMoreLength') || {}).value, 10) || 10;
+  var qty    = parseInt((document.getElementById('genMoreQty')    || {}).value, 10) || 10;
+  await apiFetch(API_PREFIX + '/referral-pools/' + encodeURIComponent(poolId) + '/generate', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code_length:length, quantity:qty})
+  });
+  window.openEditPoolModal(poolId);
+};
+
+window.forceDeletePool = async function forceDeletePool(poolId){
+  if(!confirm('Delete this pool and all its codes? This cannot be undone.')) return;
+  await apiFetch(API_PREFIX + '/referral-pools/' + encodeURIComponent(poolId) + '?force=true', { method:'DELETE' });
+  closeModal();
+  await loadReferralCodes();
+};
+
+window.saveReferralCodeForm = async function saveReferralCodeForm(fd, referralId){
+  var payload = {
+    plan_id:               fd.get('plan_id') || null,
+    enabled:               !!fd.get('enabled'),
+    auto_approve:          !!fd.get('auto_approve'),
+    max_uses:              fd.get('max_uses') ? parseInt(fd.get('max_uses'), 10) : null,
+    device_limit_override: fd.get('device_limit_override') ? parseInt(fd.get('device_limit_override'), 10) : null,
+    usage_goal_override:   fd.get('usage_goal_override') || null,
+    expires_at:            fd.get('expires_at') || null,
+    note:                  fd.get('note') || null,
+  };
+  if(referralId){
+    await apiFetch(API_PREFIX + '/referral-codes/' + encodeURIComponent(referralId), {
+      method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+  }else{
+    payload.code = fd.get('code');
+    await apiFetch(API_PREFIX + '/referral-codes', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+  }
+  closeModal();
+  await loadReferralCodes();
+};
+
 window.deleteReferralCodeFlow = async function deleteReferralCodeFlow(referralId){
   var ref = referralCodeById(referralId);
   if(!confirm('Delete referral code ' + (ref ? ref.code : referralId) + '?')) return;

@@ -272,6 +272,7 @@ document.addEventListener('DOMContentLoaded', function() {
   _btn('btnAddAwgService',           function(){ window.openAwgServiceModal?.(); });
   _btn('btnAddWgService',            function(){ window.openWgServiceModal?.(); });
   _btn('btnAddOpenvpnCloakService',  function(){ window.openOpenvpnCloakServiceModal?.(); });
+  _btn('btnCreateReferralPool',      function(){ window.openReferralPoolModal?.(); });
 
   // Auto-login check
   (async function init() {

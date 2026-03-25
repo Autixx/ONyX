@@ -1,5 +1,20 @@
 // Page module - all functions exposed as window globals
 
+var _SCHED_KEYS   = ['mon','tue','wed','thu','fri','sat','sun'];
+var _SCHED_LABELS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+function subscriptionAccessSummary(obj) {
+  if(!obj || !obj.access_window_enabled) return 'Always';
+  var DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  var mask = Number(obj.access_days_mask != null ? obj.access_days_mask : 127);
+  var days = DAY_NAMES.filter(function(_,i){ return !!(mask & (1<<i)); });
+  var timeStr = '';
+  if(obj.access_window_start_local && obj.access_window_end_local){
+    timeStr = ' ' + obj.access_window_start_local + '–' + obj.access_window_end_local;
+  }
+  return days.length === 7 ? ('Every day' + timeStr) : (days.join(', ') + timeStr);
+}
+
 window.loadPlans = async function loadPlans(){
   PLANS = await apiFetch(API_PREFIX + '/plans');
   window.renderPlans();
@@ -180,6 +195,7 @@ window.openPlanModal = function openPlanModal(planId){
   var tpOptions = [{value:'', label:'— none —'}].concat((TRANSPORT_PACKAGES || []).map(function(tp){ return {value:tp.id, label:(tp.name || tp.id)}; }));
   var body = '<form id="planForm"><div class="modal-grid">'
     +formInput('Name', 'name', plan ? plan.name : '', {required:true})
+    +(!plan ? formInput('Code (slug)', 'code', '', {required:true, help:'Unique identifier, e.g. basic_monthly'}) : '')
     +formSelect('Billing mode', 'billing_mode', plan ? plan.billing_mode : 'periodic', ['manual','lifetime','periodic','trial','fixed_date'])
     +formCheckbox('Enabled', 'enabled', plan ? plan.enabled : true, {caption:'Subscription enabled'})
     +formInput('Duration days', 'duration_days', plan && plan.duration_days != null ? String(plan.duration_days) : '', {type:'number', help:'For periodic/trial modes'})
@@ -393,6 +409,84 @@ window.saveUserPackageForm = async function saveUserPackageForm(userId, fd, reco
   }
   closeModal();
   await loadTransportPackages();
+};
+
+window.savePlanForm = async function savePlanForm(fd, planId){
+  var scheduleJson = {};
+  _SCHED_KEYS.forEach(function(key){
+    var start = (fd.get('sched_' + key + '_start') || '').trim();
+    var end   = (fd.get('sched_' + key + '_end')   || '').trim();
+    if(start || end){ scheduleJson[key] = {start: start || null, end: end || null}; }
+  });
+  var exDates = (fd.get('access_exception_dates') || '').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+  var payload = {
+    name:                       fd.get('name'),
+    billing_mode:               fd.get('billing_mode'),
+    enabled:                    !!fd.get('enabled'),
+    duration_days:              fd.get('duration_days') ? parseInt(fd.get('duration_days'), 10) : null,
+    fixed_expires_at:           fd.get('fixed_expires_at') || null,
+    default_device_limit:       parseInt(fd.get('default_device_limit'), 10) || 1,
+    traffic_quota_bytes:        fd.get('traffic_quota_bytes') ? parseInt(fd.get('traffic_quota_bytes'), 10) : null,
+    speed_limit_kbps:           fd.get('speed_limit_kbps') ? parseInt(fd.get('speed_limit_kbps'), 10) : null,
+    transport_package_id:       fd.get('transport_package_id') || null,
+    access_window_enabled:      !!fd.get('access_window_enabled'),
+    access_schedule_json:       Object.keys(scheduleJson).length ? scheduleJson : null,
+    access_exception_dates_json: exDates.length ? exDates : null,
+    comment:                    fd.get('comment') || null,
+  };
+  if(planId){
+    await apiFetch(API_PREFIX + '/plans/' + encodeURIComponent(planId), {
+      method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+  }else{
+    payload.code = (fd.get('code') || '').trim();
+    await apiFetch(API_PREFIX + '/plans', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+  }
+  closeModal();
+  await Promise.all([loadPlans(), loadReferralCodes()]);
+};
+
+window.saveSubscriptionForm = async function saveSubscriptionForm(fd, subscriptionId){
+  var daysMask = 0;
+  for(var i=0; i<7; i++){ if(fd.get('access_day_' + i)){ daysMask |= (1 << i); } }
+  var payload = {
+    user_id:                    fd.get('user_id'),
+    plan_id:                    fd.get('plan_id') || null,
+    status:                     fd.get('status'),
+    billing_mode:               fd.get('billing_mode'),
+    starts_at:                  fd.get('starts_at') || null,
+    expires_at:                 fd.get('expires_at') || null,
+    device_limit:               parseInt(fd.get('device_limit'), 10) || 1,
+    traffic_quota_bytes:        fd.get('traffic_quota_bytes') ? parseInt(fd.get('traffic_quota_bytes'), 10) : null,
+    access_window_enabled:      !!fd.get('access_window_enabled'),
+    access_days_mask:           daysMask,
+    access_window_start_local:  fd.get('access_window_start_local') || null,
+    access_window_end_local:    fd.get('access_window_end_local') || null,
+  };
+  if(subscriptionId){
+    await apiFetch(API_PREFIX + '/subscriptions/' + encodeURIComponent(subscriptionId), {
+      method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+  }else{
+    await apiFetch(API_PREFIX + '/subscriptions', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+  }
+  closeModal();
+  await loadSubscriptions();
+};
+
+window.assignPoolToPlan = async function assignPoolToPlan(planId){
+  var sel = document.getElementById('planPoolAssignSelect');
+  var poolId = sel ? sel.value : '';
+  if(!poolId) return;
+  await apiFetch(API_PREFIX + '/referral-pools/' + encodeURIComponent(poolId), {
+    method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({plan_id: planId})
+  });
+  closeModal();
+  await Promise.all([loadPlans(), loadReferralCodes()]);
 };
 
 window.deleteTransportPackageFlow = async function deleteTransportPackageFlow(pkgId){
