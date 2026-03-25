@@ -3,12 +3,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import platform
 import sys
 
 from runtime.ipc import PYWIN32_AVAILABLE
 from runtime.logutil import get_logger
-from runtime.models import CommandEnvelope
+from runtime.models import CommandEnvelope, DaemonCommand
 from runtime.paths import PIPE_NAME, ensure_runtime_dirs
 from runtime.service import OnyxRuntimeDaemon
 
@@ -85,6 +86,9 @@ class NamedPipeDaemonHost:
             response = asyncio.run(self.daemon.handle(envelope))
             win32file.WriteFile(pipe, json.dumps(response.to_dict(), separators=(",", ":"), ensure_ascii=True).encode("utf-8"))
             self.log.info("pipe_response command=%s request_id=%s ok=%s", envelope.command, envelope.request_id, response.ok)
+            if envelope.command == DaemonCommand.SHUTDOWN.value:
+                self.log.info("shutdown_command_received — exiting daemon process")
+                os._exit(0)
         finally:
             try:
                 win32pipe.DisconnectNamedPipe(pipe)

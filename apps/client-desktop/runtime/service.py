@@ -98,6 +98,8 @@ class OnyxRuntimeDaemon:
                 "rx_rate": self._status.rx_rate,
                 "tx_rate": self._status.tx_rate,
             }
+        if command == DaemonCommand.SHUTDOWN.value:
+            return {"shutdown": True}
         raise ValueError(f"Unsupported daemon command: {command}")
 
     async def _apply_bundle(self, payload: dict[str, Any]) -> dict[str, Any]:

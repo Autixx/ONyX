@@ -20,6 +20,7 @@ class DaemonCommand(str, Enum):
     DISCONNECT = "disconnect"
     RUNTIME_DIAGNOSTICS = "runtime_diagnostics"
     TRAFFIC_STATS = "traffic_stats"
+    SHUTDOWN = "shutdown"
 
 
 @dataclass(slots=True)

@@ -1276,6 +1276,21 @@ class LocalTunnelRuntime:
             return
         self._start_daemon_elevated()
 
+    def stop_daemon(self) -> None:
+        """Send SHUTDOWN command to the daemon process; silently ignore any errors."""
+        if not self._can_use_daemon():
+            return
+        try:
+            from runtime.models import CommandEnvelope, DaemonCommand
+            import uuid
+            envelope = CommandEnvelope(
+                request_id=str(uuid.uuid4()),
+                command=DaemonCommand.SHUTDOWN.value,
+            )
+            self._daemon._request_sync(envelope)
+        except Exception:
+            pass
+
     def _start_daemon_elevated(self) -> bool:
         if platform.system() != "Windows":
             return False
@@ -4278,6 +4293,7 @@ class ONyXClient(QMainWindow):
     def _exit_from_tray(self):
         self._quit_requested = True
         self._ds.disconnect_runtime(silent=True)
+        self._ds._runtime.stop_daemon()
         if self._tray is not None:
             self._tray.hide()
         QApplication.instance().quit()
@@ -4477,6 +4493,7 @@ class ONyXClient(QMainWindow):
                 close_fds=True,
             )
             self._quit_requested = True
+            self._ds._runtime.stop_daemon()
             if self._tray is not None:
                 self._tray.hide()
             QApplication.instance().quit()
