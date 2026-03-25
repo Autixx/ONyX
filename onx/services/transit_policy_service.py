@@ -422,8 +422,9 @@ class TransitPolicyManager:
                 if next_hop_attachment.get("public_host") and next_hop_attachment.get("public_port")
                 else (next_hop_attachment.get("display_name") or "remote xray service")
             )
+            remote_security = "reality" if next_hop_attachment.get("reality_enabled") else ("tls" if next_hop_attachment.get("tls_enabled") else "plain")
             xray_attachment["route_path"] = (
-                "dokodemo-door -> vless+xhttp -> " + remote_endpoint
+                f"dokodemo-door -> vless+xhttp({remote_security}) -> " + remote_endpoint
             )
         elif self._policy_candidate_specs(policy):
             warnings.append("Next-hop target is configured but not currently resolvable on this node.")
@@ -709,6 +710,12 @@ class TransitPolicyManager:
             "server_name": resolved.get("server_name"),
             "xhttp_path": resolved.get("xhttp_path"),
             "tls_enabled": resolved.get("tls_enabled"),
+            "reality_enabled": resolved.get("reality_enabled"),
+            "reality_dest": resolved.get("reality_dest"),
+            "reality_public_key": resolved.get("reality_public_key"),
+            "reality_short_id": resolved.get("reality_short_id"),
+            "reality_fingerprint": resolved.get("reality_fingerprint"),
+            "reality_spider_x": resolved.get("reality_spider_x"),
             "node_id": resolved.get("node_id"),
         }
 
@@ -746,6 +753,12 @@ class TransitPolicyManager:
             "server_name": resolved.get("server_name"),
             "xhttp_path": resolved.get("xhttp_path"),
             "tls_enabled": resolved.get("tls_enabled"),
+            "reality_enabled": resolved.get("reality_enabled"),
+            "reality_dest": resolved.get("reality_dest"),
+            "reality_public_key": resolved.get("reality_public_key"),
+            "reality_short_id": resolved.get("reality_short_id"),
+            "reality_fingerprint": resolved.get("reality_fingerprint"),
+            "reality_spider_x": resolved.get("reality_spider_x"),
             "node_id": resolved.get("node_id"),
         }
 
@@ -832,6 +845,12 @@ class TransitPolicyManager:
                 "server_name": service.server_name or service.public_host,
                 "xhttp_path": service.xhttp_path,
                 "tls_enabled": bool(service.tls_enabled),
+                "reality_enabled": bool(service.reality_enabled),
+                "reality_dest": service.reality_dest,
+                "reality_public_key": service.reality_public_key,
+                "reality_short_id": service.reality_short_id,
+                "reality_fingerprint": service.reality_fingerprint,
+                "reality_spider_x": service.reality_spider_x,
                 "node_id": service.node_id,
             }
 
@@ -935,7 +954,16 @@ class TransitPolicyManager:
         public_host = str(next_hop.get("public_host") or "").strip()
         public_port = str(next_hop.get("public_port") or "").strip()
         xhttp_path = str(next_hop.get("xhttp_path") or "").strip()
-        endpoint = source_ip or interface_name or ":".join(part for part in (public_host, public_port, xhttp_path) if part)
+        security = (
+            "reality"
+            if next_hop.get("reality_enabled")
+            else ("tls" if next_hop.get("tls_enabled") else "plain")
+        )
+        reality_public_key = str(next_hop.get("reality_public_key") or "").strip()
+        reality_short_id = str(next_hop.get("reality_short_id") or "").strip()
+        endpoint = source_ip or interface_name or ":".join(
+            part for part in (public_host, public_port, xhttp_path, security, reality_public_key, reality_short_id) if part
+        )
         if not endpoint:
             return f"{kind}:{ref_id}"
         return f"{kind}:{ref_id}:{endpoint}"

@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from onx.core.config import get_settings
+from onx.core.keys import generate_reality_keypair, generate_reality_short_id
 from onx.db.models.node import Node
 from onx.db.models.node_capability import NodeCapability
 from onx.db.models.node_secret import NodeSecretKind
@@ -52,7 +54,15 @@ class XrayServiceManager:
             server_name=payload.server_name,
             xhttp_path=self._normalize_path(payload.xhttp_path),
             tls_enabled=payload.tls_enabled,
+            reality_enabled=payload.reality_enabled,
+            reality_dest=payload.reality_dest,
+            reality_private_key=payload.reality_private_key,
+            reality_public_key=payload.reality_public_key,
+            reality_short_id=payload.reality_short_id,
+            reality_fingerprint=payload.reality_fingerprint,
+            reality_spider_x=payload.reality_spider_x,
         )
+        self._prepare_security_profile(service)
         service.desired_config_json = self._serialize_service(service)
         db.add(service)
         db.commit()
@@ -71,12 +81,27 @@ class XrayServiceManager:
             if node is None:
                 raise ValueError("Node not found.")
             service.node_id = payload.node_id
-        for field_name in ("listen_host", "listen_port", "public_host", "public_port", "server_name", "tls_enabled"):
+        for field_name in (
+            "listen_host",
+            "listen_port",
+            "public_host",
+            "public_port",
+            "server_name",
+            "tls_enabled",
+            "reality_enabled",
+            "reality_dest",
+            "reality_public_key",
+            "reality_private_key",
+            "reality_short_id",
+            "reality_fingerprint",
+            "reality_spider_x",
+        ):
             value = getattr(payload, field_name)
             if value is not None:
                 setattr(service, field_name, value)
         if payload.xhttp_path is not None:
             service.xhttp_path = self._normalize_path(payload.xhttp_path)
+        self._prepare_security_profile(service)
         service.state = XrayServiceState.PLANNED
         service.last_error_text = None
         service.applied_config_json = None
@@ -136,6 +161,10 @@ class XrayServiceManager:
         if node is None:
             raise ValueError("Node not found.")
         self._assert_xray_ready(db, node)
+        self._prepare_security_profile(service)
+        service.desired_config_json = self._serialize_service(service)
+        db.add(service)
+        db.commit()
         management_secret = self._get_management_secret(db, node)
         self._runtime.ensure_xray_runtime(node, management_secret)
 
@@ -216,7 +245,7 @@ class XrayServiceManager:
             }
             for policy in self._list_next_hop_transit_policies(db, service.id)
         ]
-        security = "tls" if service.tls_enabled else "none"
+        security = self._security_mode(service)
         inbound = {
             "tag": f"vless-xhttp-{service.name}",
             "listen": service.listen_host,
@@ -238,6 +267,15 @@ class XrayServiceManager:
         if security == "tls":
             inbound["streamSettings"]["tlsSettings"] = {
                 "serverName": service.server_name or service.public_host,
+            }
+        elif security == "reality":
+            inbound["streamSettings"]["realitySettings"] = {
+                "show": False,
+                "dest": service.reality_dest,
+                "xver": 0,
+                "serverNames": [service.server_name or self._reality_server_name(service)],
+                "privateKey": service.reality_private_key,
+                "shortIds": [service.reality_short_id],
             }
         transit_policies = self._list_transit_policies(db, service.id)
         transit_inbounds = [
@@ -269,7 +307,7 @@ class XrayServiceManager:
             outbound_tag = "direct"
             if next_hop.get("attached") and next_hop.get("kind") == "xray_service":
                 outbound_tag = f"transit-out-{policy.id}"
-                security = "tls" if next_hop.get("tls_enabled") else "none"
+                security = self._security_mode_from_dict(next_hop)
                 outbound = {
                     "tag": outbound_tag,
                     "protocol": "vless",
@@ -300,6 +338,14 @@ class XrayServiceManager:
                     outbound["streamSettings"]["tlsSettings"] = {
                         "serverName": next_hop.get("server_name") or next_hop["public_host"],
                     }
+                elif security == "reality":
+                    outbound["streamSettings"]["realitySettings"] = {
+                        "serverName": next_hop.get("server_name") or self._reality_server_name_from_dict(next_hop),
+                        "publicKey": next_hop.get("reality_public_key"),
+                        "shortId": next_hop.get("reality_short_id") or "",
+                        "fingerprint": next_hop.get("reality_fingerprint") or "chrome",
+                        "spiderX": next_hop.get("reality_spider_x") or "/",
+                    }
                 transit_outbounds.append(outbound)
             elif next_hop.get("attached") and next_hop.get("source_ip"):
                 outbound_tag = f"transit-out-{policy.id}"
@@ -329,7 +375,7 @@ class XrayServiceManager:
         return payload
 
     def render_peer_config(self, service: XrayService, peer: Peer) -> str:
-        security = "tls" if service.tls_enabled else "none"
+        security = self._security_mode(service)
         outbound = {
             "tag": "proxy",
             "protocol": "vless",
@@ -359,6 +405,14 @@ class XrayServiceManager:
         if security == "tls":
             outbound["streamSettings"]["tlsSettings"] = {
                 "serverName": service.server_name or service.public_host,
+            }
+        elif security == "reality":
+            outbound["streamSettings"]["realitySettings"] = {
+                "serverName": service.server_name or self._reality_server_name(service),
+                "publicKey": service.reality_public_key,
+                "shortId": service.reality_short_id or "",
+                "fingerprint": service.reality_fingerprint or "chrome",
+                "spiderX": service.reality_spider_x or "/",
             }
         payload = {
             "log": {"loglevel": "warning"},
@@ -393,7 +447,93 @@ class XrayServiceManager:
             "server_name": service.server_name,
             "xhttp_path": service.xhttp_path,
             "tls_enabled": service.tls_enabled,
+            "reality_enabled": service.reality_enabled,
+            "reality_dest": service.reality_dest,
+            "reality_public_key": service.reality_public_key,
+            "reality_short_id": service.reality_short_id,
+            "reality_fingerprint": service.reality_fingerprint,
+            "reality_spider_x": service.reality_spider_x,
         }
+
+    @staticmethod
+    def _security_mode(service: XrayService) -> str:
+        if service.reality_enabled:
+            return "reality"
+        if service.tls_enabled:
+            return "tls"
+        return "none"
+
+    @staticmethod
+    def _security_mode_from_dict(payload: dict) -> str:
+        if payload.get("reality_enabled"):
+            return "reality"
+        if payload.get("tls_enabled"):
+            return "tls"
+        return "none"
+
+    def _prepare_security_profile(self, service: XrayService) -> None:
+        if service.tls_enabled and service.reality_enabled:
+            raise ValueError("TLS and REALITY cannot be enabled at the same time.")
+        if service.reality_enabled:
+            private_key = (service.reality_private_key or "").strip()
+            public_key = (service.reality_public_key or "").strip()
+            if not private_key or not public_key:
+                private_key, public_key = generate_reality_keypair()
+            service.reality_private_key = private_key
+            service.reality_public_key = public_key
+            service.reality_short_id = self._normalize_reality_short_id(service.reality_short_id)
+            service.reality_fingerprint = (service.reality_fingerprint or "chrome").strip()
+            service.reality_spider_x = self._normalize_path(service.reality_spider_x or "/")
+            if not (service.server_name or "").strip():
+                raise ValueError("REALITY requires server_name.")
+            service.reality_dest = self._normalize_reality_dest(service.reality_dest, service.server_name)
+            service.tls_enabled = False
+        else:
+            service.reality_dest = None
+            service.reality_private_key = None
+            service.reality_public_key = None
+            service.reality_short_id = None
+            service.reality_fingerprint = None
+            service.reality_spider_x = None
+
+    @staticmethod
+    def _normalize_reality_short_id(value: str | None) -> str:
+        normalized = (value or "").strip().lower()
+        if not normalized:
+            return generate_reality_short_id()
+        if len(normalized) % 2 != 0:
+            raise ValueError("REALITY short id must have even-length hexadecimal text.")
+        if len(normalized) > 32:
+            raise ValueError("REALITY short id must be at most 16 bytes (32 hex chars).")
+        if any(ch not in "0123456789abcdef" for ch in normalized):
+            raise ValueError("REALITY short id must be hexadecimal.")
+        return normalized
+
+    @staticmethod
+    def _normalize_reality_dest(value: str | None, server_name: str) -> str:
+        normalized = (value or "").strip()
+        if not normalized:
+            return f"{server_name}:443"
+        if ":" not in normalized.rsplit("]", 1)[-1]:
+            return f"{normalized}:443"
+        return normalized
+
+    @staticmethod
+    def _reality_server_name(service: XrayService) -> str:
+        return XrayServiceManager._reality_server_name_from_dict(
+            {"server_name": service.server_name, "reality_dest": service.reality_dest}
+        )
+
+    @staticmethod
+    def _reality_server_name_from_dict(payload: dict) -> str:
+        server_name = str(payload.get("server_name") or "").strip()
+        if server_name:
+            return server_name
+        reality_dest = str(payload.get("reality_dest") or "").strip()
+        if not reality_dest:
+            return ""
+        parsed = urlsplit(f"//{reality_dest}")
+        return parsed.hostname or reality_dest.split(":", 1)[0]
 
     @staticmethod
     def _list_service_peers(db: Session, service_id: str) -> list[Peer]:

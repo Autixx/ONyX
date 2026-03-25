@@ -25,13 +25,15 @@ window.renderXrayServices = function renderXrayServices(){
   }
   tb.innerHTML = XRAY_SERVICES.map(function(service){
     var publicEndpoint = service.public_host + ':' + String(service.public_port || service.listen_port);
-    var tls = service.tls_enabled ? '<span class="pill pg">tls</span>' : '<span class="pill pq">plain</span>';
+    var security = service.reality_enabled
+      ? '<span class="pill pb">reality</span>'
+      : (service.tls_enabled ? '<span class="pill pg">tls</span>' : '<span class="pill pq">plain</span>');
     return '<tr onclick="showXrayService(\''+esc(service.id)+'\')" style="cursor:pointer">'
       +'<td class="m">'+esc(service.name)+'</td>'
       +'<td>'+esc(nById(service.node_id).name)+'</td>'
       +'<td class="m">'+esc(publicEndpoint)+'</td>'
       +'<td class="m">'+esc(service.xhttp_path || '/')+'</td>'
-      +'<td>'+tls+'</td>'
+      +'<td>'+security+'</td>'
       +'<td>'+esc(String(xrayPeerCount(service.id)))+'</td>'
       +'<td>'+sp(service.state)+'</td>'
       +'<td><div style="display:flex;gap:5px;">'
@@ -63,7 +65,12 @@ window.showXrayService = function showXrayService(id){
       ['Public', service.public_host + ':' + String(service.public_port || service.listen_port)],
       ['Server Name', service.server_name || '-'],
       ['Path', service.xhttp_path || '/'],
-      ['TLS', service.tls_enabled ? 'yes' : 'no'],
+      ['Security', service.reality_enabled ? 'reality' : (service.tls_enabled ? 'tls' : 'plain')],
+      ['REALITY Dest', service.reality_dest || '-'],
+      ['REALITY Short ID', service.reality_short_id || '-'],
+      ['REALITY Public Key', service.reality_public_key || '-'],
+      ['REALITY Fingerprint', service.reality_fingerprint || '-'],
+      ['REALITY SpiderX', service.reality_spider_x || '-'],
       ['Transit Policies', String(transitServiceCount(service.id))],
       ['Config Path', health.config_path || '-'],
       ['Applied At', health.applied_at ? fmtDate(health.applied_at) : '-'],
@@ -104,6 +111,13 @@ window.openXrayServiceModal = function openXrayServiceModal(serviceId){
     +formInput('Server name', 'server_name', service ? (service.server_name || '') : '')
     +formInput('xHTTP path', 'xhttp_path', service ? (service.xhttp_path || '/') : '/', {required:true})
     +formCheckbox('TLS enabled', 'tls_enabled', service ? !!service.tls_enabled : false, {caption:'Use TLS stream security'})
+    +formCheckbox('REALITY enabled', 'reality_enabled', service ? !!service.reality_enabled : false, {caption:'Use REALITY instead of plain/TLS'})
+    +formInput('REALITY dest', 'reality_dest', service ? (service.reality_dest || '') : '', {placeholder:'nos.nl:443'})
+    +formInput('REALITY short id', 'reality_short_id', service ? (service.reality_short_id || '') : '', {placeholder:'auto'})
+    +formInput('REALITY fingerprint', 'reality_fingerprint', service ? (service.reality_fingerprint || '') : 'chrome')
+    +formInput('REALITY spiderX', 'reality_spider_x', service ? (service.reality_spider_x || '/') : '/')
+    +formTextarea('REALITY public key', 'reality_public_key', service ? (service.reality_public_key || '') : '', {help:'Optional. Leave empty for auto-generated pair.'})
+    +formTextarea('REALITY private key', 'reality_private_key', service ? '' : '', {help:'Optional. Leave empty for auto-generated pair. Existing value is hidden on read.'})
     +'</div></form>';
   openModal(service ? 'Edit service' : 'Create service', body, {
     buttons:[
@@ -127,7 +141,14 @@ window.saveXrayServiceForm = async function saveXrayServiceForm(fd, serviceId){
       var ph = fd.get('public_host'); if(ph) patch.public_host = ph;
       var pp = intField(fd.get('public_port')); if(pp != null) patch.public_port = pp;
       var sn = (fd.get('server_name') || '').trim(); if(sn) patch.server_name = sn;
+      var rd = (fd.get('reality_dest') || '').trim(); if(rd) patch.reality_dest = rd;
+      var rfp = (fd.get('reality_fingerprint') || '').trim(); if(rfp) patch.reality_fingerprint = rfp;
+      var rsx = (fd.get('reality_spider_x') || '').trim(); if(rsx) patch.reality_spider_x = rsx;
       patch.tls_enabled = fd.get('tls_enabled') === 'on';
+      patch.reality_enabled = fd.get('reality_enabled') === 'on';
+      var rsid = (fd.get('reality_short_id') || '').trim(); if(rsid) patch.reality_short_id = rsid;
+      var rpk = (fd.get('reality_public_key') || '').trim(); if(rpk) patch.reality_public_key = rpk;
+      var rsk = (fd.get('reality_private_key') || '').trim(); if(rsk) patch.reality_private_key = rsk;
       await apiFetch(API_PREFIX+'/xray-services/'+encodeURIComponent(serviceId), {method:'PATCH', body:patch});
     }else{
       var payload = {
@@ -137,10 +158,17 @@ window.saveXrayServiceForm = async function saveXrayServiceForm(fd, serviceId){
         listen_port: intField(fd.get('listen_port')),
         public_host: fd.get('public_host'),
         xhttp_path: fd.get('xhttp_path') || '/',
-        tls_enabled: fd.get('tls_enabled') === 'on'
+        tls_enabled: fd.get('tls_enabled') === 'on',
+        reality_enabled: fd.get('reality_enabled') === 'on'
       };
       var pp = intField(fd.get('public_port')); if(pp != null) payload.public_port = pp;
       var sn = (fd.get('server_name') || '').trim(); if(sn) payload.server_name = sn;
+      var rd = (fd.get('reality_dest') || '').trim(); if(rd) payload.reality_dest = rd;
+      var rsid = (fd.get('reality_short_id') || '').trim(); if(rsid) payload.reality_short_id = rsid;
+      var rfp = (fd.get('reality_fingerprint') || '').trim(); if(rfp) payload.reality_fingerprint = rfp;
+      var rsx = (fd.get('reality_spider_x') || '').trim(); if(rsx) payload.reality_spider_x = rsx;
+      var rpk = (fd.get('reality_public_key') || '').trim(); if(rpk) payload.reality_public_key = rpk;
+      var rsk = (fd.get('reality_private_key') || '').trim(); if(rsk) payload.reality_private_key = rsk;
       await apiFetch(API_PREFIX+'/xray-services', {method:'POST', body:payload});
     }
     closeModal();

@@ -1,4 +1,5 @@
 import base64
+import os
 from datetime import datetime, timedelta, timezone
 
 from cryptography import x509
@@ -26,6 +27,31 @@ def generate_wireguard_keypair() -> tuple[str, str]:
         base64.b64encode(private_raw).decode("utf-8"),
         base64.b64encode(public_raw).decode("utf-8"),
     )
+
+
+def generate_reality_keypair() -> tuple[str, str]:
+    private_key = x25519.X25519PrivateKey.generate()
+    public_key = private_key.public_key()
+
+    private_raw = private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    public_raw = public_key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return (
+        base64.urlsafe_b64encode(private_raw).decode("ascii").rstrip("="),
+        base64.urlsafe_b64encode(public_raw).decode("ascii").rstrip("="),
+    )
+
+
+def generate_reality_short_id(length_bytes: int = 8) -> str:
+    if length_bytes < 1 or length_bytes > 8:
+        raise ValueError("REALITY short id length must be between 1 and 8 bytes.")
+    return os.urandom(length_bytes).hex()
 
 
 def generate_self_contained_ca(common_name: str) -> tuple[str, str]:
@@ -98,8 +124,6 @@ def generate_signed_certificate(
 
 
 def generate_opaque_client_uid() -> str:
-    import os
-
     return base64.urlsafe_b64encode(os.urandom(16)).decode("ascii").rstrip("=")
 
 
