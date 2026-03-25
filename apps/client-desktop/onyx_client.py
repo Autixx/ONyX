@@ -3118,11 +3118,19 @@ class DashboardScreen(QWidget):
         def _c():
             with httpx_client(timeout=20, base_url=base) as c:
                 r=c.post(base+"/client/devices/register",json=payload,headers=hdrs)
-            if r.status_code>=400: raise RuntimeError(r.json().get("detail",r.text))
-            return r.json()
-        def _d(data,err):
+                if r.status_code>=400: raise RuntimeError(r.json().get("detail",r.text))
+                device_id=r.json()["device"]["id"]
+                # Immediately verify ownership so status becomes ACTIVE right away
+                ch=c.post(base+"/client/devices/challenge",json={"device_id":device_id},headers=hdrs)
+                if ch.status_code>=400: raise RuntimeError(ch.json().get("detail",ch.text))
+                dec=self._dec_env(ch.json()["envelope"])
+                vr=c.post(base+"/client/devices/verify",
+                          json={"device_id":device_id,"challenge_response":dec["challenge"]},headers=hdrs)
+                if vr.status_code>=400: raise RuntimeError(vr.json().get("detail",vr.text))
+            return device_id
+        def _d(device_id,err):
             if err: _error_dialog(self,"Device",str(err)); return
-            self.st.device_id=data["device"]["id"]; self.st.save(); self.refresh()
+            self.st.device_id=device_id; self.st.save(); self.refresh()
         run_async(self,_c,_d)
 
     def _dec_env(self,env):
