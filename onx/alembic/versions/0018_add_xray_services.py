@@ -16,6 +16,21 @@ branch_labels = None
 depends_on = None
 
 
+def _table_exists(table: str) -> bool:
+    from sqlalchemy import inspect as sa_inspect
+    return table in sa_inspect(op.get_bind()).get_table_names()
+
+
+def _column_exists(table: str, column: str) -> bool:
+    from sqlalchemy import inspect as sa_inspect
+    return column in [c["name"] for c in sa_inspect(op.get_bind()).get_columns(table)]
+
+
+def _index_exists(table: str, index_name: str) -> bool:
+    from sqlalchemy import inspect as sa_inspect
+    return any(i["name"] == index_name for i in sa_inspect(op.get_bind()).get_indexes(table))
+
+
 def upgrade() -> None:
     transport_mode = postgresql.ENUM("vless_xhttp", name="xray_service_transport_mode", create_type=False)
     service_state = postgresql.ENUM("planned", "applying", "active", "failed", "deleted", name="xray_service_state", create_type=False)
@@ -23,51 +38,46 @@ def upgrade() -> None:
     transport_mode.create(bind, checkfirst=True)
     service_state.create(bind, checkfirst=True)
 
-    op.create_table(
-        "xray_services",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("name", sa.String(length=128), nullable=False),
-        sa.Column(
-            "node_id",
-            sa.String(length=36),
-            sa.ForeignKey("nodes.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "transport_mode",
-            transport_mode,
-            nullable=False,
-        ),
-        sa.Column(
-            "state",
-            service_state,
-            nullable=False,
-        ),
-        sa.Column("listen_host", sa.String(length=255), nullable=False),
-        sa.Column("listen_port", sa.Integer(), nullable=False),
-        sa.Column("public_host", sa.String(length=255), nullable=False),
-        sa.Column("public_port", sa.Integer(), nullable=True),
-        sa.Column("server_name", sa.String(length=255), nullable=True),
-        sa.Column("xhttp_path", sa.String(length=255), nullable=False),
-        sa.Column("tls_enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("desired_config_json", sa.JSON(), nullable=True),
-        sa.Column("applied_config_json", sa.JSON(), nullable=True),
-        sa.Column("health_summary_json", sa.JSON(), nullable=True),
-        sa.Column("last_error_text", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("name"),
-    )
-    op.create_index(op.f("ix_xray_services_name"), "xray_services", ["name"], unique=True)
-    op.create_index(op.f("ix_xray_services_node_id"), "xray_services", ["node_id"], unique=False)
-    op.create_index(op.f("ix_xray_services_state"), "xray_services", ["state"], unique=False)
+    if not _table_exists("xray_services"):
+        op.create_table(
+            "xray_services",
+            sa.Column("id", sa.String(length=36), nullable=False),
+            sa.Column("name", sa.String(length=128), nullable=False),
+            sa.Column(
+                "node_id",
+                sa.String(length=36),
+                sa.ForeignKey("nodes.id", ondelete="CASCADE"),
+                nullable=False,
+            ),
+            sa.Column("transport_mode", transport_mode, nullable=False),
+            sa.Column("state", service_state, nullable=False),
+            sa.Column("listen_host", sa.String(length=255), nullable=False),
+            sa.Column("listen_port", sa.Integer(), nullable=False),
+            sa.Column("public_host", sa.String(length=255), nullable=False),
+            sa.Column("public_port", sa.Integer(), nullable=True),
+            sa.Column("server_name", sa.String(length=255), nullable=True),
+            sa.Column("xhttp_path", sa.String(length=255), nullable=False),
+            sa.Column("tls_enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
+            sa.Column("desired_config_json", sa.JSON(), nullable=True),
+            sa.Column("applied_config_json", sa.JSON(), nullable=True),
+            sa.Column("health_summary_json", sa.JSON(), nullable=True),
+            sa.Column("last_error_text", sa.Text(), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+            sa.PrimaryKeyConstraint("id"),
+            sa.UniqueConstraint("name"),
+        )
+    if not _index_exists("xray_services", "ix_xray_services_name"):
+        op.create_index(op.f("ix_xray_services_name"), "xray_services", ["name"], unique=True)
+    if not _index_exists("xray_services", "ix_xray_services_node_id"):
+        op.create_index(op.f("ix_xray_services_node_id"), "xray_services", ["node_id"], unique=False)
+    if not _index_exists("xray_services", "ix_xray_services_state"):
+        op.create_index(op.f("ix_xray_services_state"), "xray_services", ["state"], unique=False)
 
-    op.add_column(
-        "peers",
-        sa.Column("xray_service_id", sa.String(length=36), nullable=True),
-    )
-    op.create_index(op.f("ix_peers_xray_service_id"), "peers", ["xray_service_id"], unique=False)
+    if not _column_exists("peers", "xray_service_id"):
+        op.add_column("peers", sa.Column("xray_service_id", sa.String(length=36), nullable=True))
+    if not _index_exists("peers", "ix_peers_xray_service_id"):
+        op.create_index(op.f("ix_peers_xray_service_id"), "peers", ["xray_service_id"], unique=False)
     with op.batch_alter_table("peers") as batch_op:
         batch_op.create_foreign_key(
             "fk_peers_xray_service_id_xray_services",
