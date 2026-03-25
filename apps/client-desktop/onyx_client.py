@@ -316,6 +316,18 @@ def httpx_client(*, timeout: float | int, base_url: str | None = None) -> httpx.
     return httpx.Client(timeout=timeout, trust_env=False, verify=verify)
 
 
+class DeviceNotFoundError(RuntimeError):
+    """Raised when the server returns 404 for a device-related request."""
+
+
+def _raise_for_device(response: httpx.Response) -> None:
+    """Raise DeviceNotFoundError on 404, RuntimeError on other 4xx/5xx."""
+    if response.status_code == 404:
+        raise DeviceNotFoundError(response_detail(response))
+    if response.status_code >= 400:
+        raise RuntimeError(response_detail(response))
+
+
 def response_detail(response: httpx.Response) -> str:
     try:
         payload = response.json()
@@ -3004,8 +3016,7 @@ class DashboardScreen(QWidget):
             # Auto-verify device silently before connecting
             with httpx_client(timeout=20, base_url=base) as c:
                 ch = c.post(base + "/client/devices/challenge", json={"device_id": did}, headers=hdrs)
-                if ch.status_code >= 400:
-                    raise RuntimeError(response_detail(ch))
+                _raise_for_device(ch)
                 dec = self._dec_env(ch.json()["envelope"])
                 vr = c.post(base + "/client/devices/verify",
                             json={"device_id": did, "challenge_response": dec["challenge"]},
@@ -3018,8 +3029,12 @@ class DashboardScreen(QWidget):
             self._cbtn.set_connecting(False)
             if err:
                 self.st.connected = False
-                self.refresh()
-                _error_dialog(self, "Connect", str(err))
+                if isinstance(err, DeviceNotFoundError):
+                    self._clear_device()
+                    _error_dialog(self, "Connect", "Device not found on the server.\nPlease register this device again.")
+                else:
+                    self.refresh()
+                    _error_dialog(self, "Connect", str(err))
                 self.connection_state_changed.emit(False)
                 return
             self.refresh()
@@ -3060,6 +3075,15 @@ class DashboardScreen(QWidget):
             self.st.user=data["user"]; self.st.subscription=data.get("active_subscription")
             self.st.save(); self.refresh(offline=False)
         run_async(self,_c,_d)
+
+    def _clear_device(self) -> None:
+        """Drop the stale device registration so the user can re-register."""
+        self.st.device_id = ""
+        self.st.device_private_key = ""
+        self.st.device_public_key = ""
+        self.st.last_bundle = None
+        self.st.save()
+        self.refresh()
 
     def _ensure_kp(self):
         if self.st.device_private_key: return
@@ -3126,8 +3150,7 @@ class DashboardScreen(QWidget):
             with httpx_client(timeout=45, base_url=base) as c:
                 if auto_connect:
                     current = c.get(base + "/client/bundles/current", params={"device_id": did}, headers=hdrs)
-                    if current.status_code >= 400:
-                        raise RuntimeError(response_detail(current))
+                    _raise_for_device(current)
                     try:
                         current_payload = current.json()
                     except Exception as exc:
@@ -3144,8 +3167,7 @@ class DashboardScreen(QWidget):
                         }
 
                 r=c.post(base+"/client/bundles/issue",json={"device_id":did},headers=hdrs)
-                if r.status_code>=400:
-                    raise RuntimeError(response_detail(r))
+                _raise_for_device(r)
                 try:
                     issued=r.json()
                 except Exception as exc:
@@ -3154,7 +3176,13 @@ class DashboardScreen(QWidget):
                 return {"source":"issued","bundle_id":issued["bundle_id"],"expires_at":issued["expires_at"],
                         "bundle_hash":issued["bundle_hash"],"profile_count":len(((dec or {}).get("runtime") or {}).get("profiles") or []),"decrypted":dec}
         def _d(data,err):
-            if err: _error_dialog(self,"Bundle",str(err)); return
+            if err:
+                if isinstance(err, DeviceNotFoundError):
+                    self._clear_device()
+                    _error_dialog(self, "Bundle", "Device not found on the server.\nPlease register this device again.")
+                else:
+                    _error_dialog(self,"Bundle",str(err))
+                return
             self.st.last_bundle=data; self.st.save(); self.refresh()
             if not auto_connect:
                 source = "current cache" if data.get("source") == "current" else "new issue"
