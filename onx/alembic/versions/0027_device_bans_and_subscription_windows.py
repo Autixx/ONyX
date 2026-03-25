@@ -16,21 +16,23 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_enum e
-                JOIN pg_type t ON t.oid = e.enumtypid
-                WHERE t.typname = 'device_status' AND e.enumlabel = 'banned'
-            ) THEN
-                ALTER TYPE device_status ADD VALUE 'banned';
-            END IF;
-        END$$;
-        """
-    )
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_enum e
+                    JOIN pg_type t ON t.oid = e.enumtypid
+                    WHERE t.typname = 'device_status' AND e.enumlabel = 'banned'
+                ) THEN
+                    ALTER TYPE device_status ADD VALUE 'banned';
+                END IF;
+            END$$;
+            """
+        )
     op.add_column("devices", sa.Column("banned_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("devices", sa.Column("banned_until", sa.DateTime(timezone=True), nullable=True))
     op.add_column("devices", sa.Column("ban_reason", sa.String(length=255), nullable=True))

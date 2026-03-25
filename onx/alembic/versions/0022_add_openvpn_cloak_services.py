@@ -58,7 +58,7 @@ def upgrade() -> None:
     op.add_column("peers", sa.Column("cloak_uid", sa.String(length=128), nullable=True))
     op.create_index(op.f("ix_peers_openvpn_cloak_service_id"), "peers", ["openvpn_cloak_service_id"], unique=False)
     with op.batch_alter_table("peers") as batch_op:
-        batch_op.create_foreign_key(None, "openvpn_cloak_services", ["openvpn_cloak_service_id"], ["id"], ondelete="SET NULL")
+        batch_op.create_foreign_key("fk_peers_openvpn_cloak_service_id", "openvpn_cloak_services", ["openvpn_cloak_service_id"], ["id"], ondelete="SET NULL")
 
     op.add_column("transport_packages", sa.Column("preferred_openvpn_cloak_service_id", sa.String(length=36), nullable=True))
     op.create_index(
@@ -69,7 +69,7 @@ def upgrade() -> None:
     )
     with op.batch_alter_table("transport_packages") as batch_op:
         batch_op.create_foreign_key(
-            None,
+            "fk_transport_packages_preferred_openvpn_cloak_service_id",
             "openvpn_cloak_services",
             ["preferred_openvpn_cloak_service_id"],
             ["id"],
@@ -79,12 +79,12 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     with op.batch_alter_table("transport_packages") as batch_op:
-        batch_op.drop_constraint(None, type_="foreignkey")
+        batch_op.drop_constraint("fk_transport_packages_preferred_openvpn_cloak_service_id", type_="foreignkey")
     op.drop_index(op.f("ix_transport_packages_preferred_openvpn_cloak_service_id"), table_name="transport_packages")
     op.drop_column("transport_packages", "preferred_openvpn_cloak_service_id")
 
     with op.batch_alter_table("peers") as batch_op:
-        batch_op.drop_constraint(None, type_="foreignkey")
+        batch_op.drop_constraint("fk_peers_openvpn_cloak_service_id", type_="foreignkey")
     op.drop_index(op.f("ix_peers_openvpn_cloak_service_id"), table_name="peers")
     op.drop_column("peers", "cloak_uid")
     op.drop_column("peers", "openvpn_cloak_service_id")
