@@ -344,17 +344,15 @@ window.saveTransportPackageForm = async function saveTransportPackageForm(pkgId,
     split_tunnel_routes: routes,
     priority_order: priority.length ? priority : ['xray', 'awg', 'wg', 'openvpn_cloak'],
   };
-  if(pkgId){
-    await apiFetch(API_PREFIX + '/transport-packages/' + encodeURIComponent(pkgId), {
-      method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
-    });
-  }else{
-    await apiFetch(API_PREFIX + '/transport-packages', {
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
-    });
-  }
-  closeModal();
-  await loadTransportPackages();
+  try{
+    if(pkgId){
+      await apiFetch(API_PREFIX + '/transport-packages/' + encodeURIComponent(pkgId), { method:'PATCH', body:payload });
+    }else{
+      await apiFetch(API_PREFIX + '/transport-packages', { method:'POST', body:payload });
+    }
+    closeModal();
+    await loadTransportPackages();
+  }catch(err){ alert(err && err.message ? err.message : String(err)); }
 };
 
 var _userPkgShouldReconcile = false;
@@ -399,16 +397,20 @@ window.saveUserPackageForm = async function saveUserPackageForm(userId, fd, reco
     split_tunnel_routes: routes,
     priority_order: priority.length ? priority : ['xray', 'awg', 'wg', 'openvpn_cloak'],
   };
-  await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId), {
-    method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
-  });
-  if(reconcile){
-    await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId) + '/reconcile', {
-      method:'POST'
+  try{
+    await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId), {
+      method:'PUT', body: payload
     });
+    if(reconcile){
+      await apiFetch(API_PREFIX + '/transport-packages/by-user/' + encodeURIComponent(userId) + '/reconcile', {
+        method:'POST'
+      });
+    }
+    closeModal();
+    await loadTransportPackages();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
   }
-  closeModal();
-  await loadTransportPackages();
 };
 
 window.savePlanForm = async function savePlanForm(fd, planId){
@@ -434,18 +436,16 @@ window.savePlanForm = async function savePlanForm(fd, planId){
     access_exception_dates_json: exDates.length ? exDates : null,
     comment:                    fd.get('comment') || null,
   };
-  if(planId){
-    await apiFetch(API_PREFIX + '/plans/' + encodeURIComponent(planId), {
-      method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
-    });
-  }else{
-    payload.code = (fd.get('code') || '').trim();
-    await apiFetch(API_PREFIX + '/plans', {
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
-    });
-  }
-  closeModal();
-  await Promise.all([loadPlans(), loadReferralCodes()]);
+  try{
+    if(planId){
+      await apiFetch(API_PREFIX + '/plans/' + encodeURIComponent(planId), { method:'PATCH', body:payload });
+    }else{
+      payload.code = (fd.get('code') || '').trim();
+      await apiFetch(API_PREFIX + '/plans', { method:'POST', body:payload });
+    }
+    closeModal();
+    await Promise.all([loadPlans(), loadReferralCodes()]);
+  }catch(err){ alert(err && err.message ? err.message : String(err)); }
 };
 
 window.saveSubscriptionForm = async function saveSubscriptionForm(fd, subscriptionId){
@@ -465,28 +465,26 @@ window.saveSubscriptionForm = async function saveSubscriptionForm(fd, subscripti
     access_window_start_local:  fd.get('access_window_start_local') || null,
     access_window_end_local:    fd.get('access_window_end_local') || null,
   };
-  if(subscriptionId){
-    await apiFetch(API_PREFIX + '/subscriptions/' + encodeURIComponent(subscriptionId), {
-      method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
-    });
-  }else{
-    await apiFetch(API_PREFIX + '/subscriptions', {
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
-    });
-  }
-  closeModal();
-  await loadSubscriptions();
+  try{
+    if(subscriptionId){
+      await apiFetch(API_PREFIX + '/subscriptions/' + encodeURIComponent(subscriptionId), { method:'PATCH', body:payload });
+    }else{
+      await apiFetch(API_PREFIX + '/subscriptions', { method:'POST', body:payload });
+    }
+    closeModal();
+    await loadSubscriptions();
+  }catch(err){ alert(err && err.message ? err.message : String(err)); }
 };
 
 window.assignPoolToPlan = async function assignPoolToPlan(planId){
   var sel = document.getElementById('planPoolAssignSelect');
   var poolId = sel ? sel.value : '';
   if(!poolId) return;
-  await apiFetch(API_PREFIX + '/referral-pools/' + encodeURIComponent(poolId), {
-    method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({plan_id: planId})
-  });
-  closeModal();
-  await Promise.all([loadPlans(), loadReferralCodes()]);
+  try{
+    await apiFetch(API_PREFIX + '/referral-pools/' + encodeURIComponent(poolId), { method:'PATCH', body:{plan_id: planId} });
+    closeModal();
+    await Promise.all([loadPlans(), loadReferralCodes()]);
+  }catch(err){ alert(err && err.message ? err.message : String(err)); }
 };
 
 window.deleteTransportPackageFlow = async function deleteTransportPackageFlow(pkgId){

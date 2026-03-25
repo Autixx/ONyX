@@ -89,18 +89,22 @@ window.revokeDeviceFlow = async function revokeDeviceFlow(deviceId){
   var d = deviceById(deviceId);
   var label = d ? (d.device_label || d.id) : deviceId;
   if(!confirm('Revoke device "' + label + '"? It will no longer be able to connect.')) return;
-  await apiFetch(API_PREFIX + '/devices/' + encodeURIComponent(deviceId) + '/revoke', { method:'POST' });
-  closeDP();
-  await loadDevices();
+  try{
+    await apiFetch(API_PREFIX + '/devices/' + encodeURIComponent(deviceId) + '/revoke', { method:'POST' });
+    closeDP();
+    await loadDevices();
+  }catch(err){ alert(err && err.message ? err.message : String(err)); }
 };
 
 window.unbanDeviceFlow = async function unbanDeviceFlow(deviceId){
   var d = deviceById(deviceId);
   var label = d ? (d.device_label || d.id) : deviceId;
   if(!confirm('Unban device "' + label + '"?')) return;
-  await apiFetch(API_PREFIX + '/devices/' + encodeURIComponent(deviceId) + '/unban', { method:'POST' });
-  closeDP();
-  await loadDevices();
+  try{
+    await apiFetch(API_PREFIX + '/devices/' + encodeURIComponent(deviceId) + '/unban', { method:'POST' });
+    closeDP();
+    await loadDevices();
+  }catch(err){ alert(err && err.message ? err.message : String(err)); }
 };
 
 window.saveDeviceBanForm = async function saveDeviceBanForm(deviceId, fd){
@@ -112,11 +116,11 @@ window.saveDeviceBanForm = async function saveDeviceBanForm(deviceId, fd){
     var multiplier = unit === 'days' ? 1440 : unit === 'hours' ? 60 : 1;
     payload.duration_minutes = val * multiplier;
   }
-  await apiFetch(API_PREFIX + '/devices/' + encodeURIComponent(deviceId) + '/ban', {
-    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
-  });
-  closeModal();
-  await loadDevices();
+  try{
+    await apiFetch(API_PREFIX + '/devices/' + encodeURIComponent(deviceId) + '/ban', { method:'POST', body:payload });
+    closeModal();
+    await loadDevices();
+  }catch(err){ alert(err && err.message ? err.message : String(err)); }
 };
 
 export {};

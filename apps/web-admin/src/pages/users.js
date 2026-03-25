@@ -107,8 +107,10 @@ window.saveUserForm = async function saveUserForm(fd, userId){
 window.deleteUserFlow = async function deleteUserFlow(userId){
   var user = userById(userId);
   if(!confirm('Delete user ' + (user ? user.username : userId) + '?')) return;
-  await apiFetch(API_PREFIX + '/users/' + encodeURIComponent(userId), { method:'DELETE' });
-  await Promise.all([loadUsers(), loadSubscriptions(), loadDevices(), loadTransportPackages()]);
+  try{
+    await apiFetch(API_PREFIX + '/users/' + encodeURIComponent(userId), { method:'DELETE' });
+    await Promise.all([loadUsers(), loadSubscriptions(), loadDevices(), loadTransportPackages()]);
+  }catch(err){ alert(err && err.message ? err.message : String(err)); }
 };
 
 export {};
