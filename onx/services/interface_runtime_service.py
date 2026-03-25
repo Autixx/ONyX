@@ -228,6 +228,15 @@ TRANSIT_RUNNER_SCRIPT = dedent(
             if result.returncode != 0:
                 break
 
+    def has_kernel_next_hop(next_hop: dict) -> bool:
+        return bool(
+            next_hop.get("attached")
+            and next_hop.get("source_ip")
+            and next_hop.get("interface_name")
+            and next_hop.get("egress_table_id") is not None
+            and next_hop.get("egress_rule_priority") is not None
+        )
+
     def apply(config: dict) -> None:
         chain_name = config["chain_name"]
         ingress_interface = config["ingress_interface"]
@@ -275,7 +284,7 @@ TRANSIT_RUNNER_SCRIPT = dedent(
         remove_ip_rule(firewall_mark, route_table_id, rule_priority)
         run([IP_BIN, "rule", "add", "fwmark", str(firewall_mark), "table", str(route_table_id), "priority", str(rule_priority)])
         run([IP_BIN, "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", str(route_table_id)])
-        if next_hop.get("attached"):
+        if has_kernel_next_hop(next_hop):
             source_ip = str(next_hop["source_ip"])
             egress_table_id = int(next_hop["egress_table_id"])
             egress_rule_priority = int(next_hop["egress_rule_priority"])
@@ -307,7 +316,7 @@ TRANSIT_RUNNER_SCRIPT = dedent(
         drop_chain(chain_name)
         remove_ip_rule(firewall_mark, route_table_id, rule_priority)
         run([IP_BIN, "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", str(route_table_id)], check=False)
-        if next_hop.get("attached"):
+        if has_kernel_next_hop(next_hop):
             source_ip = str(next_hop["source_ip"])
             egress_table_id = int(next_hop["egress_table_id"])
             egress_rule_priority = int(next_hop["egress_rule_priority"])
