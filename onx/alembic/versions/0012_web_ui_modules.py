@@ -18,15 +18,22 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _column_exists(table: str, column: str) -> bool:
+    from sqlalchemy import inspect as sa_inspect
+    return column in [c["name"] for c in sa_inspect(op.get_bind()).get_columns(table)]
+
+
 def upgrade() -> None:
     registration_status = postgresql.ENUM("pending", "approved", "rejected", name="registration_status", create_type=False)
     registration_status.create(op.get_bind(), checkfirst=True)
 
-    op.add_column(
-        "nodes",
-        sa.Column("registered_at", sa.DateTime(timezone=True), nullable=True, server_default=sa.func.now()),
-    )
-    op.add_column("nodes", sa.Column("traffic_limit_gb", sa.Float(), nullable=True))
+    if not _column_exists("nodes", "registered_at"):
+        op.add_column(
+            "nodes",
+            sa.Column("registered_at", sa.DateTime(timezone=True), nullable=True, server_default=sa.func.now()),
+        )
+    if not _column_exists("nodes", "traffic_limit_gb"):
+        op.add_column("nodes", sa.Column("traffic_limit_gb", sa.Float(), nullable=True))
     op.execute("UPDATE nodes SET registered_at = COALESCE(registered_at, created_at)")
     with op.batch_alter_table("nodes") as batch_op:
         batch_op.alter_column("registered_at", existing_type=sa.DateTime(timezone=True), nullable=False)
