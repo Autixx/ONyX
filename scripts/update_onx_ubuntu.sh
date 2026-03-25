@@ -146,7 +146,7 @@ ADMIN_WEB_AUTH_INFO_PATH="${CONFIG_DIR}/admin-web-auth.txt"
 [[ -f "${ENV_FILE_PATH}" ]] || fail "ONX env file not found: ${ENV_FILE_PATH}"
 [[ -x "${VENV_DIR}/bin/python3" ]] || fail "ONX venv python not found: ${VENV_DIR}/bin/python3"
 
-echo "[1/5] Pulling source (ref: ${GIT_REF})..."
+echo "[1/6] Pulling source (ref: ${GIT_REF})..."
 git -C "${INSTALL_DIR}" fetch --all --tags --prune \
   || fail "git fetch failed — check network and remote credentials."
 
@@ -159,7 +159,17 @@ else
 fi
 echo "  → $(git -C "${INSTALL_DIR}" log --oneline -1)"
 
-echo "[2/5] Updating Python dependencies..."
+echo "[2/6] Building frontend..."
+WEB_ADMIN_DIR="${INSTALL_DIR}/apps/web-admin"
+if command -v npm &>/dev/null && [[ -f "${WEB_ADMIN_DIR}/package.json" ]]; then
+  npm ci --prefix "${WEB_ADMIN_DIR}" --silent
+  npm run build --prefix "${WEB_ADMIN_DIR}"
+  echo "  → Frontend built."
+else
+  echo "  → npm not found, skipping frontend build (pre-built dist will be used)."
+fi
+
+echo "[3/6] Updating Python dependencies..."
 "${VENV_DIR}/bin/python3" -m pip install --upgrade pip wheel setuptools
 "${VENV_DIR}/bin/python3" -m pip install -r "${INSTALL_DIR}/requirements-onx.txt"
 
@@ -170,7 +180,7 @@ exec "${VENV_DIR}/bin/python3" "${INSTALL_DIR}/scripts/onx_admin_menu.py" "\$@"
 EOF
 chmod 755 "${LAUNCHER_PATH}"
 
-echo "[2.5/5] Backfilling web auth/static-ui defaults..."
+echo "[3.5/6] Backfilling web auth/static-ui defaults..."
 ADMIN_WEB_BOOTSTRAP_USERNAME="$(awk -F= '/^ONX_ADMIN_WEB_BOOTSTRAP_USERNAME=/{print $2}' "${ENV_FILE_PATH}" | tail -n1)"
 ADMIN_WEB_BOOTSTRAP_PASSWORD="$(awk -F= '/^ONX_ADMIN_WEB_BOOTSTRAP_PASSWORD=/{print $2}' "${ENV_FILE_PATH}" | tail -n1)"
 if [[ -z "${ADMIN_WEB_BOOTSTRAP_USERNAME}" ]]; then
@@ -244,7 +254,7 @@ if [[ ! -f "${ADMIN_WEB_AUTH_INFO_PATH}" ]]; then
   chmod 600 "${ADMIN_WEB_AUTH_INFO_PATH}"
 fi
 
-echo "[3/5] Applying migrations..."
+echo "[4/6] Applying migrations..."
 (
   cd "${INSTALL_DIR}"
   set -a
@@ -253,7 +263,7 @@ echo "[3/5] Applying migrations..."
   "${VENV_DIR}/bin/python3" -m alembic -c alembic.ini upgrade head
 )
 
-echo "[4/5] Restarting service..."
+echo "[5/6] Restarting service..."
 systemctl daemon-reload
 systemctl restart "${SERVICE_NAME}.service"
 
@@ -278,6 +288,6 @@ if [[ "${REFRESH_TLS_OPENSSL}" == "true" ]]; then
   bash "${INSTALL_DIR}/scripts/setup_onx_tls_openssl.sh" "${TLS_ARGS[@]}"
 fi
 
-echo "[5/5] Done."
+echo "[6/6] Done."
 echo "Status: systemctl status ${SERVICE_NAME}.service --no-pager"
 echo "Logs:   journalctl -u ${SERVICE_NAME}.service -f"
