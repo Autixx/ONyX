@@ -68,18 +68,19 @@ def upgrade() -> None:
         sa.Column("xray_service_id", sa.String(length=36), nullable=True),
     )
     op.create_index(op.f("ix_peers_xray_service_id"), "peers", ["xray_service_id"], unique=False)
-    op.create_foreign_key(
-        "fk_peers_xray_service_id_xray_services",
-        "peers",
-        "xray_services",
-        ["xray_service_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
+    with op.batch_alter_table("peers") as batch_op:
+        batch_op.create_foreign_key(
+            "fk_peers_xray_service_id_xray_services",
+            "xray_services",
+            ["xray_service_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_peers_xray_service_id_xray_services", "peers", type_="foreignkey")
+    with op.batch_alter_table("peers") as batch_op:
+        batch_op.drop_constraint("fk_peers_xray_service_id_xray_services", type_="foreignkey")
     op.drop_index(op.f("ix_peers_xray_service_id"), table_name="peers")
     op.drop_column("peers", "xray_service_id")
 

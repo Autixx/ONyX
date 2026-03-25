@@ -137,8 +137,9 @@ def upgrade() -> None:
     op.add_column("registrations", sa.Column("auto_approved_at", sa.DateTime(timezone=True), nullable=True))
     op.create_index(op.f("ix_registrations_reviewed_by"), "registrations", ["reviewed_by"], unique=False)
     op.create_index(op.f("ix_registrations_approved_user_id"), "registrations", ["approved_user_id"], unique=False)
-    op.create_foreign_key("fk_registrations_reviewed_by_admin_users", "registrations", "admin_users", ["reviewed_by"], ["id"], ondelete="SET NULL")
-    op.create_foreign_key("fk_registrations_approved_user_id_users", "registrations", "users", ["approved_user_id"], ["id"], ondelete="SET NULL")
+    with op.batch_alter_table("registrations") as batch_op:
+        batch_op.create_foreign_key("fk_registrations_reviewed_by_admin_users", "admin_users", ["reviewed_by"], ["id"], ondelete="SET NULL")
+        batch_op.create_foreign_key("fk_registrations_approved_user_id_users", "users", ["approved_user_id"], ["id"], ondelete="SET NULL")
 
 
 def downgrade() -> None:
@@ -146,8 +147,9 @@ def downgrade() -> None:
     billing_mode = postgresql.ENUM("manual", "lifetime", "periodic", "trial", name="billing_mode", create_type=False)
     subscription_status = postgresql.ENUM("pending", "active", "suspended", "expired", "revoked", name="subscription_status", create_type=False)
 
-    op.drop_constraint("fk_registrations_approved_user_id_users", "registrations", type_="foreignkey")
-    op.drop_constraint("fk_registrations_reviewed_by_admin_users", "registrations", type_="foreignkey")
+    with op.batch_alter_table("registrations") as batch_op:
+        batch_op.drop_constraint("fk_registrations_approved_user_id_users", type_="foreignkey")
+        batch_op.drop_constraint("fk_registrations_reviewed_by_admin_users", type_="foreignkey")
     op.drop_index(op.f("ix_registrations_approved_user_id"), table_name="registrations")
     op.drop_index(op.f("ix_registrations_reviewed_by"), table_name="registrations")
     op.drop_column("registrations", "auto_approved_at")

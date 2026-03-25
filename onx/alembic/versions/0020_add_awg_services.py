@@ -56,26 +56,29 @@ def upgrade() -> None:
     op.add_column("peers", sa.Column("awg_public_key", sa.String(length=128), nullable=True))
     op.add_column("peers", sa.Column("awg_address_v4", sa.String(length=64), nullable=True))
     op.create_index(op.f("ix_peers_awg_service_id"), "peers", ["awg_service_id"], unique=False)
-    op.create_foreign_key(None, "peers", "awg_services", ["awg_service_id"], ["id"], ondelete="SET NULL")
+    with op.batch_alter_table("peers") as batch_op:
+        batch_op.create_foreign_key(None, "awg_services", ["awg_service_id"], ["id"], ondelete="SET NULL")
 
     op.add_column("transport_packages", sa.Column("preferred_awg_service_id", sa.String(length=36), nullable=True))
     op.create_index(op.f("ix_transport_packages_preferred_awg_service_id"), "transport_packages", ["preferred_awg_service_id"], unique=False)
-    op.create_foreign_key(
-        None,
-        "transport_packages",
-        "awg_services",
-        ["preferred_awg_service_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
+    with op.batch_alter_table("transport_packages") as batch_op:
+        batch_op.create_foreign_key(
+            None,
+            "awg_services",
+            ["preferred_awg_service_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint(None, "transport_packages", type_="foreignkey")
+    with op.batch_alter_table("transport_packages") as batch_op:
+        batch_op.drop_constraint(None, type_="foreignkey")
     op.drop_index(op.f("ix_transport_packages_preferred_awg_service_id"), table_name="transport_packages")
     op.drop_column("transport_packages", "preferred_awg_service_id")
 
-    op.drop_constraint(None, "peers", type_="foreignkey")
+    with op.batch_alter_table("peers") as batch_op:
+        batch_op.drop_constraint(None, type_="foreignkey")
     op.drop_index(op.f("ix_peers_awg_service_id"), table_name="peers")
     op.drop_column("peers", "awg_address_v4")
     op.drop_column("peers", "awg_public_key")
