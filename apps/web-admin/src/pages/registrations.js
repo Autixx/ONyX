@@ -59,4 +59,30 @@ window.renderRegistrations = function renderRegistrations(){
   }).join('');
 };
 
+window.approveReg = async function approveReg(regId){
+  var r = (window.REGISTRATIONS || []).find(function(x){ return x.id === regId; });
+  var label = r ? (r.username || r.login || r.email || r.id) : regId;
+  if(!confirm('Approve registration "' + label + '"?')) return;
+  try{
+    await apiFetch(API_PREFIX + '/registrations/' + encodeURIComponent(regId) + '/approve', { method:'POST' });
+    await window.loadRegistrations();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
+window.rejectReg = async function rejectReg(regId){
+  var r = (window.REGISTRATIONS || []).find(function(x){ return x.id === regId; });
+  var label = r ? (r.username || r.login || r.email || r.id) : regId;
+  var reason = prompt('Reject "' + label + '"?\nOptional reason (or leave empty):');
+  if(reason === null) return;
+  try{
+    var body = reason.trim() ? { reject_reason: reason.trim() } : {};
+    await apiFetch(API_PREFIX + '/registrations/' + encodeURIComponent(regId) + '/reject', { method:'POST', body: body });
+    await window.loadRegistrations();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
 export {};

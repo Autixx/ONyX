@@ -177,6 +177,10 @@ window.actionXrayApply = async function actionXrayApply(serviceId){
   }
 };
 
+window.openXrayTransitWizard = function openXrayTransitWizard(serviceId){
+  openTransitPolicyModal(null, serviceId);
+};
+
 window.actionXrayAssignPeer = async function actionXrayAssignPeer(serviceId){
   var service = xrayServiceById(serviceId);
   if(!service) return;

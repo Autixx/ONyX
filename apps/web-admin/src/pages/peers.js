@@ -77,6 +77,40 @@ window.updatePeersBadge = function updatePeersBadge(){
   else { badge.style.display = 'none'; }
 };
 
+window.openPeerConfig = async function openPeerConfig(peerId){
+  var p = PEERS.find(function(x){ return x.id === peerId; });
+  var config = p && p.config ? p.config : null;
+  if(!config){
+    try{
+      var data = await apiFetch(API_PREFIX + '/peers/' + encodeURIComponent(peerId));
+      config = data && data.config ? data.config : null;
+    }catch(e){
+      alert('Could not load peer config.');
+      return;
+    }
+  }
+  if(!config){
+    alert('No config available for this peer.');
+    return;
+  }
+  openModal('Peer Config', '<div class="modal-grid one"><div class="form-group full"><textarea readonly style="width:100%;height:320px;font-family:monospace;font-size:12px;">'+esc(config)+'</textarea></div></div>',
+    {buttons:[{label:'Close', className:'btn', onClick:closeModal}]}
+  );
+};
+
+window.revokePeer = async function revokePeer(peerId){
+  var p = PEERS.find(function(x){ return x.id === peerId; });
+  var label = p ? (p.username || p.email || p.id) : peerId;
+  if(!confirm('Revoke peer "' + label + '"? This will remove their VPN access.')) return;
+  try{
+    await apiFetch(API_PREFIX + '/peers/' + encodeURIComponent(peerId) + '/revoke', { method:'POST' });
+    closeDP();
+    await loadPeers();
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
 window.showPeerDetail = function showPeerDetail(id){
   var p = PEERS.find(function(x){ return x.id===id; });
   if(!p) return;
