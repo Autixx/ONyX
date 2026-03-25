@@ -1,5 +1,198 @@
 // Page module - all functions exposed as window globals
 
+window.transitPoliciesForXray = function transitPoliciesForXray(serviceId){
+  return TRANSIT_POLICIES.filter(function(policy){
+    return policy.ingress_service_kind === 'xray_service' && policy.ingress_service_ref_id === serviceId;
+  });
+};
+
+window.transitServiceCount = function transitServiceCount(serviceId){
+  return transitPoliciesForXray(serviceId).length;
+};
+
+window.transitCandidateSpecs = function transitCandidateSpecs(policy){
+  var candidates = Array.isArray(policy && policy.next_hop_candidates_json) ? policy.next_hop_candidates_json.filter(function(item){
+    return item && item.kind && item.ref_id;
+  }).map(function(item){
+    return {kind:String(item.kind), ref_id:String(item.ref_id)};
+  }) : [];
+  if(candidates.length) return candidates;
+  if(policy && policy.next_hop_kind && policy.next_hop_ref_id){
+    return [{kind:String(policy.next_hop_kind), ref_id:String(policy.next_hop_ref_id)}];
+  }
+  return [];
+};
+
+window.transitResolveNextHopLabel = function transitResolveNextHopLabel(kind, refId){
+  var normalizedKind = String(kind || '').trim().toLowerCase();
+  var normalizedRefId = String(refId || '').trim();
+  if(!normalizedKind || !normalizedRefId) return '-';
+  if(normalizedKind === 'awg_service'){
+    var awg = awgServiceById(normalizedRefId);
+    return awg ? (awg.name + ' @ ' + nById(awg.node_id).name) : normalizedRefId;
+  }
+  if(normalizedKind === 'wg_service'){
+    var wg = wgServiceById(normalizedRefId);
+    return wg ? (wg.name + ' @ ' + nById(wg.node_id).name) : normalizedRefId;
+  }
+  if(normalizedKind === 'xray_service'){
+    var xray = xrayServiceById(normalizedRefId);
+    return xray ? (xray.name + ' @ ' + nById(xray.node_id).name) : normalizedRefId;
+  }
+  if(normalizedKind === 'link'){
+    var link = linkById(normalizedRefId);
+    return link ? link.name : normalizedRefId;
+  }
+  return normalizedKind + ':' + normalizedRefId;
+};
+
+window.transitNextHopLabel = function transitNextHopLabel(policy){
+  var candidates = transitCandidateSpecs(policy);
+  return candidates.length ? transitResolveNextHopLabel(candidates[0].kind, candidates[0].ref_id) : '-';
+};
+
+window.transitStandbyNextHopLabel = function transitStandbyNextHopLabel(policy){
+  var candidates = transitCandidateSpecs(policy).slice(1);
+  return candidates.length ? candidates.map(function(candidate){
+    return transitResolveNextHopLabel(candidate.kind, candidate.ref_id);
+  }).join(', ') : '-';
+};
+
+window.transitNextHopChainLabel = function transitNextHopChainLabel(policy){
+  var candidates = transitCandidateSpecs(policy);
+  return candidates.length ? candidates.map(function(candidate){
+    return transitResolveNextHopLabel(candidate.kind, candidate.ref_id);
+  }).join(' -> ') : '-';
+};
+
+window.transitNextHopSummary = function transitNextHopSummary(policy){
+  var primary = transitNextHopLabel(policy);
+  var standby = transitStandbyNextHopLabel(policy);
+  return standby !== '-' ? (primary + ' | ' + standby) : primary;
+};
+
+window.transitNextHopOptions = function transitNextHopOptions(kind, nodeId){
+  var normalizedKind = String(kind || '').trim().toLowerCase();
+  var currentNodeId = String(nodeId || '').trim();
+  if(normalizedKind === 'awg_service'){
+    return AWG_SERVICES
+      .filter(function(service){ return String(service.node_id) === currentNodeId; })
+      .map(function(service){ return {value:service.id, label:service.name + ' @ ' + nById(service.node_id).name}; });
+  }
+  if(normalizedKind === 'wg_service'){
+    return WG_SERVICES
+      .filter(function(service){ return String(service.node_id) === currentNodeId; })
+      .map(function(service){ return {value:service.id, label:service.name + ' @ ' + nById(service.node_id).name}; });
+  }
+  if(normalizedKind === 'xray_service'){
+    return XRAY_SERVICES
+      .filter(function(service){ return String(service.node_id) !== currentNodeId; })
+      .map(function(service){ return {value:service.id, label:service.name + ' @ ' + nById(service.node_id).name}; });
+  }
+  if(normalizedKind === 'link'){
+    return LINKS
+      .filter(function(link){
+        return Array.isArray(link.endpoints_json) && link.endpoints_json.some(function(endpoint){
+          return endpoint && String(endpoint.node_id) === currentNodeId;
+        });
+      })
+      .map(function(link){ return {value:link.id, label:link.name}; });
+  }
+  return [];
+};
+
+window.transitNextHopOptionsHtml = function transitNextHopOptionsHtml(kind, nodeId, currentValue){
+  var options = transitNextHopOptions(kind, nodeId);
+  var current = String(currentValue || '').trim();
+  if(current && !options.some(function(item){ return String(item.value) === current; })){
+    options.unshift({value:current, label:transitResolveNextHopLabel(kind, current) + ' (saved)'});
+  }
+  if(!options.length){
+    options = [{value:'', label:'No matching targets'}];
+  }else{
+    options.unshift({value:'', label:'None'});
+  }
+  return options.map(function(opt){
+    return '<option value="'+esc(opt.value)+'" '+(String(opt.value)===current ? 'selected' : '')+'>'+esc(opt.label)+'</option>';
+  }).join('');
+};
+
+window.saveTransitPolicyForm = async function saveTransitPolicyForm(fd, policyId){
+  function intField(value){
+    var trimmed = String(value == null ? '' : value).trim();
+    if(!trimmed) return null;
+    var parsed = parseInt(trimmed, 10);
+    return isNaN(parsed) ? null : parsed;
+  }
+  function splitCsv(value){
+    return String(value == null ? '' : value)
+      .split(',')
+      .map(function(item){ return String(item || '').trim(); })
+      .filter(Boolean);
+  }
+  function splitCsvInts(value){
+    return splitCsv(value).map(function(item){ return parseInt(item, 10); }).filter(function(item){ return !isNaN(item); });
+  }
+  function nullableText(value){
+    var trimmed = String(value == null ? '' : value).trim();
+    return trimmed ? trimmed : null;
+  }
+  function candidate(prefix){
+    var kind = nullableText(fd.get(prefix + '_kind'));
+    var refId = nullableText(fd.get(prefix + '_ref_id'));
+    return kind && refId ? {kind:kind, ref_id:refId} : null;
+  }
+
+  var candidates = ['primary_next_hop', 'standby_next_hop', 'backup_next_hop']
+    .map(candidate)
+    .filter(Boolean)
+    .filter(function(item, index, arr){
+      return arr.findIndex(function(other){
+        return other.kind === item.kind && other.ref_id === item.ref_id;
+      }) === index;
+    });
+
+  var payload = {
+    name: String(fd.get('name') || '').trim(),
+    node_id: String(fd.get('node_id') || '').trim(),
+    ingress_interface: String(fd.get('ingress_interface') || '').trim(),
+    enabled: fd.get('enabled') === 'on',
+    transparent_port: intField(fd.get('transparent_port')),
+    firewall_mark: intField(fd.get('firewall_mark')),
+    route_table_id: intField(fd.get('route_table_id')),
+    rule_priority: intField(fd.get('rule_priority')),
+    ingress_service_kind: nullableText(fd.get('ingress_service_kind')),
+    ingress_service_ref_id: nullableText(fd.get('ingress_service_ref_id')),
+    next_hop_kind: candidates[0] ? candidates[0].kind : null,
+    next_hop_ref_id: candidates[0] ? candidates[0].ref_id : null,
+    next_hop_candidates_json: candidates,
+    capture_protocols_json: splitCsv(fd.get('capture_protocols_json')),
+    capture_cidrs_json: splitCsv(fd.get('capture_cidrs_json')),
+    excluded_cidrs_json: splitCsv(fd.get('excluded_cidrs_json')),
+    management_bypass_ipv4_json: splitCsv(fd.get('management_bypass_ipv4_json')),
+    management_bypass_tcp_ports_json: splitCsvInts(fd.get('management_bypass_tcp_ports_json')),
+  };
+  var applyAfterSave = fd.get('apply_after_save') === '1';
+  try{
+    var saved;
+    if(policyId){
+      saved = await apiFetch(API_PREFIX + '/transit-policies/' + encodeURIComponent(policyId), {method:'PATCH', body:payload});
+    }else{
+      saved = await apiFetch(API_PREFIX + '/transit-policies', {method:'POST', body:payload});
+    }
+    if(applyAfterSave && saved && saved.id){
+      await apiFetch(API_PREFIX + '/transit-policies/' + encodeURIComponent(saved.id) + '/apply', {method:'POST', body:{}});
+    }
+    closeModal();
+    await Promise.all([refreshTransitPolicies(), refreshXrayServices()]);
+    if(saved && saved.id){
+      showTransitPolicy(saved.id);
+    }
+  }catch(err){
+    alert(err && err.message ? err.message : String(err));
+  }
+};
+
 window.refreshTransitPolicies = async function refreshTransitPolicies(){
   try{
     var data = await apiFetch(API_PREFIX + '/transit-policies');
@@ -110,6 +303,7 @@ window.openTransitPolicyModal = function openTransitPolicyModal(policyId, preset
     {value:'', label:'None'},
     {value:'awg_service', label:'AWG Service'},
     {value:'wg_service', label:'WG Service'},
+    {value:'xray_service', label:'XRAY Service'},
     {value:'link', label:'Link'},
   ];
   var body = '<form id="transitPolicyForm"><div class="modal-grid">'
@@ -124,7 +318,7 @@ window.openTransitPolicyModal = function openTransitPolicyModal(policyId, preset
     +formSelect('XRAY Service', 'ingress_service_ref_id', policy ? (policy.ingress_service_ref_id || '') : (presetXrayServiceId || ''), xrayOptions, {help:'Optional XRAY service that will receive transparent traffic.'})
     +formInput('Ingress kind', 'ingress_service_kind', policy ? (policy.ingress_service_kind || '') : (presetXrayServiceId ? 'xray_service' : ''), {readonly:!!presetXrayServiceId, placeholder:'xray_service'})
     +formSelect('Primary next hop', 'primary_next_hop_kind', primaryCandidate.kind || '', nextHopKindOptions, {help:'Preferred kernel egress target for XRAY transparent outbound.'})
-    +formSelect('Primary target', 'primary_next_hop_ref_id', primaryCandidate.ref_id || '', transitNextHopOptions(primaryCandidate.kind || '', defaultNodeId), {help:'Same-node AWG/WG service or attached link.'})
+    +formSelect('Primary target', 'primary_next_hop_ref_id', primaryCandidate.ref_id || '', transitNextHopOptions(primaryCandidate.kind || '', defaultNodeId), {help:'Same-node AWG/WG service, remote XRAY service, or attached link.'})
     +formSelect('Standby next hop', 'standby_next_hop_kind', standbyCandidate.kind || '', nextHopKindOptions, {help:'Optional first failover target.'})
     +formSelect('Standby target', 'standby_next_hop_ref_id', standbyCandidate.ref_id || '', transitNextHopOptions(standbyCandidate.kind || '', defaultNodeId), {help:'Optional first backup path.'})
     +formSelect('Backup next hop', 'backup_next_hop_kind', backupCandidate.kind || '', nextHopKindOptions, {help:'Optional second failover target.'})

@@ -29,6 +29,7 @@ window.renderPolicyTransitHub = function renderPolicyTransitHub(){
     }, {});
     var awgHops  = nextHopKinds.awg_service || 0;
     var wgHops   = nextHopKinds.wg_service  || 0;
+    var xrayHops = nextHopKinds.xray_service || 0;
     var lnkHops  = nextHopKinds.link        || 0;
 
     function cnt(total, active, label){
@@ -60,6 +61,7 @@ window.renderPolicyTransitHub = function renderPolicyTransitHub(){
       + rows([
           ['AWG next hops',  String(awgHops)],
           ['WG next hops',   String(wgHops)],
+          ['XRAY next hops', String(xrayHops)],
           ['Link next hops', String(lnkHops)],
         ]);
   }

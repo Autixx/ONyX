@@ -85,6 +85,8 @@ class XrayServiceManager:
         db.add(service)
         db.commit()
         from onx.services.transit_policy_service import transit_policy_manager
+
+        transit_policy_manager.sync_for_next_hop(db, "xray_service", service.id)
         transit_policy_manager.sync_for_xray(db, service.id)
         if was_active:
             self.apply_service(db, service)
@@ -103,6 +105,8 @@ class XrayServiceManager:
         db.delete(service)
         db.commit()
         from onx.services.transit_policy_service import transit_policy_manager
+
+        transit_policy_manager.sync_for_next_hop(db, "xray_service", service_id)
         transit_policy_manager.sync_for_xray(db, service_id)
 
     def assign_peer(self, db: Session, service: XrayService, peer: Peer, *, save_to_peer: bool = True) -> dict:
@@ -127,7 +131,7 @@ class XrayServiceManager:
             result["auto_applied"] = True
         return result
 
-    def apply_service(self, db: Session, service: XrayService) -> dict:
+    def apply_service(self, db: Session, service: XrayService, *, sync_next_hops: bool = True) -> dict:
         node = db.get(Node, service.node_id)
         if node is None:
             raise ValueError("Node not found.")
@@ -181,6 +185,9 @@ class XrayServiceManager:
         db.add(service)
         db.commit()
         from onx.services.transit_policy_service import transit_policy_manager
+
+        if sync_next_hops:
+            transit_policy_manager.sync_for_next_hop(db, "xray_service", service.id)
         transit_policy_manager.sync_for_xray(db, service.id)
         db.refresh(service)
         return {
@@ -201,6 +208,14 @@ class XrayServiceManager:
             for peer in self._list_service_peers(db, service.id)
             if peer.is_active and peer.revoked_at is None
         ]
+        transit_next_hop_clients = [
+            {
+                "id": self._transit_client_uuid(service, policy),
+                "email": f"transit-next-hop:{policy.id}",
+                "flow": "",
+            }
+            for policy in self._list_next_hop_transit_policies(db, service.id)
+        ]
         security = "tls" if service.tls_enabled else "none"
         inbound = {
             "tag": f"vless-xhttp-{service.name}",
@@ -209,7 +224,7 @@ class XrayServiceManager:
             "protocol": "vless",
             "settings": {
                 "decryption": "none",
-                "clients": clients,
+                "clients": clients + transit_next_hop_clients,
             },
             "streamSettings": {
                 "network": "xhttp",
@@ -252,7 +267,41 @@ class XrayServiceManager:
         for policy in transit_policies:
             next_hop = transit_policy_manager.describe_next_hop(db, policy)
             outbound_tag = "direct"
-            if next_hop.get("attached") and next_hop.get("source_ip"):
+            if next_hop.get("attached") and next_hop.get("kind") == "xray_service":
+                outbound_tag = f"transit-out-{policy.id}"
+                security = "tls" if next_hop.get("tls_enabled") else "none"
+                outbound = {
+                    "tag": outbound_tag,
+                    "protocol": "vless",
+                    "settings": {
+                        "vnext": [
+                            {
+                                "address": next_hop["public_host"],
+                                "port": int(next_hop["public_port"]),
+                                "users": [
+                                    {
+                                        "id": self._transit_client_uuid_from_ids(next_hop["ref_id"], policy.id),
+                                        "encryption": "none",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "streamSettings": {
+                        "network": "xhttp",
+                        "security": security,
+                        "xhttpSettings": {
+                            "path": next_hop.get("xhttp_path") or "/",
+                            "host": next_hop.get("server_name") or next_hop["public_host"],
+                        },
+                    },
+                }
+                if security == "tls":
+                    outbound["streamSettings"]["tlsSettings"] = {
+                        "serverName": next_hop.get("server_name") or next_hop["public_host"],
+                    }
+                transit_outbounds.append(outbound)
+            elif next_hop.get("attached") and next_hop.get("source_ip"):
                 outbound_tag = f"transit-out-{policy.id}"
                 transit_outbounds.append(
                     {
@@ -369,8 +418,38 @@ class XrayServiceManager:
         )
 
     @staticmethod
+    def _list_next_hop_transit_policies(db: Session, service_id: str) -> list[TransitPolicy]:
+        policies = list(
+            db.scalars(
+                select(TransitPolicy)
+                .where(TransitPolicy.enabled.is_(True))
+                .order_by(TransitPolicy.created_at.asc())
+            ).all()
+        )
+        matched: list[TransitPolicy] = []
+        for policy in policies:
+            candidates = [dict(item) for item in list(policy.next_hop_candidates_json or []) if isinstance(item, dict)]
+            if not candidates and policy.next_hop_kind and policy.next_hop_ref_id:
+                candidates = [{"kind": policy.next_hop_kind, "ref_id": policy.next_hop_ref_id}]
+            if any(
+                str(candidate.get("kind") or "").strip().lower() == "xray_service"
+                and str(candidate.get("ref_id") or "").strip() == service_id
+                for candidate in candidates
+            ):
+                matched.append(policy)
+        return matched
+
+    @staticmethod
     def _client_uuid(service: XrayService, peer: Peer) -> str:
         return str(uuid.uuid5(uuid.UUID(service.id), peer.id))
+
+    @classmethod
+    def _transit_client_uuid(cls, service: XrayService, policy: TransitPolicy) -> str:
+        return cls._transit_client_uuid_from_ids(service.id, policy.id)
+
+    @staticmethod
+    def _transit_client_uuid_from_ids(service_id: str, policy_id: str) -> str:
+        return str(uuid.uuid5(uuid.UUID(service_id), policy_id))
 
     def _assert_xray_ready(self, db: Session, node: Node) -> None:
         capability = db.scalar(

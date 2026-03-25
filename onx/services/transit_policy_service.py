@@ -164,6 +164,7 @@ class TransitPolicyManager:
 
     def delete_policy(self, db: Session, policy: TransitPolicy) -> None:
         xray_service = self._resolve_attached_xray_service(db, policy)
+        next_hop_xray_service = self._resolve_next_hop_xray_service(db, policy)
         node = db.get(Node, policy.node_id)
         if node is not None:
             try:
@@ -174,6 +175,7 @@ class TransitPolicyManager:
         db.delete(policy)
         db.commit()
         self._reapply_attached_xray_if_needed(db, xray_service)
+        self._reapply_next_hop_xray_if_needed(db, next_hop_xray_service)
 
     def apply_policy(self, db: Session, policy: TransitPolicy) -> dict:
         node = db.get(Node, policy.node_id)
@@ -182,6 +184,7 @@ class TransitPolicyManager:
         management_secret = self._get_management_secret(db, node)
         self._runtime.ensure_transit_runtime(node, management_secret)
         attached_xray = self._resolve_attached_xray_service(db, policy)
+        next_hop_xray = self._resolve_next_hop_xray_service(db, policy)
 
         config_path = f"{self._runtime.settings.onx_transit_conf_dir}/{policy.id}.json"
         previous = self._executor.read_file(node, management_secret, config_path)
@@ -197,6 +200,7 @@ class TransitPolicyManager:
                 self._runtime.restart_transit_policy(node, management_secret, policy.id)
             else:
                 self._runtime.stop_transit_policy(node, management_secret, policy.id)
+            self._reapply_next_hop_xray_if_needed(db, next_hop_xray)
             self._reapply_attached_xray_if_needed(db, attached_xray)
         except Exception as exc:
             try:
@@ -366,7 +370,12 @@ class TransitPolicyManager:
         warnings: list[str] = []
         if not xray_attachment.get("available"):
             warnings.append("Transit policy is not attached to an active XRAY service. Rules will capture traffic, but XRAY will not terminate it.")
-        if next_hop_attachment["attached"]:
+        if (
+            next_hop_attachment["attached"]
+            and next_hop_attachment.get("kind") in {"awg_service", "wg_service", "link"}
+            and next_hop_attachment.get("source_ip")
+            and next_hop_attachment.get("interface_name")
+        ):
             rules.extend(
                 [
                     {
@@ -403,6 +412,15 @@ class TransitPolicyManager:
                 + next_hop_attachment["source_ip"]
                 + f") -> ip rule from {next_hop_attachment['source_ip']}/32"
                 + f" -> dev {next_hop_attachment['interface_name']}"
+            )
+        elif next_hop_attachment["attached"] and next_hop_attachment.get("kind") == "xray_service":
+            remote_endpoint = (
+                f"{next_hop_attachment.get('public_host')}:{next_hop_attachment.get('public_port')}"
+                if next_hop_attachment.get("public_host") and next_hop_attachment.get("public_port")
+                else (next_hop_attachment.get("display_name") or "remote xray service")
+            )
+            xray_attachment["route_path"] = (
+                "dokodemo-door -> vless+xhttp -> " + remote_endpoint
             )
         elif self._policy_candidate_specs(policy):
             warnings.append("Next-hop target is configured but not currently resolvable on this node.")
@@ -501,6 +519,13 @@ class TransitPolicyManager:
             return None
         return db.get(XrayService, policy.ingress_service_ref_id)
 
+    def _resolve_next_hop_xray_service(self, db: Session, policy: TransitPolicy) -> XrayService | None:
+        candidate = self._resolve_active_next_hop(db, policy)
+        if candidate is None or candidate.get("kind") != "xray_service":
+            return None
+        ref_id = str(candidate.get("ref_id") or "").strip()
+        return db.get(XrayService, ref_id) if ref_id else None
+
     @staticmethod
     def _reapply_attached_xray_if_needed(db: Session, service: XrayService | None) -> None:
         if service is None or service.state != XrayServiceState.ACTIVE:
@@ -508,6 +533,14 @@ class TransitPolicyManager:
         from onx.services.xray_service_service import xray_service_manager
 
         xray_service_manager.apply_service(db, service)
+
+    @staticmethod
+    def _reapply_next_hop_xray_if_needed(db: Session, service: XrayService | None) -> None:
+        if service is None or service.state != XrayServiceState.ACTIVE:
+            return
+        from onx.services.xray_service_service import xray_service_manager
+
+        xray_service_manager.apply_service(db, service, sync_next_hops=False)
 
     def _validate_attachments(self, db: Session, policy: TransitPolicy) -> None:
         self._resolve_attached_xray_service(db, policy)
@@ -655,6 +688,7 @@ class TransitPolicyManager:
             }
         resolved = candidate
         index = int(resolved.get("candidate_index", 0))
+        uses_kernel_egress = resolved["kind"] in {"awg_service", "wg_service", "link"}
         return {
             "attached": bool(resolved["active"]),
             "available": True,
@@ -665,8 +699,14 @@ class TransitPolicyManager:
             "state": resolved["state"],
             "interface_name": resolved["interface_name"],
             "source_ip": resolved["source_ip"],
-            "egress_table_id": policy.route_table_id + self._EGRESS_OFFSET + index,
-            "egress_rule_priority": policy.rule_priority + self._EGRESS_OFFSET + index,
+            "egress_table_id": (policy.route_table_id + self._EGRESS_OFFSET + index) if uses_kernel_egress else None,
+            "egress_rule_priority": (policy.rule_priority + self._EGRESS_OFFSET + index) if uses_kernel_egress else None,
+            "public_host": resolved.get("public_host"),
+            "public_port": resolved.get("public_port"),
+            "server_name": resolved.get("server_name"),
+            "xhttp_path": resolved.get("xhttp_path"),
+            "tls_enabled": resolved.get("tls_enabled"),
+            "node_id": resolved.get("node_id"),
         }
 
     def _describe_next_hop_candidate(self, db: Session, policy: TransitPolicy, candidate: dict, *, index: int) -> dict:
@@ -685,6 +725,7 @@ class TransitPolicyManager:
                 "egress_table_id": None,
                 "egress_rule_priority": None,
             }
+        uses_kernel_egress = resolved["kind"] in {"awg_service", "wg_service", "link"}
         return {
             "attached": bool(resolved["active"]),
             "available": True,
@@ -695,8 +736,14 @@ class TransitPolicyManager:
             "state": resolved["state"],
             "interface_name": resolved["interface_name"],
             "source_ip": resolved["source_ip"],
-            "egress_table_id": policy.route_table_id + self._EGRESS_OFFSET + index,
-            "egress_rule_priority": policy.rule_priority + self._EGRESS_OFFSET + index,
+            "egress_table_id": (policy.route_table_id + self._EGRESS_OFFSET + index) if uses_kernel_egress else None,
+            "egress_rule_priority": (policy.rule_priority + self._EGRESS_OFFSET + index) if uses_kernel_egress else None,
+            "public_host": resolved.get("public_host"),
+            "public_port": resolved.get("public_port"),
+            "server_name": resolved.get("server_name"),
+            "xhttp_path": resolved.get("xhttp_path"),
+            "tls_enabled": resolved.get("tls_enabled"),
+            "node_id": resolved.get("node_id"),
         }
 
     def _resolve_active_next_hop(
@@ -761,6 +808,30 @@ class TransitPolicyManager:
                 "source_ip": str(ipaddress.ip_interface(service.server_address_v4).ip),
             }
 
+        if kind == "xray_service":
+            service = db.get(XrayService, ref_id)
+            if service is None:
+                raise ValueError("XRAY next-hop service not found.")
+            if service.node_id == policy.node_id:
+                raise ValueError("XRAY next-hop service must live on a different node than the transit policy.")
+            if not allow_inactive and service.state != XrayServiceState.ACTIVE:
+                raise ValueError("XRAY next-hop service must be active before applying transit policy.")
+            return {
+                "kind": kind,
+                "ref_id": service.id,
+                "display_name": service.name,
+                "state": service.state.value,
+                "active": service.state == XrayServiceState.ACTIVE,
+                "interface_name": None,
+                "source_ip": None,
+                "public_host": service.public_host,
+                "public_port": int(service.public_port or service.listen_port),
+                "server_name": service.server_name or service.public_host,
+                "xhttp_path": service.xhttp_path,
+                "tls_enabled": bool(service.tls_enabled),
+                "node_id": service.node_id,
+            }
+
         if kind == "link":
             link = db.get(Link, ref_id)
             if link is None:
@@ -787,7 +858,7 @@ class TransitPolicyManager:
                 "source_ip": str(ipaddress.ip_interface(endpoint.address_v4).ip),
             }
 
-        raise ValueError("next_hop_kind must be one of: awg_service, wg_service, link.")
+        raise ValueError("next_hop_kind must be one of: awg_service, wg_service, xray_service, link.")
 
     @staticmethod
     def _policy_candidate_specs(policy: TransitPolicy) -> list[dict[str, str]]:
@@ -819,8 +890,8 @@ class TransitPolicyManager:
                 continue
             if not kind or not ref_id:
                 raise ValueError("Each next-hop candidate requires both kind and ref_id.")
-            if kind not in {"awg_service", "wg_service", "link"}:
-                raise ValueError("next_hop_candidates_json kind must be one of: awg_service, wg_service, link.")
+            if kind not in {"awg_service", "wg_service", "xray_service", "link"}:
+                raise ValueError("next_hop_candidates_json kind must be one of: awg_service, wg_service, xray_service, link.")
             if not any(existing["kind"] == kind and existing["ref_id"] == ref_id for existing in normalized):
                 normalized.append({"kind": kind, "ref_id": ref_id})
         legacy_kind_value = str(legacy_kind or "").strip().lower()
@@ -854,10 +925,17 @@ class TransitPolicyManager:
             return None
         kind = str(next_hop.get("kind") or "").strip()
         ref_id = str(next_hop.get("ref_id") or "").strip()
-        source_ip = str(next_hop.get("source_ip") or "").strip()
-        if not kind or not ref_id or not source_ip or not next_hop.get("attached"):
+        if not kind or not ref_id or not next_hop.get("attached"):
             return None
-        return f"{kind}:{ref_id}:{source_ip}"
+        source_ip = str(next_hop.get("source_ip") or "").strip()
+        interface_name = str(next_hop.get("interface_name") or "").strip()
+        public_host = str(next_hop.get("public_host") or "").strip()
+        public_port = str(next_hop.get("public_port") or "").strip()
+        xhttp_path = str(next_hop.get("xhttp_path") or "").strip()
+        endpoint = source_ip or interface_name or ":".join(part for part in (public_host, public_port, xhttp_path) if part)
+        if not endpoint:
+            return f"{kind}:{ref_id}"
+        return f"{kind}:{ref_id}:{endpoint}"
 
     @staticmethod
     def _chain_name(policy_id: str) -> str:
