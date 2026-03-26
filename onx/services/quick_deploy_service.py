@@ -455,7 +455,7 @@ class QuickDeployManager:
                 ingress_service_ref_id=str(resources["gate_transit_xray_service_id"]),
                 next_hop_kind="xray_service",
                 next_hop_ref_id=str(resources["egress_xray_service_id"]),
-                capture_protocols_json=["tcp", "udp"],
+                capture_protocols_json=["tcp"],
                 capture_cidrs_json=["0.0.0.0/0"],
             ),
         )

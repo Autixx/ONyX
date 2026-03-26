@@ -181,35 +181,35 @@ TRANSIT_RUNNER_SCRIPT = dedent(
             fail(stderr or f"command failed: {' '.join(cmd)}")
         return result
 
-    def iptables(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return run([IPTABLES_BIN, "-w", "-t", "mangle", *args], check=check)
+    def iptables(table: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        return run([IPTABLES_BIN, "-w", "-t", table, *args], check=check)
 
-    def rule_exists(chain: str, rule: list[str]) -> bool:
-        return iptables("-C", chain, *rule, check=False).returncode == 0
+    def rule_exists(table: str, chain: str, rule: list[str]) -> bool:
+        return iptables(table, "-C", chain, *rule, check=False).returncode == 0
 
-    def ensure_rule(chain: str, rule: list[str]) -> None:
-        if not rule_exists(chain, rule):
-            iptables("-A", chain, *rule)
+    def ensure_rule(table: str, chain: str, rule: list[str]) -> None:
+        if not rule_exists(table, chain, rule):
+            iptables(table, "-A", chain, *rule)
 
-    def ensure_prerouting_jump(interface_name: str, chain_name: str) -> None:
+    def ensure_prerouting_jump(table: str, interface_name: str, chain_name: str) -> None:
         rule = ["-i", interface_name, "-j", chain_name]
-        if not rule_exists("PREROUTING", rule):
-            iptables("-A", "PREROUTING", *rule)
+        if not rule_exists(table, "PREROUTING", rule):
+            iptables(table, "-A", "PREROUTING", *rule)
 
-    def remove_prerouting_jump(interface_name: str, chain_name: str) -> None:
+    def remove_prerouting_jump(table: str, interface_name: str, chain_name: str) -> None:
         rule = ["-i", interface_name, "-j", chain_name]
-        while rule_exists("PREROUTING", rule):
-            iptables("-D", "PREROUTING", *rule, check=False)
+        while rule_exists(table, "PREROUTING", rule):
+            iptables(table, "-D", "PREROUTING", *rule, check=False)
 
-    def clear_chain(chain_name: str) -> None:
-        if iptables("-S", chain_name, check=False).returncode != 0:
-            iptables("-N", chain_name, check=False)
+    def clear_chain(table: str, chain_name: str) -> None:
+        if iptables(table, "-S", chain_name, check=False).returncode != 0:
+            iptables(table, "-N", chain_name, check=False)
             return
-        iptables("-F", chain_name, check=False)
+        iptables(table, "-F", chain_name, check=False)
 
-    def drop_chain(chain_name: str) -> None:
-        iptables("-F", chain_name, check=False)
-        iptables("-X", chain_name, check=False)
+    def drop_chain(table: str, chain_name: str) -> None:
+        iptables(table, "-F", chain_name, check=False)
+        iptables(table, "-X", chain_name, check=False)
 
     def remove_ip_rule(mark: int, table_id: int, priority: int) -> None:
         while True:
@@ -238,6 +238,9 @@ TRANSIT_RUNNER_SCRIPT = dedent(
             and next_hop.get("egress_rule_priority") is not None
         )
 
+    def uses_redirect_capture(config: dict, next_hop: dict) -> bool:
+        return str(config.get("ingress_service_kind") or "").strip().lower() == "xray_service" and str(next_hop.get("kind") or "").strip().lower() == "xray_service"
+
     def apply(config: dict) -> None:
         chain_name = config["chain_name"]
         ingress_interface = config["ingress_interface"]
@@ -251,41 +254,67 @@ TRANSIT_RUNNER_SCRIPT = dedent(
         excluded_cidrs = list(config.get("excluded_cidrs_json") or [])
         bypass_ipv4 = list(config.get("management_bypass_ipv4_json") or [])
         bypass_tcp_ports = [int(item) for item in (config.get("management_bypass_tcp_ports_json") or [])]
+        redirect_capture = uses_redirect_capture(config, next_hop)
 
-        clear_chain(chain_name)
-        ensure_prerouting_jump(ingress_interface, chain_name)
-        ensure_rule(chain_name, ["-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "RETURN"])
+        remove_prerouting_jump("mangle", ingress_interface, chain_name)
+        remove_prerouting_jump("nat", ingress_interface, chain_name)
+        clear_chain("mangle", chain_name)
+        clear_chain("nat", chain_name)
+        target_table = "nat" if redirect_capture else "mangle"
+        ensure_prerouting_jump(target_table, ingress_interface, chain_name)
+        ensure_rule(target_table, chain_name, ["-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "RETURN"])
         for port in bypass_tcp_ports:
             ensure_rule(
+                target_table,
                 chain_name,
                 ["-m", "addrtype", "--dst-type", "LOCAL", "-p", "tcp", "--dport", str(port), "-j", "RETURN"],
             )
         for cidr in bypass_ipv4:
-            ensure_rule(chain_name, ["-d", cidr, "-j", "RETURN"])
+            ensure_rule(target_table, chain_name, ["-d", cidr, "-j", "RETURN"])
         for cidr in excluded_cidrs:
-            ensure_rule(chain_name, ["-d", cidr, "-j", "RETURN"])
-        for proto in capture_protocols:
+            ensure_rule(target_table, chain_name, ["-d", cidr, "-j", "RETURN"])
+        runtime_protocols = ["tcp"] if redirect_capture else list(capture_protocols)
+        for proto in runtime_protocols:
             for cidr in capture_cidrs:
-                ensure_rule(
-                    chain_name,
-                    [
-                        "-p",
-                        proto,
-                        "-d",
-                        cidr,
-                        "-j",
-                        "TPROXY",
-                        "--on-port",
-                        str(transparent_port),
-                        "--tproxy-mark",
-                        f"{firewall_mark}/{firewall_mark}",
-                    ],
-                )
-        ensure_rule(chain_name, ["-j", "RETURN"])
+                if redirect_capture:
+                    ensure_rule(
+                        "nat",
+                        chain_name,
+                        [
+                            "-p",
+                            proto,
+                            "-d",
+                            cidr,
+                            "-j",
+                            "REDIRECT",
+                            "--to-ports",
+                            str(transparent_port),
+                        ],
+                    )
+                else:
+                    ensure_rule(
+                        "mangle",
+                        chain_name,
+                        [
+                            "-p",
+                            proto,
+                            "-d",
+                            cidr,
+                            "-j",
+                            "TPROXY",
+                            "--on-port",
+                            str(transparent_port),
+                            "--tproxy-mark",
+                            f"{firewall_mark}/{firewall_mark}",
+                        ],
+                    )
+        ensure_rule(target_table, chain_name, ["-j", "RETURN"])
         remove_ip_rule(firewall_mark, route_table_id, rule_priority)
-        run([IP_BIN, "rule", "add", "fwmark", str(firewall_mark), "table", str(route_table_id), "priority", str(rule_priority)])
-        run([IP_BIN, "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", str(route_table_id)])
-        if has_kernel_next_hop(next_hop):
+        run([IP_BIN, "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", str(route_table_id)], check=False)
+        if not redirect_capture:
+            run([IP_BIN, "rule", "add", "fwmark", str(firewall_mark), "table", str(route_table_id), "priority", str(rule_priority)])
+            run([IP_BIN, "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", str(route_table_id)])
+        if not redirect_capture and has_kernel_next_hop(next_hop):
             source_ip = str(next_hop["source_ip"])
             egress_table_id = int(next_hop["egress_table_id"])
             egress_rule_priority = int(next_hop["egress_rule_priority"])
@@ -313,8 +342,10 @@ TRANSIT_RUNNER_SCRIPT = dedent(
         route_table_id = int(config["route_table_id"])
         rule_priority = int(config["rule_priority"])
         next_hop = dict(config.get("next_hop_runtime_json") or {})
-        remove_prerouting_jump(ingress_interface, chain_name)
-        drop_chain(chain_name)
+        remove_prerouting_jump("mangle", ingress_interface, chain_name)
+        remove_prerouting_jump("nat", ingress_interface, chain_name)
+        drop_chain("mangle", chain_name)
+        drop_chain("nat", chain_name)
         remove_ip_rule(firewall_mark, route_table_id, rule_priority)
         run([IP_BIN, "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", str(route_table_id)], check=False)
         if has_kernel_next_hop(next_hop):
@@ -326,7 +357,10 @@ TRANSIT_RUNNER_SCRIPT = dedent(
 
     def status(config: dict) -> None:
         chain_name = config["chain_name"]
-        if iptables("-S", chain_name, check=False).returncode != 0:
+        if (
+            iptables("mangle", "-S", chain_name, check=False).returncode != 0
+            and iptables("nat", "-S", chain_name, check=False).returncode != 0
+        ):
             fail(f"transit chain is absent: {chain_name}")
         print(json.dumps({"status": "present", "chain_name": chain_name}))
 

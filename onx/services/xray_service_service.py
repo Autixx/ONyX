@@ -278,34 +278,35 @@ class XrayServiceManager:
                 "shortIds": [service.reality_short_id],
             }
         transit_policies = self._list_transit_policies(db, service.id)
-        transit_inbounds = [
-            {
+        transit_inbounds = []
+        transit_outbounds = [{"tag": "blocked", "protocol": "blackhole"}]
+        routing_rules = []
+        for policy in transit_policies:
+            next_hop = transit_policy_manager.describe_next_hop(db, policy)
+            is_xray_next_hop = next_hop.get("attached") and next_hop.get("kind") == "xray_service"
+            inbound = {
                 "tag": f"transit-{policy.id}",
                 "listen": "0.0.0.0",
                 "port": policy.transparent_port,
                 "protocol": "dokodemo-door",
                 "settings": {
-                    "network": ",".join(policy.capture_protocols_json or ["tcp", "udp"]),
+                    "network": "tcp" if is_xray_next_hop else ",".join(policy.capture_protocols_json or ["tcp", "udp"]),
                     "followRedirect": True,
                 },
                 "sniffing": {
                     "enabled": True,
                     "destOverride": ["http", "tls"],
                 },
-                "streamSettings": {
+            }
+            if not is_xray_next_hop:
+                inbound["streamSettings"] = {
                     "sockopt": {
                         "tproxy": "tproxy",
                     }
-                },
-            }
-            for policy in transit_policies
-        ]
-        transit_outbounds = [{"tag": "blocked", "protocol": "blackhole"}]
-        routing_rules = []
-        for policy in transit_policies:
-            next_hop = transit_policy_manager.describe_next_hop(db, policy)
+                }
+            transit_inbounds.append(inbound)
             outbound_tag = "direct"
-            if next_hop.get("attached") and next_hop.get("kind") == "xray_service":
+            if is_xray_next_hop:
                 outbound_tag = f"transit-out-{policy.id}"
                 security = self._security_mode_from_dict(next_hop)
                 outbound = {
