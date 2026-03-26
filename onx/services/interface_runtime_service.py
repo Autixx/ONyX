@@ -201,6 +201,16 @@ TRANSIT_RUNNER_SCRIPT = dedent(
         while rule_exists(table, "PREROUTING", rule):
             iptables(table, "-D", "PREROUTING", *rule, check=False)
 
+    def ensure_input_accept(interface_name: str, protocol: str, port: int) -> None:
+        rule = ["-i", interface_name, "-p", protocol, "--dport", str(port), "-j", "ACCEPT"]
+        if not rule_exists("filter", "INPUT", rule):
+            iptables("filter", "-I", "INPUT", "1", *rule)
+
+    def remove_input_accept(interface_name: str, protocol: str, port: int) -> None:
+        rule = ["-i", interface_name, "-p", protocol, "--dport", str(port), "-j", "ACCEPT"]
+        while rule_exists("filter", "INPUT", rule):
+            iptables("filter", "-D", "INPUT", *rule, check=False)
+
     def clear_chain(table: str, chain_name: str) -> None:
         if iptables(table, "-S", chain_name, check=False).returncode != 0:
             iptables(table, "-N", chain_name, check=False)
@@ -274,6 +284,9 @@ TRANSIT_RUNNER_SCRIPT = dedent(
         for cidr in excluded_cidrs:
             ensure_rule(target_table, chain_name, ["-d", cidr, "-j", "RETURN"])
         runtime_protocols = ["tcp"] if redirect_capture else list(capture_protocols)
+        if redirect_capture:
+            for proto in runtime_protocols:
+                ensure_input_accept(ingress_interface, proto, transparent_port)
         for proto in runtime_protocols:
             for cidr in capture_cidrs:
                 if redirect_capture:
@@ -346,6 +359,8 @@ TRANSIT_RUNNER_SCRIPT = dedent(
         remove_prerouting_jump("nat", ingress_interface, chain_name)
         drop_chain("mangle", chain_name)
         drop_chain("nat", chain_name)
+        for proto in ["tcp", "udp"]:
+            remove_input_accept(ingress_interface, proto, int(config["transparent_port"]))
         remove_ip_rule(firewall_mark, route_table_id, rule_priority)
         run([IP_BIN, "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", str(route_table_id)], check=False)
         if has_kernel_next_hop(next_hop):
