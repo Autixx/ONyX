@@ -956,6 +956,19 @@ SECURITY_INSTALL_SCRIPT = dedent(
     """
 )
 
+TCP_TUNE_SYSCTL_PATH = "/etc/sysctl.d/99-onx-tcp-tune.conf"
+TCP_TUNE_SYSCTL_CONTENT = dedent(
+    """\
+    net.core.default_qdisc=fq
+    net.ipv4.tcp_congestion_control=bbr
+    net.core.rmem_max=67108864
+    net.core.wmem_max=67108864
+    net.ipv4.tcp_rmem=4096 87380 67108864
+    net.ipv4.tcp_wmem=4096 65536 67108864
+    net.core.netdev_max_backlog=250000
+    """
+)
+
 
 class InterfaceRuntimeService:
     def __init__(self, executor: SSHExecutor) -> None:
@@ -977,9 +990,17 @@ class InterfaceRuntimeService:
         self._executor.run(node, management_secret, f"sh -lc 'chmod 755 \"{self._settings.onx_link_runner_path}\"'")
 
         self._executor.write_file(node, management_secret, self._settings.onx_link_unit_path, unit_content)
+        self._executor.write_file(node, management_secret, TCP_TUNE_SYSCTL_PATH, TCP_TUNE_SYSCTL_CONTENT)
         code, _, stderr = self._executor.run(node, management_secret, "sh -lc 'systemctl daemon-reload'")
         if code != 0:
             raise RuntimeError(stderr or f"Failed to reload systemd on node {node.name}")
+        code, _, stderr = self._executor.run(
+            node,
+            management_secret,
+            f"sh -lc 'sysctl -p \"{TCP_TUNE_SYSCTL_PATH}\"'",
+        )
+        if code != 0:
+            raise RuntimeError(stderr or f"Failed to apply TCP tuning sysctl on node {node.name}")
 
     def ensure_xray_runtime(self, node: Node, management_secret: str) -> None:
         unit_content = XRAY_UNIT_TEMPLATE.replace("__ONX_XRAY_CONF_DIR__", self._settings.onx_xray_conf_dir)
