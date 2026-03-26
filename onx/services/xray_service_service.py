@@ -365,9 +365,22 @@ class XrayServiceManager:
                     "outboundTag": outbound_tag,
                 }
             )
+        primary_inbounds = [inbound]
+        # Transit-only local services on the gate do not need a public xHTTP listener.
+        # Keeping that listener around makes Xray try to apply transparent socket
+        # options to the splitHTTP inbound, which fails on some kernels/runtime
+        # combinations and breaks the whole transit chain.
+        if (
+            transit_policies
+            and not clients
+            and not transit_next_hop_clients
+            and str(service.listen_host).strip() in {"127.0.0.1", "::1", "localhost"}
+        ):
+            primary_inbounds = []
+
         payload = {
             "log": {"loglevel": "warning"},
-            "inbounds": [inbound, *transit_inbounds],
+            "inbounds": [*primary_inbounds, *transit_inbounds],
             "outbounds": [{"tag": "direct", "protocol": "freedom"}, *transit_outbounds],
         }
         if routing_rules:
