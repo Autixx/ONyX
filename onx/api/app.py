@@ -38,6 +38,7 @@ from onx.api.routers.plans import router as plans_router
 from onx.api.routers.peer_traffic import router as peer_traffic_router
 from onx.api.routers.peers import router as peers_router
 from onx.api.routers.probes import router as probes_router
+from onx.api.routers.quick_deploy import router as quick_deploy_router
 from onx.api.routers.referral_codes import router as referral_codes_router
 from onx.api.routers.referral_pools import router as referral_pools_router
 from onx.api.routers.registrations import router as registrations_router
@@ -59,6 +60,7 @@ from onx.services.admin_web_auth_service import admin_web_auth_service
 from onx.services.realtime_service import realtime_service
 from onx.workers.job_worker import JobWorker
 from onx.workers.probe_scheduler import ProbeScheduler
+from onx.workers.quick_deploy_scheduler import QuickDeployScheduler
 from onx.workers.retention_scheduler import RetentionScheduler
 from onx.workers.support_autoclose_scheduler import SupportAutoCloseScheduler
 
@@ -75,6 +77,7 @@ async def lifespan(_: FastAPI):
         interval_seconds=settings.probe_scheduler_interval_seconds,
         only_active_links=settings.probe_scheduler_only_active_links,
     )
+    quick_deploy_scheduler = QuickDeployScheduler()
     retention_scheduler = RetentionScheduler(
         interval_seconds=settings.retention_scheduler_interval_seconds,
     )
@@ -86,6 +89,7 @@ async def lifespan(_: FastAPI):
         admin_web_auth_service.ensure_bootstrap_user(db)
     realtime_service.start()
     worker.start()
+    quick_deploy_scheduler.start()
     _start_policy_restore_thread()
     if settings.probe_scheduler_enabled:
         probe_scheduler.start()
@@ -97,6 +101,7 @@ async def lifespan(_: FastAPI):
     realtime_service.stop()
     support_autoclose_scheduler.stop()
     retention_scheduler.stop()
+    quick_deploy_scheduler.stop()
     probe_scheduler.stop()
     worker.stop()
 
@@ -178,6 +183,7 @@ def create_app() -> FastAPI:
     app.include_router(transport_packages_router, prefix=settings.api_prefix)
     app.include_router(plans_router, prefix=settings.api_prefix)
     app.include_router(subscriptions_router, prefix=settings.api_prefix)
+    app.include_router(quick_deploy_router, prefix=settings.api_prefix)
     app.include_router(referral_codes_router, prefix=settings.api_prefix)
     app.include_router(referral_pools_router, prefix=settings.api_prefix)
     app.include_router(peer_traffic_router, prefix=settings.api_prefix)

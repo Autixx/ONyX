@@ -42,7 +42,7 @@ window.refreshTopology = async function refreshTopology(){
 };
 
 window.scheduleTopologyRealtimeRefresh = function scheduleTopologyRealtimeRefresh(){
-  if(_currentPage !== 'topology') return;
+  if(window.CURRENT_PAGE !== 'topology') return;
   if(_topologyRealtimeTimer) return;
   _topologyRealtimeTimer = setTimeout(function(){
     _topologyRealtimeTimer = null;
@@ -59,7 +59,7 @@ window.syncTopologyAutoButton = function syncTopologyAutoButton(){
 
 window.topologyAutoRefreshTick = async function topologyAutoRefreshTick(){
   if(!TOPO_AUTO_REFRESH_ENABLED) return;
-  if(_currentPage !== 'topology') return;
+  if(window.CURRENT_PAGE !== 'topology') return;
   if(_topologyAutoInFlight) return;
   _topologyAutoInFlight = true;
   try{
@@ -87,7 +87,7 @@ window.stopTopologyMetaRefresh = function stopTopologyMetaRefresh(){
 
 window.startTopologyMetaRefresh = function startTopologyMetaRefresh(){
   stopTopologyMetaRefresh();
-  if(_currentPage !== 'topology') return;
+  if(window.CURRENT_PAGE !== 'topology') return;
   _topologyMetaTimer = setInterval(function(){
     renderTopologyMeta();
   }, 1000);
@@ -96,7 +96,7 @@ window.startTopologyMetaRefresh = function startTopologyMetaRefresh(){
 window.startTopologyAutoRefresh = function startTopologyAutoRefresh(){
   stopTopologyAutoRefresh();
   if(!TOPO_AUTO_REFRESH_ENABLED) return;
-  if(_currentPage !== 'topology') return;
+  if(window.CURRENT_PAGE !== 'topology') return;
   _topologyAutoTimer = setInterval(function(){
     topologyAutoRefreshTick();
   }, 5000);

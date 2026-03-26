@@ -37,6 +37,7 @@ import './pages/tickets.js';
 import './pages/apidebug.js';
 import './pages/clientupdate.js';
 import './pages/routing-summary.js';
+import './pages/quickdeploy.js';
 
 // ── Shared helpers (peers uses these) ──────────────────────────────────────
 window.fmtBytes = function(mb) {
@@ -79,6 +80,7 @@ window.loadData = async function() {
     window.refreshOpenvpnCloakServices?.(),
     window.refreshPolicies?.(),
     window.refreshJobs?.(),
+    window.refreshQuickDeploySessions?.(),
     window.refreshAudit?.(),
     window.refreshTopology?.(),
     window.loadPeers?.(),
@@ -273,6 +275,7 @@ document.addEventListener('DOMContentLoaded', function() {
   _btn('btnAddWgService',            function(){ window.openWgServiceModal?.(); });
   _btn('btnAddOpenvpnCloakService',  function(){ window.openOpenvpnCloakServiceModal?.(); });
   _btn('btnCreateReferralPool',      function(){ window.openReferralPoolModal?.(); });
+  _btn('btnQuickDeployStart',        function(){ window.openQuickDeployModal?.(); });
 
   // Auto-login check
   (async function init() {

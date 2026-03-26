@@ -29,6 +29,7 @@ from onx.db.models.peer_traffic_state import PeerTrafficState
 from onx.db.models.referral_code import ReferralCode
 from onx.db.models.referral_pool import ReferralPool
 from onx.db.models.probe_result import ProbeResult
+from onx.db.models.quick_deploy_session import QuickDeploySession
 from onx.db.models.registration import Registration
 from onx.db.models.route_policy import RoutePolicy
 from onx.db.models.subscription import Subscription
@@ -74,6 +75,7 @@ __all__ = [
     "ClientSession",
     "ClientProbe",
     "ProbeResult",
+    "QuickDeploySession",
     "Job",
     "JobLock",
     "EventLog",

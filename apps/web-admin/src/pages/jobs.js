@@ -213,7 +213,7 @@ window.startJobsTicker = function startJobsTicker(){
       window.refreshJobs?.().catch(function(){});
       return;
     }
-    if(_currentPage === 'jobs'){ renderJobs(); }
+    if(window.CURRENT_PAGE === 'jobs'){ renderJobs(); }
     refreshOpenJobDetail();
   }, 1000);
 };

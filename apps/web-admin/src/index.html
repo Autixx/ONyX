@@ -142,6 +142,27 @@
         </div>
       </div>
 
+      <div class="page" id="page-quickdeploy">
+        <div class="ph">
+          <span class="ptitle">Quick Deploy</span>
+          <div class="pbtn-row">
+            <button class="btn pri" id="btnQuickDeployStart">+ NEW DEPLOY</button>
+            <button class="btn" onclick="refreshQuickDeploySessions()">REFRESH</button>
+          </div>
+        </div>
+        <div class="tw" style="margin-bottom:14px;padding:14px 16px;color:var(--t1);line-height:1.55;">
+          One-shot deployment wizard for base topologies. Current MVP supports <span class="pill pb">gate-egress</span>
+          with <span class="pill pq">AWG</span> on gate and <span class="pill pg">XRAY xHTTP REALITY</span> on egress.
+          Each stage creates real jobs and waits for completion before advancing.
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>ID</th><th>Scenario</th><th>Nodes</th><th>Stage</th><th>State</th><th>Jobs</th><th>Updated</th><th>Actions</th></tr></thead>
+            <tbody id="qdtb"></tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- ── NODES ── -->
       <div class="page" id="page-nodes">
         <div class="ph">

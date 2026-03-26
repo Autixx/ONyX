@@ -218,7 +218,7 @@ window._handleSupportFrame = function _handleSupportFrame(frame) {
     if (empty) empty.remove();
     _appendSupportMsg(box, frame);
     box.scrollTop = box.scrollHeight;
-    if (frame.sender !== 'agent' && _currentPage !== 'tickets') {
+    if (frame.sender !== 'agent' && window.CURRENT_PAGE !== 'tickets') {
       _addSupportUnread(_supportTicketId);
     }
   } else if (frame.type === 'typing' && frame.sender === 'client') {

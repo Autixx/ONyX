@@ -25,6 +25,11 @@ class JobTargetType(StrEnum):
     LINK = "link"
     POLICY = "policy"
     BALANCER = "balancer"
+    AWG_SERVICE = "awg_service"
+    WG_SERVICE = "wg_service"
+    XRAY_SERVICE = "xray_service"
+    OPENVPN_CLOAK_SERVICE = "openvpn_cloak_service"
+    TRANSIT_POLICY = "transit_policy"
 
 
 class JobState(StrEnum):

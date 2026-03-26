@@ -1,9 +1,10 @@
 // nav.js — Two-level navigation, group/page switching, hash router
 
 window.NAV_GROUPS = {
-  system:   { label:'System',         pages:['system','tickets'],
+  system:   { label:'System',         pages:['system','quickdeploy','tickets'],
               subs:[
                 {p:'system',  label:'Main'},
+                {p:'quickdeploy', label:'Quick Deploy'},
                 {p:'tickets', label:'Support Chat', badge:'supportBadge'},
               ]},
   network:  { label:'Network',        pages:['routing-summary','nodes','traffic','links','policies','transit','jobs'],
@@ -49,13 +50,13 @@ Object.keys(window.NAV_GROUPS).forEach(function(g){
   window.NAV_GROUPS[g].pages.forEach(function(p){ window.PAGE_TO_GROUP[p] = g; });
 });
 
-var _currentGroup = 'system';
-var _currentPage  = 'system';
+window.CURRENT_GROUP = 'system';
+window.CURRENT_PAGE  = 'system';
 
 window.switchGroup = function switchGroup(groupName){
   var grp = window.NAV_GROUPS[groupName];
   if(!grp) return;
-  _currentGroup = groupName;
+  window.CURRENT_GROUP = groupName;
 
   // Update main group tabs
   document.querySelectorAll('.nav-group-tab').forEach(function(el){
@@ -104,8 +105,8 @@ window.switchGroup = function switchGroup(groupName){
   });
 
   // Show first sub-tab or keep current if in this group
-  if(window.PAGE_TO_GROUP[_currentPage] === groupName){
-    window.showPage(_currentPage);
+  if(window.PAGE_TO_GROUP[window.CURRENT_PAGE] === groupName){
+    window.showPage(window.CURRENT_PAGE);
   } else {
     window.showPage(grp.subs[0].p);
   }
@@ -115,7 +116,7 @@ window.switchGroup = function switchGroup(groupName){
 };
 
 window.showPage = function showPage(pageId){
-  _currentPage = pageId;
+  window.CURRENT_PAGE = pageId;
 
   // Hide all pages, show target
   document.querySelectorAll('.page').forEach(function(p){
@@ -144,6 +145,7 @@ window.showPage = function showPage(pageId){
   window.syncTopologyAutoButton?.();
   if(pageId==='failban'){   window.refreshFailban?.().catch(function(){}); }
   if(pageId==='clientupdate'){ window.cuOnPageShow?.(); }
+  if(pageId==='quickdeploy'){ window.refreshQuickDeploySessions?.().catch(function(){}); }
   if(pageId==='xray'){ window.refreshXrayServices?.().catch(function(){}); }
   if(pageId==='awg'){ window.refreshAwgServices?.().catch(function(){}); }
   if(pageId==='wg'){ window.refreshWgServices?.().catch(function(){}); }

@@ -21,6 +21,7 @@ window.TRANSIT_POLICIES    = [];
 window.AWG_SERVICES        = [];
 window.WG_SERVICES         = [];
 window.OVPN_CLOAK_SERVICES = [];
+window.QUICK_DEPLOY_SESSIONS = [];
 window.NODE_TRAFFIC        = [];
 window.AUDIT_EVTS          = [];
 window.REGISTRATIONS       = [];
@@ -152,6 +153,7 @@ window.awgServiceById = function awgServiceById(id){ return window.AWG_SERVICES.
 window.wgServiceById = function wgServiceById(id){ return window.WG_SERVICES.find(function(s){ return s.id===id; }) || null; };
 
 window.openvpnCloakServiceById = function openvpnCloakServiceById(id){ return window.OVPN_CLOAK_SERVICES.find(function(s){ return s.id===id; }) || null; };
+window.quickDeploySessionById = function quickDeploySessionById(id){ return window.QUICK_DEPLOY_SESSIONS.find(function(s){ return s.id===id; }) || null; };
 
 window.transportPackageById = function transportPackageById(id){ return window.TRANSPORT_PACKAGES.find(function(p){ return p.id===id; }) || null; };
 
@@ -199,6 +201,7 @@ export var transitPolicyById   = window.transitPolicyById;
 export var awgServiceById      = window.awgServiceById;
 export var wgServiceById       = window.wgServiceById;
 export var openvpnCloakServiceById  = window.openvpnCloakServiceById;
+export var quickDeploySessionById   = window.quickDeploySessionById;
 export var transportPackageById     = window.transportPackageById;
 export var userById            = window.userById;
 export var planById            = window.planById;
