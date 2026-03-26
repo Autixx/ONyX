@@ -298,12 +298,11 @@ class XrayServiceManager:
                     "destOverride": ["http", "tls"],
                 },
             }
-            if not is_xray_next_hop:
-                inbound["streamSettings"] = {
-                    "sockopt": {
-                        "tproxy": "tproxy",
-                    }
+            inbound["streamSettings"] = {
+                "sockopt": {
+                    "tproxy": "redirect" if is_xray_next_hop else "tproxy",
                 }
+            }
             transit_inbounds.append(inbound)
             outbound_tag = "direct"
             if is_xray_next_hop:
