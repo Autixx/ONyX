@@ -106,7 +106,8 @@ XRAY_UNIT_TEMPLATE = dedent(
     ExecStart=/usr/local/bin/xray run -config __ONX_XRAY_CONF_DIR__/%i.json
     Restart=on-failure
     RestartSec=3
-    AmbientCapabilities=CAP_NET_BIND_SERVICE
+    AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
+    CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
     NoNewPrivileges=true
 
     [Install]
